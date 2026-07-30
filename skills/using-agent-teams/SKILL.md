@@ -1,9 +1,9 @@
 ---
-name: using-board-superpowers
-description: Route a board-superpowers Producer session by a leading role token or user intent. Use at the start of sessions involving a GitHub engineering board, requirement intake, architect specifications, Role handoffs, or EM dispatch.
+name: using-agent-teams
+description: Route an agent-teams Producer session by a leading role token or user intent. Use at the start of sessions involving a GitHub engineering board, requirement intake, architect specifications, Role handoffs, or EM dispatch.
 ---
 
-# Using board-superpowers
+# Using agent-teams
 
 Operate a small Producer workflow over GitHub Issues in one GitHub Project.
 Treat the Project as durable truth and conversation state as disposable.
@@ -13,11 +13,11 @@ Treat the Project as durable truth and conversation state as disposable.
 Inspect a leading role token before the rest of the request:
 
 - `[role:analyst]` plus a new idea or requirement: use
-  `board-superpowers-producer:intaking-requirement`.
+  `agent-teams:intaking-requirement`.
 - `[role:architect]` plus a specification Card: use
-  `board-superpowers-producer:authoring-spec`.
+  `agent-teams:authoring-spec`.
 - `[role:em]` plus dispatch, queue, assignment, or "who works next": use
-  `board-superpowers-producer:dispatching-work`.
+  `agent-teams:dispatching-work`.
 - An explanation or ambiguous request: explain this router, then ask for the
   intended seat or Card.
 

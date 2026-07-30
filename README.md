@@ -1,4 +1,6 @@
-# board-superpowers Producer MVP
+# agent-teams Producer MVP
+
+This repository is the `agent-teams` Claude Code plugin.
 
 A deliberately small Claude Code plugin for running the Producer side of an
 AI engineering board.
@@ -46,7 +48,7 @@ python "C:\path\to\this-plugin\scripts\producer_board.py" init `
   --project-number 1
 ```
 
-This creates `.board-superpowers/producer.json` in the consuming repository.
+This creates `.agent-teams/config.json` in the consuming repository.
 The file contains board coordinates, not credentials.
 
 Validate access and field names:
@@ -66,7 +68,7 @@ claude --plugin-dir "C:\path\to\this-plugin"
 Inside Claude:
 
 ```text
-/board-superpowers-producer:using-board-superpowers
+/agent-teams:using-agent-teams
 [role:em] Show the dispatch queue.
 [role:analyst] Intake this requirement: improve the setup documentation.
 [role:architect] Author the specification for issue #12.

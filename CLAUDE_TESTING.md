@@ -1,4 +1,4 @@
-# Testing the Producer MVP in Claude Code
+# Testing the agent-teams Producer MVP in Claude Code
 
 Last updated: 2026-07-30
 
@@ -7,7 +7,7 @@ Last updated: 2026-07-30
 - Source directory:
   `C:\Users\User\Documents\intern\ITRI\agent-teams`
 - Branch: `mvp/producer-from-scratch`
-- Plugin: `board-superpowers-producer`
+- Plugin: `agent-teams`
 - Version: `0.1.0`
 - Skills: 4
 
@@ -86,21 +86,21 @@ Inside Claude:
 /help
 ```
 
-Search for `board-superpowers-producer`.
+Search for `agent-teams`.
 
 You should find exactly these four MVP skills:
 
 ```text
-/board-superpowers-producer:using-board-superpowers
-/board-superpowers-producer:intaking-requirement
-/board-superpowers-producer:authoring-spec
-/board-superpowers-producer:dispatching-work
+/agent-teams:using-agent-teams
+/agent-teams:intaking-requirement
+/agent-teams:authoring-spec
+/agent-teams:dispatching-work
 ```
 
 You can also type:
 
 ```text
-/board-superpowers-producer:
+/agent-teams:
 ```
 
 and use Claude Code's completion menu.
@@ -112,7 +112,7 @@ If these four commands appear, the plugin has loaded.
 Invoke the entry skill:
 
 ```text
-/board-superpowers-producer:using-board-superpowers
+/agent-teams:using-agent-teams
 ```
 
 Then ask:
@@ -191,7 +191,7 @@ claude `
   --plugin-dir "C:\Users\User\Documents\intern\ITRI\agent-teams" `
   --permission-mode dontAsk `
   --no-session-persistence `
-  -p "/board-superpowers-producer:using-board-superpowers Without using tools or changing anything, confirm this MVP loaded and name its three downstream Producer routines in one line."
+  -p "/agent-teams:using-agent-teams Without using tools or changing anything, confirm this MVP loaded and name its three downstream Producer routines in one line."
 ```
 
 Expected output contains:
@@ -223,7 +223,7 @@ Install the plugin:
 
 ```powershell
 claude plugin install `
-  board-superpowers-producer@board-superpowers-producer-local `
+  agent-teams@agent-teams-local `
   --scope user
 ```
 
@@ -237,7 +237,7 @@ claude plugin list --json
 Expected:
 
 ```text
-plugin: board-superpowers-producer@board-superpowers-producer-local
+plugin: agent-teams@agent-teams-local
 version: 0.1.0
 enabled: true
 errors: none
@@ -309,7 +309,7 @@ python "C:\Users\User\Documents\intern\ITRI\agent-teams\scripts\producer_board.p
 This creates:
 
 ```text
-.board-superpowers/producer.json
+.agent-teams/config.json
 ```
 
 The configuration contains board coordinates, not credentials.
@@ -476,7 +476,7 @@ claude --plugin-dir "C:\Users\User\Documents\intern\ITRI\agent-teams"
 ```
 
 or remove and reinstall only
-`board-superpowers-producer@board-superpowers-producer-local`.
+`agent-teams@agent-teams-local`.
 
 ## 16. Acceptance checklist
 

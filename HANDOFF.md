@@ -1,541 +1,217 @@
-# board-superpowers Producer MVP handoff
+# HANDOFF: agent-teams Producer MVP
 
-Last updated: 2026-07-30
+> A minimal Claude Code plugin that proves analyst intake, architect specification delivery, durable Role handoff, and EM dispatch over a GitHub Project.
 
-## Repository state
+**Stack**: Claude Code plugin / Python 3.12 standard library / GitHub CLI / GitHub Projects v2 / Git
 
-- Working directory:
-  `C:\Users\User\Documents\intern\ITRI\agent-teams`
-- Current branch: `mvp/producer-from-scratch`
-- MVP root commit: `d9b739a`
-- Plugin name: `board-superpowers-producer`
-- Plugin version: `0.1.0`
-- The branch is an orphan branch: it has no parent and inherited no files from
-  the earlier implementation.
-- Nothing from this MVP has been pushed or merged.
+**Last updated**: 2026-07-30 by session 2
 
-The previous full implementation and its documentation remain on `main` at
-commit `e2e1dec`. Switching between the two versions:
+---
 
-```powershell
-git switch main
-git switch mvp/producer-from-scratch
-```
+## Project Goal & Scope
 
-## Goal
+This orphan branch builds the smallest useful Producer version of agent-teams from an empty tree. Done means Claude can load four namespaced skills, route analyst/architect/EM prompts, use one deterministic CLI to read and mutate a configured GitHub Project, and pass focused automated and runtime-loading checks.
 
-Build the smallest useful Claude Code plugin that demonstrates the Producer
-side of board-superpowers without carrying the infrastructure and maintenance
-cost of the full implementation.
+The durable coordination surface is one GitHub Project. Cards are GitHub Issues with single-select `Status` and `Role` fields. Analyst intake creates a Backlog Card and hands it to architect; architect work produces a docs-only specification PR and hands the Card to RD; EM dispatch reads Ready Cards and renders kickoff prompts without spawning agents.
 
-The MVP answers four questions:
+This MVP intentionally excludes audit databases, migrations, lifecycle hooks, automatic field provisioning, Codex packaging, multiple board backends, autonomous agent spawning, WIP/claim enforcement, automatic decomposition, Consumer/RD execution, and QA verification. Additions must be justified by observed MVP failures rather than copied wholesale from the earlier full implementation.
 
-1. Can Claude route a session by Producer seat?
-2. Can an analyst create a durable requirement and hand it to an architect?
-3. Can an architect deliver a focused specification and hand the Card to RD?
-4. Can an EM read Ready work and render deterministic kickoff prompts?
+The earlier full implementation and its documentation remain on `main` at `e2e1dec`. This MVP lives on the unrelated orphan branch `mvp/producer-from-scratch`.
 
-## Deliberate scope
+---
 
-The MVP contains four Claude skills:
+## Architecture
 
-| Skill | Seat | Purpose |
+- **This repository is the plugin.** The repository root is the loadable `agent-teams` Claude Code plugin; consuming repositories only hold `.agent-teams/config.json`.
+- **Claude-only plugin surface.** `.claude-plugin/plugin.json` names `agent-teams` version `0.1.0`; the local marketplace uses `agent-teams-local`. There is no Codex manifest on this branch.
+- **Four-skill catalog.** `using-agent-teams` routes by leading `[role:<seat>]`; `intaking-requirement`, `authoring-spec`, and `dispatching-work` own the analyst, architect, and EM workflows.
+- **One deterministic adapter.** `scripts/producer_board.py` is the entire runtime integration. It uses only Python's standard library and invokes `gh`; there is no service, package install, virtual environment, or shell library.
+- **Repository-local coordinates.** A consuming repository stores non-secret Project coordinates in `.agent-teams/config.json`. Authentication is delegated to `gh`.
+- **GitHub Project as truth.** The Project must already contain `Status` and `Role` single-select fields. `doctor` validates them but never provisions them.
+- **Explicit handoff authority.** Source-to-target seat transitions are validated in the CLI. The current durable Role must match `--from-role`.
+- **Carrier-neutral dispatch.** Dispatch returns deterministic prompts containing `[role:<role>] [board-card:#<number>]`; it neither starts a session nor mutates the Project.
+- **Intentionally non-transactional external mutation.** Role changes before the Issue comment is posted. If the comment fails, the CLI reports failure and the Project remains the source of truth; no false rollback is attempted.
+
+---
+
+## Established Conventions
+
+- Work directly in `C:\Users\User\Documents\intern\ITRI\agent-teams`; the user explicitly rejected maintainer worktrees for this experiment.
+- Keep the MVP branch small. Do not reintroduce audit, setup-stage, hook, or dual-platform frameworks without a demonstrated failure.
+- Skill directories use lowercase verb-led names and contain only `SKILL.md`.
+- Skill frontmatter contains `name` and a trigger-rich `description`.
+- All deterministic GitHub behavior belongs in `scripts/producer_board.py`; skills describe orchestration and safety boundaries.
+- Mutating CLI commands return success JSON only after the durable operation completes; expected failures return structured error JSON on stderr.
+- Unit tests use an injected fake `gh` adapter. Do not require network or a real Project for the focused suite.
+- Intake must leave Status at `Backlog` and final Role at `architect`; it must not silently make the Card Ready.
+- Dispatch is read-only and sorts by configured Role order, then Issue number.
+- Use `--plugin-dir` while developing so Claude loads the current checkout instead of a cached marketplace copy.
+
+---
+
+## Environment Setup
+
+Required development environment:
+
+- Windows PowerShell and Git
+- Python 3.9+; observed version is Python 3.12.3
+- Claude Code 2.1+; observed version is 2.1.220
+
+No Python dependency installation is required. The focused test command is `python -m unittest discover -s tests -v`; manifest validation is `claude plugin validate .`.
+
+For safe Claude testing in another repository, start Claude with `--plugin-dir C:\Users\User\Documents\intern\ITRI\agent-teams`. Verify the source checkout is on `mvp/producer-from-scratch` first.
+
+Live board tests additionally require GitHub CLI, repository authentication, Project scope, a disposable repository, and an existing Project containing Status options Backlog, Ready, In Progress, In Review, Done, and Blocked plus Role options analyst, architect, rd, qa, em, and human.
+
+The current machine does not have `gh` installed. After installation, use `gh auth login` and `gh auth refresh -s project`. Configure a consuming repository with `producer_board.py init`, then run `producer_board.py doctor` before any mutation.
+
+No environment variables are required. Credentials must remain in the GitHub CLI credential store, not repository files.
+
+---
+
+## External References
+
+- [Claude Code plugin documentation](https://code.claude.com/docs/en/plugins) ? manifests, `--plugin-dir`, namespaces, and local development.
+- [Claude Code marketplace documentation](https://code.claude.com/docs/en/plugin-marketplaces) ? local installation and cache behavior.
+- [GitHub CLI Project manual](https://cli.github.com/manual/gh_project) ? commands used by the board adapter.
+- `README.md` ? concise MVP setup and CLI reference.
+- `CLAUDE_TESTING.md` ? complete safe, persistent-install, and optional live test procedure.
+
+---
+
+## Progress
+
+The from-scratch MVP implementation is complete and locally validated. Safe plugin loading has been proven. Live GitHub Project behavior remains untested because `gh` is not installed.
+
+| Milestone | Status | Notes |
 |---|---|---|
-| `using-board-superpowers` | router | Parse role tokens and route intent |
-| `intaking-requirement` | analyst | Create a Backlog Issue and hand it to architect |
-| `authoring-spec` | architect | Produce a docs-only specification PR and hand the Card to RD |
-| `dispatching-work` | EM | Read Ready Cards and render kickoff prompts by Role |
-
-The durable coordination surface is one GitHub Project. Cards are GitHub
-Issues with two single-select fields:
-
-```text
-Status: Backlog, Ready, In Progress, In Review, Done, Blocked
-Role: analyst, architect, rd, qa, em, human
-```
-
-The plugin does not hold an in-memory team. A rendered kickoff prompt may be
-consumed by a human-started Claude session, another carrier, or future
-automation.
-
-## Intentionally excluded
-
-The following were deliberately omitted from the MVP:
-
-- audit database and JSONL outbox;
-- audit schema versions and migrations;
-- setup-stage registry and lifecycle diff;
-- SessionStart hooks;
-- automatic Project-field creation;
-- Codex plugin manifest;
-- multi-backend board adapter;
-- WIP policy engine;
-- handoff-count persistence;
-- automatic agent or terminal spawning;
-- Consumer/RD implementation workflow;
-- QA delivery workflow;
-- large architecture dossier;
-- per-skill metadata and evaluation framework;
-- sibling-plugin orchestration;
-- shell runtime and virtual environment management.
-
-These are not accidental omissions. They are candidates for later additions
-only when an observed test or user workflow justifies them.
-
-## File map
-
-```text
-.claude-plugin/
-├── plugin.json
-└── marketplace.json
-
-skills/
-├── using-board-superpowers/SKILL.md
-├── intaking-requirement/SKILL.md
-├── authoring-spec/SKILL.md
-└── dispatching-work/SKILL.md
-
-scripts/
-└── producer_board.py
-
-tests/
-└── test_producer_board.py
-
-README.md
-HANDOFF.md
-```
-
-## Runtime design
-
-### Configuration
-
-A consuming repository stores board coordinates in:
-
-```text
-.board-superpowers/producer.json
-```
-
-Example:
-
-```json
-{
-  "repo": "OWNER/REPO",
-  "project_owner": "OWNER",
-  "project_number": 1,
-  "role_field": "Role",
-  "status_field": "Status",
-  "backlog_status": "Backlog",
-  "ready_status": "Ready",
-  "dispatch_roles": [
-    "architect",
-    "rd",
-    "qa"
-  ]
-}
-```
+| Empty orphan branch | Done | Root commit `d9b739a`; no inherited implementation files |
+| Claude plugin scaffold | Done | Warning-free manifests at v0.1.0 |
+| Four Producer skills | Done | Router, intake, architect spec, and EM dispatch |
+| Deterministic board CLI | Done | Config, doctor, list, dispatch, intake, and handoff |
+| Focused unit coverage | Done | 9 tests passed with fake `gh` |
+| Claude runtime loading | Done | Namespace and three downstream routines confirmed |
+| Testing documentation | Done | `README.md`, `CLAUDE_TESTING.md`, and this handoff |
+| Test from unrelated repository | Pending | Documented but not performed in this session |
+| Live disposable Project test | Pending | Blocked by missing `gh` and disposable Project |
+| Rename and remote synchronization | In Progress | Rename is validated but uncommitted; local HEAD is also one commit ahead of the remote MVP branch |
 
-This file contains board coordinates and workflow names, not credentials.
-GitHub authentication remains owned by `gh`.
+---
 
-Create the configuration from the consuming repository:
+## Key Files
 
-```powershell
-python "C:\Users\User\Documents\intern\ITRI\agent-teams\scripts\producer_board.py" init `
-  --repo OWNER/REPO `
-  --project-owner OWNER `
-  --project-number 1
-```
+| File | Status | Description |
+|---|---|---|
+| `.claude-plugin/plugin.json` | Stable | Claude plugin identity and v0.1.0 metadata |
+| `.claude-plugin/marketplace.json` | Stable | Warning-free local marketplace definition |
+| `scripts/producer_board.py` | Active | Entire deterministic GitHub Project adapter |
+| `skills/using-agent-teams/SKILL.md` | Stable | Entry router and safety preconditions |
+| `skills/intaking-requirement/SKILL.md` | Stable | Analyst intake and architect handoff |
+| `skills/authoring-spec/SKILL.md` | Stable | Docs-only architect flow and RD handoff |
+| `skills/dispatching-work/SKILL.md` | Stable | Read-only Ready queue and prompt rendering |
+| `tests/test_producer_board.py` | Active | Nine standard-library tests using fake `gh` |
+| `README.md` | Stable | Concise user setup and CLI reference |
+| `CLAUDE_TESTING.md` | Stable | Detailed testing guide added at `fa23e0b` |
+| `HANDOFF.md` | Active | Living cross-session state; modified by this session |
 
-### Board CLI
+---
 
-The entire deterministic runtime is:
+## Test Status
 
-```text
-scripts/producer_board.py
-```
+Observed passing checks:
 
-It uses only the Python standard library and the `gh` executable.
+- `python -m py_compile scripts\producer_board.py tests\test_producer_board.py` passed.
+- `python -m unittest discover -s tests -v` passed 9 of 9 tests initially in 0.195 seconds and again after the rename in 0.063 seconds. Coverage includes configuration validation, Project item normalization, repository filtering, dispatch filtering/order, handoff authority and mutation calls, intake invariants, and `doctor` field checks.
+- `claude plugin validate .` passed without warnings.
+- `git diff --cached --check` passed before the implementation and documentation commits.
+- A non-mutating Claude invocation using `/agent-teams:using-agent-teams` loaded successfully and named `intaking-requirement`, `authoring-spec`, and `dispatching-work`.
 
-Commands:
+Not tested:
 
-```text
-producer_board.py init
-producer_board.py doctor
-producer_board.py list [--role ROLE] [--status STATUS]
-producer_board.py dispatch [--role ROLE] [--format text|json]
-producer_board.py intake --title TITLE (--body BODY | --body-file PATH)
-producer_board.py handoff ISSUE --from-role ROLE --to-role ROLE --note TEXT
-```
+- no live `gh project` read or mutation;
+- no disposable-repository intake;
+- no architect-created docs PR;
+- no live Role handoff/comment;
+- no persistent marketplace installation of this MVP;
+- no end-to-end test from an unrelated consuming repository.
 
-Mutating commands print JSON only after the requested durable operation has
-completed.
+No broad suite exists or is needed at this stage.
 
-### Handoff authority
+---
 
-The MVP enforces this source-to-target map:
+## Known Issues & Deferred Debt
 
-```text
-analyst   → architect, em, human
-architect → rd, qa, em, human
-rd        → architect, qa, em
-qa        → architect, rd, em, human
-em        → analyst, architect, rd, qa, human
-human     → analyst, architect, rd, qa, em
-```
+- **Live `gh` JSON shapes are assumed** (`scripts/producer_board.py`) ? fixtures cover the expected shape, but a live Project must confirm item, field, option, and item-add responses.
+- **Handoff is partially non-atomic** (`Board.handoff`) ? Role may change even if the subsequent Issue comment fails. This is surfaced instead of hidden behind a fake rollback.
+- **No automatic field provisioning** (`Board.doctor`) ? consuming Projects must already have the required single-select fields and options.
+- **No claim or WIP mechanism** (`Board.dispatch`) ? two humans can launch the same rendered Card because dispatch is deliberately read-only.
+- **No automatic decomposition** (`skills/authoring-spec/SKILL.md`) ? the existing Card is handed to RD; large specifications are not split into implementation Cards.
+- **No RD or QA execution workflows** (`skills/`) ? RD and QA are Role values and dispatch targets only.
+- **No audit trail beyond GitHub artifacts** ? Project field changes and Issue comments are the only durable trace.
 
-The current Role must match `--from-role`. Handoff changes the Project Role
-field and then posts a structured Issue comment.
+---
 
-### Intake behavior
+## Open Decisions
 
-Intake:
+- **First post-MVP capability** ? options: claim/WIP protection, field setup, decomposition, RD/QA skills, or append-only audit; need: evidence from the first disposable Project run showing the highest-cost failure.
+- **Handoff partial-failure policy** ? options: keep surfaced partial failure or add compensation; need: observe whether comment failure is common and whether automatic reversal would cause more confusion.
+- **Persistent installation workflow** ? options: continue development-only `--plugin-dir` usage or install the local marketplace; need: user preference after safe unrelated-repository testing.
 
-1. creates a GitHub Issue;
-2. adds it to the configured Project;
-3. sets Status to `Backlog`;
-4. sets Role to `analyst`;
-5. hands Role to `architect`;
-6. posts an analyst-to-architect handoff comment.
+---
 
-It intentionally does not mark the Card Ready.
+## Hard-won Discoveries
 
-### Dispatch behavior
++- **The clean MVP needed an orphan branch, not another incremental refactor.** Starting from an empty tree prevented the 16-skill catalog, audit migration, setup-stage framework, hooks, and dual-platform contracts from returning by inertia. `main` remains available for comparison.
++- **`--plugin-dir` is the reliable development proof.** Session-only plugins may not appear in `/plugin`; `/help`, namespaced commands, and a direct non-interactive invocation prove discovery and override stale installed copies.
++- **The earlier persistent plugin problem was a stale path/cache issue, not a manifest failure.** Direct source loading avoided the old v0.7.0 cache miss.
++- **Windows and POSIX path assumptions must not be mixed casually.** The full implementation exposed MSYS/native-Python SQLite path failures. The MVP avoids virtual environments and SQLite entirely.
++- **The generic skill initializer is unnecessary for Claude-only plugin skills.** Minimal `SKILL.md` files with correct frontmatter validated and loaded without Codex UI metadata.
++- **Narrow validation was sufficient and faster.** Nine fake-`gh` tests, manifest validation, whitespace checking, and one real Claude load covered the current risk surface without legacy suites.
 
-Dispatch:
+---
 
-1. reads Project items;
-2. keeps only Issues from the configured repository;
-3. keeps only Cards whose Status equals `ready_status`;
-4. keeps only configured dispatch roles;
-5. sorts by configured role order and Issue number;
-6. renders prompts containing:
+## Blockers / Waiting On
 
-```text
-[role:<role>] [board-card:#<number>]
-```
+- **Live GitHub verification** ? waiting on: GitHub CLI and a disposable Project; action needed: install `gh`, authenticate with Project scope, create or select a disposable Project with required Status/Role options, then follow `CLAUDE_TESTING.md`.
+- **Remote synchronization** ? waiting on: user decision to push; action needed: push local commit `fa23e0b` and the eventual handoff commit if the remote MVP branch should be current.
 
-Dispatch is read-only. It does not start agents or mutate Role/Status.
+---
 
-## Validation performed
+## Current State
 
-Only focused, necessary checks were run.
+The checkout is on `mvp/producer-from-scratch`. HEAD remains `fa23e0b`; `origin/mvp/producer-from-scratch` is `8c8546f`, so the local branch is one committed change ahead before considering the current working tree. `main` and `origin/main` both point to `e2e1dec`.
 
-### Python syntax
+This repository root is the loadable Claude Code plugin. Its public identity is now `agent-teams`, its marketplace is `agent-teams-local`, its entry command is `/agent-teams:using-agent-teams`, and consuming repositories use `.agent-teams/config.json`.
 
-```powershell
-python -m py_compile scripts\producer_board.py tests\test_producer_board.py
-```
+The rename and handoff update are uncommitted. Modified paths are the two Claude manifests, `.gitignore`, `README.md`, `CLAUDE_TESTING.md`, `HANDOFF.md`, and `scripts/producer_board.py`; the entry skill is renamed from `skills/using-board-superpowers/` to `skills/using-agent-teams/`. No process is running, no live board has been touched, and `gh` is not installed.
 
-Result: passed.
+Latest observed verification is green: 9 unit tests passed, `claude plugin validate .` passed without warnings, and Claude loaded the new `agent-teams` namespace. The handoff skill does not authorize committing or pushing, so the next session must inspect and review this dirty working tree first.
 
-### Focused unit tests
+---
 
-```powershell
-python -m unittest discover -s tests -v
-```
+## Next Steps
 
-Result:
+1. Review the complete rename diff and confirm no public `board-superpowers-producer`, `using-board-superpowers`, or `.board-superpowers/producer.json` identifiers remain outside historical Session Log text.
+2. From an unrelated repository, run Claude with `--plugin-dir C:\Users\User\Documents\intern\ITRI\agent-teams` and execute `/agent-teams:using-agent-teams` plus the three no-tool routing prompts in `CLAUDE_TESTING.md`.
+3. Commit the plugin rename, testing-guide changes, entry-skill move, and this handoff together on `mvp/producer-from-scratch` if the review passes.
+4. Install GitHub CLI, authenticate with Project scope, and run `producer_board.py doctor` against a disposable Project with the documented Status and Role options.
+5. Run one read-only dispatch, one disposable analyst intake, and one architect-to-RD handoff; extend the MVP only from observed failure evidence.
 
-```text
-9 tests passed
-```
+---
 
-Covered behavior:
+## Session Log
 
-- configuration round-trip;
-- rejection of unknown dispatch roles;
-- Project-item normalization;
-- repository filtering;
-- Ready/Role dispatch filtering;
-- deterministic dispatch ordering;
-- unauthorized handoff rejection;
-- Role mutation and handoff comment;
-- intake remaining Backlog and ending with architect ownership;
-- required Project-field validation.
+<!-- newest entry at top -->
 
-The tests use a fake `gh` adapter. They do not access GitHub or mutate a live
-Project.
+### 2026-07-30 ? Session 2
 
-### Claude plugin validation
+Renamed the repository's Claude plugin identity from `board-superpowers-producer` to `agent-teams`. Renamed the local marketplace to `agent-teams-local`, moved the entry skill to `using-agent-teams`, changed the consuming config path to `.agent-teams/config.json`, and updated README/testing commands. Focused verification passed after the rename: 9 unit tests, warning-free manifest validation, and a real non-mutating `/agent-teams:using-agent-teams` load. The rename and this handoff update remain uncommitted; no live GitHub operation was performed.
 
-```powershell
-claude plugin validate .
-```
+---
 
-Result:
+### 2026-07-30 ? Session 1
 
-```text
-Validation passed
-```
+Built the Producer MVP from an empty orphan branch and committed the core at `d9b739a`. Added and committed a detailed handoff at `8c8546f` and Claude testing guide at `fa23e0b`. Focused validation passed: 9 unit tests, Python syntax, warning-free Claude plugin validation, Git whitespace checks, and a real non-mutating Claude namespace load. No live GitHub mutation was attempted; `gh` is still missing, so disposable Project verification is the next substantive step.
 
-There are no manifest warnings.
-
-### Git whitespace validation
-
-```powershell
-git diff --cached --check
-```
-
-Result: passed before commit.
-
-### Actual Claude runtime load
-
-The following non-mutating runtime check was executed:
-
-```powershell
-claude `
-  --plugin-dir "." `
-  --permission-mode dontAsk `
-  --no-session-persistence `
-  -p "/board-superpowers-producer:using-board-superpowers Without using tools or changing anything, confirm this MVP loaded and name its three downstream Producer routines in one line."
-```
-
-Claude returned:
-
-```text
-Loaded — the board-superpowers Producer router is active; its three downstream
-routines are intaking-requirement, authoring-spec, and dispatching-work.
-```
-
-## Test in another repository
-
-### Safe load and routing test
-
-From another repository:
-
-```powershell
-cd C:\path\to\another-repository
-
-claude --plugin-dir "C:\Users\User\Documents\intern\ITRI\agent-teams"
-```
-
-Inside Claude:
-
-```text
-/help
-/board-superpowers-producer:using-board-superpowers
-```
-
-Verify these commands appear:
-
-```text
-/board-superpowers-producer:using-board-superpowers
-/board-superpowers-producer:intaking-requirement
-/board-superpowers-producer:authoring-spec
-/board-superpowers-producer:dispatching-work
-```
-
-Non-mutating prompts:
-
-```text
-[role:analyst] Explain how you would intake a requirement. Do not use tools.
-```
-
-```text
-[role:architect] Explain how you would author a specification. Do not use tools.
-```
-
-```text
-[role:em] Explain the dispatch queue. Do not use tools.
-```
-
-Expected routing:
-
-```text
-analyst   → intaking-requirement
-architect → authoring-spec
-em        → dispatching-work
-```
-
-### Persistent local installation
-
-Add this branch's directory as a local marketplace:
-
-```powershell
-claude plugin marketplace add `
-  "C:\Users\User\Documents\intern\ITRI\agent-teams" `
-  --scope user
-```
-
-Install:
-
-```powershell
-claude plugin install `
-  board-superpowers-producer@board-superpowers-producer-local `
-  --scope user
-```
-
-Verify:
-
-```powershell
-claude plugin list --json
-```
-
-Expected plugin:
-
-```text
-board-superpowers-producer@board-superpowers-producer-local
-version 0.1.0
-enabled
-no errors
-```
-
-During active development, prefer `--plugin-dir`; it reads the current branch
-directly and avoids a stale cached installation.
-
-## Live GitHub test
-
-No live GitHub mutation was performed during implementation.
-
-Prerequisites:
-
-```powershell
-winget install --id GitHub.cli
-gh auth login
-gh auth refresh -s project
-gh auth status
-```
-
-Use a disposable repository and Project. Ensure the required Status and Role
-fields/options exist before running `doctor`.
-
-Configure:
-
-```powershell
-cd C:\path\to\disposable-repository
-
-python "C:\Users\User\Documents\intern\ITRI\agent-teams\scripts\producer_board.py" init `
-  --repo OWNER/REPO `
-  --project-owner OWNER `
-  --project-number 1
-```
-
-Validate:
-
-```powershell
-python "C:\Users\User\Documents\intern\ITRI\agent-teams\scripts\producer_board.py" doctor
-```
-
-Read-only dispatch:
-
-```powershell
-python "C:\Users\User\Documents\intern\ITRI\agent-teams\scripts\producer_board.py" dispatch `
-  --format json
-```
-
-Only after reviewing the disposable Project, test intake:
-
-```text
-[role:analyst] Intake this disposable requirement:
-Add a short development-setup document.
-```
-
-Verify:
-
-- a new Issue exists;
-- the Issue is on the configured Project;
-- Status is Backlog;
-- final Role is architect;
-- the handoff comment exists.
-
-Then test EM dispatch after manually making a disposable Card Ready:
-
-```text
-[role:em] Show the dispatch queue.
-```
-
-Verify that the kickoff prompt contains the correct Role and Card number.
-
-## Known limitations
-
-### Project shape assumptions
-
-The CLI expects the JSON shapes returned by current `gh project` commands. Unit
-tests cover the common shape but a live Project test is still required.
-
-### No automatic field provisioning
-
-`doctor` validates fields and options; it does not create them. This avoids
-turning setup into another framework in the MVP.
-
-### Partial handoff failure
-
-Handoff changes Role before posting the comment. If the comment fails after the
-field mutation, the command reports failure but does not roll the Role back.
-The Project remains the source of truth and should be inspected.
-
-### No WIP or claim mechanism
-
-Dispatch filters Ready Cards but does not reserve them, enforce concurrency, or
-prevent two humans from launching the same prompt. Add a claim primitive only
-if MVP usage demonstrates that this is a real failure mode.
-
-### No automatic decomposition
-
-`authoring-spec` hands the existing Card to RD. It does not create multiple
-implementation Cards. This keeps the first version understandable but is not
-sufficient for large specifications.
-
-### No Consumer or QA workflow
-
-RD and QA appear as durable Role values and dispatch targets, but this plugin
-does not define their implementation or verification routines.
-
-## Recommended next steps
-
-Do not restore the full implementation wholesale. Extend only in response to
-observed MVP failures.
-
-Recommended order:
-
-1. run safe routing tests in an unrelated repository;
-2. install `gh` and run `doctor` against a disposable Project;
-3. test one intake;
-4. test one architect-to-RD handoff;
-5. test one EM dispatch;
-6. record concrete failures;
-7. add only the smallest mechanism that closes the highest-cost failure.
-
-Likely first candidates, if justified:
-
-- a local `claim` action to prevent duplicate dispatch;
-- a small setup command for Role/Status fields;
-- decomposition into multiple implementation Cards;
-- RD and QA skills;
-- an append-only audit file before considering an RDBMS.
-
-## Useful commands
-
-Current branch and status:
-
-```powershell
-git branch --show-current
-git status
-git log -1 --oneline
-```
-
-Focused validation:
-
-```powershell
-python -m unittest discover -s tests -v
-claude plugin validate .
-```
-
-Inspect the MVP root commit:
-
-```powershell
-git show --stat d9b739a
-git show d9b739a
-```
-
-Return to the previous full version:
-
-```powershell
-git switch main
-```
-
-Return to the MVP:
-
-```powershell
-git switch mvp/producer-from-scratch
-```
+---
+<!-- previous sessions below this line ? do not edit -->

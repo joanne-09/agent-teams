@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal GitHub Project adapter for the board-superpowers Producer MVP."""
+"""Minimal GitHub Project adapter for the agent-teams Producer MVP."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ HANDOFF_AUTHORITY = {
     "em": {"analyst", "architect", "rd", "qa", "human"},
     "human": {"analyst", "architect", "rd", "qa", "em"},
 }
-DEFAULT_CONFIG = Path(".board-superpowers/producer.json")
+DEFAULT_CONFIG = Path(".agent-teams/config.json")
 
 
 class ProducerError(RuntimeError):
@@ -492,7 +492,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--config",
         type=Path,
         default=DEFAULT_CONFIG,
-        help="configuration path (default: .board-superpowers/producer.json)",
+        help="configuration path (default: .agent-teams/config.json)",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 

@@ -1,9 +1,9 @@
 {
-  "name": "board-superpowers-producer",
+  "name": "agent-teams",
   "version": "0.1.0",
   "description": "Minimal Producer workflow for Claude Code over GitHub Projects: intake, architect specs, role handoffs, and EM dispatch.",
   "author": {
-    "name": "board-superpowers contributors"
+    "name": "agent-teams contributors"
   },
   "license": "MIT"
 }

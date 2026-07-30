@@ -1,12 +1,12 @@
 {
-  "name": "board-superpowers-producer-local",
-  "description": "Local development marketplace for the board-superpowers Producer MVP.",
+  "name": "agent-teams-local",
+  "description": "Local development marketplace for the agent-teams Producer MVP.",
   "owner": {
-    "name": "board-superpowers contributors"
+    "name": "agent-teams contributors"
   },
   "plugins": [
     {
-      "name": "board-superpowers-producer",
+      "name": "agent-teams",
       "source": "./",
       "description": "Minimal Producer workflow for Claude Code over GitHub Projects.",
       "version": "0.1.0"
