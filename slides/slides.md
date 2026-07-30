@@ -249,7 +249,7 @@ class: dense
 
 <img src="./images/board.png" style="max-height: 380px; border: 1px solid var(--line); border-radius: 4px;" />
 
-- Live board of `agent-teams-test` — cards flowing Backlog → Done
+- Card #1 after the live run: spec-derived acceptance criteria, Status/Role fields, linked implementation PR
 
 <!--
 Walk the audience across the columns; point at a claimed card and its branch.
