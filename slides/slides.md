@@ -230,10 +230,13 @@ class: dense
 | 5 | em | `[role:em] dispatch work` | renders `[role:rd] [board-card:#1] …` kickoff |
 | 6 | rd | paste the kickoff | <span class="muted">no rd skill — edge of the MVP</span> |
 
+<<<<<<< HEAD
 - Every mutation announced before it ran; every reported result backed by CLI JSON
 - Handoff = Role flip + comment; Status untouched — <span class="accent">ownership ⊥ lifecycle</span>
 - <span class="muted">Since this run:</span> step 4's manual board edit is now `promote`, which gates on a <span class="accent">merged spec</span> and hands to rd in one governed operation
 
+=======
+>>>>>>> origin/mvp/producer-from-scratch
 <!--
 This trace is the record of an actual run against the earlier MVP; it is left unedited on purpose.
 Repeatable live GitHub contract proof still remains pending.
@@ -257,8 +260,9 @@ class: dense
   <div><h3>Done</h3><span>#31 · human</span></div>
 </div>
 
-- Illustrative target board — live Project proof remains an implementation milestone
-- Demo target: `agent-teams-test`; plugin source and documentation: `agent-teams`
+<img src="./images/board.png" style="max-height: 380px; border: 1px solid var(--line); border-radius: 4px;" />
+
+- Card #1 after the live run: spec-derived acceptance criteria, Status/Role fields, linked implementation PR
 
 <!--
 This replaces the missing screenshot placeholder with a truthful architecture view.
