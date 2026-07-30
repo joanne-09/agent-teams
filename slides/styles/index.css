@@ -1,0 +1,125 @@
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Noto+Serif+TC:wght@400;600&display=swap');
+
+/* ============================================================
+   Editorial Light theme
+   Warm off-white, serif headings, ink-blue accent.
+   Refined minimalism: no tags, no framing, no glow.
+   ============================================================ */
+
+:root {
+  --bg:      #f7f4ee;
+  --fg:      #1c1b18;
+  --fg-dim:  #4a4843;
+  --muted:   #8a857a;
+  --line:    rgba(28, 27, 24, 0.12);
+  --accent:  #2b4c7e;
+
+  --serif: 'Newsreader', 'Noto Serif TC', Georgia, serif;
+  --sans:  'Noto Sans TC', system-ui, sans-serif;
+  --mono:  'IBM Plex Mono', ui-monospace, monospace;
+}
+
+/* base canvas */
+html, body, #app, #slidev-app {
+  background: var(--bg) !important;
+  color: var(--fg);
+  font-family: var(--sans);
+}
+.slidev-layout {
+  background: transparent !important;
+  color: var(--fg) !important;
+  font-family: var(--sans);
+  padding: 2.4rem 3.4rem 3rem !important;
+}
+
+/* typography — serif headings, sans body */
+h1, h2, h3, h4 {
+  font-family: var(--serif);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--fg);
+  line-height: 1.2;
+}
+.slidev-layout h1 { font-size: 2.4rem; font-weight: 600; }
+.slidev-layout h2 { font-size: 1.6rem; }
+.slidev-layout h3 { font-size: 1.15rem; }
+
+p, li { color: var(--fg-dim); line-height: 1.7; }
+strong, b { color: var(--fg); font-weight: 600; }
+a { color: var(--accent); text-decoration: none; }
+
+/* code blocks — clean, flat, light */
+.slidev-layout pre,
+.slidev-layout .slidev-code {
+  font-family: var(--mono) !important;
+  background: rgba(28, 27, 24, 0.04) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 4px;
+  box-shadow: none;
+}
+:where(.slidev-layout) :not(pre) > code {
+  font-family: var(--mono);
+  color: var(--accent);
+  font-size: 0.9em;
+  background: none;
+}
+
+/* utilities — minimal */
+.muted  { color: var(--muted); font-family: var(--sans); font-size: 0.85rem; }
+.rule   { height: 1px; background: var(--line); border: 0; margin: 1.2rem 0; }
+.accent { color: var(--accent); }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4rem; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+
+/* chapter / section divider slides (layout: center) */
+.chapter       { text-align: center; }
+.chapter-num   { font-family: var(--mono); font-size: 1rem; color: var(--muted); letter-spacing: 0.08em; }
+.chapter-title { font-family: var(--serif); font-size: 3rem; font-weight: 600; color: var(--fg); margin: 0.9rem 0; }
+.chapter-sub   { font-family: var(--sans); font-size: 1rem; color: var(--muted); }
+
+.card {
+  background: rgba(28, 27, 24, 0.025);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1.1rem 1.3rem;
+}
+
+.kbd {
+  font-family: var(--mono);
+  font-size: 0.82em;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  padding: 0.05em 0.4em;
+  color: var(--fg);
+  background: rgba(28, 27, 24, 0.03);
+}
+
+/* dense content slides — full-width, compact type.
+   Apply via slide frontmatter `class: dense` on ppt slides
+   whose content would otherwise wrap or overflow. */
+.dense ul, .dense ol {
+  max-width: 100% !important;
+  font-size: 1.02rem !important;
+  line-height: 1.55 !important;
+}
+.dense li { margin-bottom: 0.3rem !important; }
+.dense p { max-width: 100% !important; }
+.dense h1 { margin-bottom: 1.1rem !important; }
+.dense pre, .dense .slidev-code {
+  font-size: 0.85rem !important;
+  line-height: 1.4 !important;
+}
+.dense table { font-size: 0.98rem; width: 100%; margin-bottom: 1.1rem; }
+.dense th, .dense td { padding: 0.32rem 0.7rem !important; }
+.dense .card { padding: 0.75rem 1rem; }
+.dense .card h3 { margin: 0 0 0.25rem; font-size: 1.05rem; }
+.dense .card p {
+  margin: 0;
+  font-size: 0.95rem !important;
+  line-height: 1.5 !important;
+}
+.dense .grid-2 { gap: 0.9rem; }
+
+.slidev-v-click-target { transition: opacity 0.3s ease; }
+:root { --slidev-theme-primary: var(--accent); }
