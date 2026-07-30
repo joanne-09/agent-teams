@@ -179,12 +179,12 @@ a { color: var(--accent); text-decoration: none; }
 }
 .human-band > div:first-child { display: flex; align-items: baseline; gap: 0.65rem; }
 .human-band strong, .plugin-bridge strong { font-family: var(--serif); font-size: 1rem; }
-.human-band span, .plugin-bridge span, .carrier-note { color: var(--muted); font-size: 0.72rem; }
+.human-band span, .plugin-bridge span, .carrier-note { color: var(--muted); font-size: 0.8rem; }
 .carrier-note { font-family: var(--mono); text-align: right; }
 .map-arrow, .layer-arrow {
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 0.64rem;
+  font-size: 0.72rem;
   text-align: center;
 }
 .scope-architecture {
@@ -195,7 +195,7 @@ a { color: var(--accent); text-decoration: none; }
 }
 .scope-node {
   display: flex;
-  min-height: 4.75rem;
+  min-height: 6.2rem;
   flex-direction: column;
   justify-content: center;
   gap: 0.2rem;
@@ -203,9 +203,9 @@ a { color: var(--accent); text-decoration: none; }
   border-top: 2px solid var(--accent);
   background: rgba(43, 76, 126, 0.045);
 }
-.scope-node strong { font-family: var(--serif); font-size: 0.95rem; }
-.scope-node > span { color: var(--fg-dim); font-size: 0.67rem; line-height: 1.35; }
-.scope-seats { color: var(--accent); font-family: var(--mono); font-size: 0.61rem; }
+.scope-node strong { font-family: var(--serif); font-size: 1.05rem; }
+.scope-node > span { color: var(--fg-dim); font-size: 0.8rem; line-height: 1.4; }
+.scope-seats { color: var(--accent); font-family: var(--mono); font-size: 0.74rem; }
 .scope-flow {
   display: flex;
   flex-direction: column;
@@ -214,23 +214,23 @@ a { color: var(--accent); text-decoration: none; }
   gap: 0.35rem;
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 0.56rem;
+  font-size: 0.72rem;
   text-align: center;
 }
-.scope-flow b { color: var(--accent); font-size: 0.66rem; letter-spacing: 0.04em; }
+.scope-flow b { color: var(--accent); font-size: 0.8rem; letter-spacing: 0.04em; }
 .plugin-bridge { justify-content: center; gap: 0.65rem; background: rgba(43, 76, 126, 0.07); }
 .artifact-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; }
 .artifact-row > div {
   display: flex;
-  min-height: 2.65rem;
+  min-height: 3.2rem;
   flex-direction: column;
   justify-content: center;
   padding: 0.4rem;
   border-bottom: 2px solid var(--fg);
   text-align: center;
 }
-.artifact-row strong { font-family: var(--serif); font-size: 0.82rem; }
-.artifact-row span { color: var(--muted); font-size: 0.64rem; }
+.artifact-row strong { font-family: var(--serif); font-size: 0.92rem; }
+.artifact-row span { color: var(--muted); font-size: 0.76rem; }
 
 /* Component layers. */
 .layer-stack { display: flex; flex-direction: column; gap: 0.3rem; }
@@ -252,7 +252,7 @@ a { color: var(--accent); text-decoration: none; }
   border-left: 1px solid var(--line);
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 0.65rem;
+  font-size: 0.73rem;
   line-height: 1.55;
 }
 
@@ -271,7 +271,7 @@ a { color: var(--accent); text-decoration: none; }
   letter-spacing: 0.08em;
 }
 .axis-block h3 { margin: 0.25rem 0 0.75rem; font-size: 1.25rem !important; }
-.axis-block p { margin: 0.75rem 0 0 !important; color: var(--muted); font-size: 0.72rem !important; line-height: 1.45 !important; }
+.axis-block p { margin: 0.75rem 0 0 !important; color: var(--muted); font-size: 0.82rem !important; line-height: 1.5 !important; }
 .token-line { display: flex; align-items: center; gap: 0.32rem; }
 .token-line span, .role-tokens span {
   padding: 0.28rem 0.38rem;
@@ -279,9 +279,9 @@ a { color: var(--accent); text-decoration: none; }
   border-radius: 3px;
   background: rgba(255, 255, 255, 0.35);
   font-family: var(--mono);
-  font-size: 0.61rem;
+  font-size: 0.72rem;
 }
-.token-line b { color: var(--muted); font-size: 0.66rem; }
+.token-line b { color: var(--muted); font-size: 0.78rem; }
 .role-tokens { display: flex; flex-wrap: wrap; gap: 0.38rem; }
 .pair-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.55rem; margin-top: 0.8rem; }
 .pair-example {
@@ -292,8 +292,8 @@ a { color: var(--accent); text-decoration: none; }
   padding: 0.6rem;
   border-bottom: 1px solid var(--line);
 }
-.pair-example code { font-size: 0.7rem !important; }
-.pair-example span { color: var(--muted); font-size: 0.65rem; line-height: 1.35; }
+.pair-example code { font-size: 0.8rem !important; }
+.pair-example span { color: var(--muted); font-size: 0.76rem; line-height: 1.4; }
 
 /* Golden path. */
 .journey {
@@ -302,20 +302,22 @@ a { color: var(--accent); text-decoration: none; }
   align-items: stretch;
   margin-top: 0.2rem;
 }
+/* Grid rather than centred flex: the three rows line up across every step
+   even when one label wraps to two lines. Centring each card's content
+   independently made the seat names sit at different heights. */
 .journey-step {
-  display: flex;
-  min-height: 7.8rem;
-  flex-direction: column;
-  justify-content: center;
-  gap: 0.35rem;
-  padding: 0.55rem 0.4rem;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  min-height: 10.5rem;
+  gap: 0.4rem;
+  padding: 1.5rem 0.4rem 0.55rem;
   border-top: 2px solid var(--accent);
   background: rgba(43, 76, 126, 0.04);
   text-align: center;
 }
-.journey-step strong { font-family: var(--serif); font-size: 0.84rem; }
-.journey-step span { color: var(--fg-dim); font-size: 0.65rem; line-height: 1.25; }
-.journey-step small { color: var(--accent); font-family: var(--mono); font-size: 0.54rem; line-height: 1.35; }
+.journey-step strong { font-family: var(--serif); font-size: 0.98rem; }
+.journey-step span { color: var(--fg-dim); font-size: 0.79rem; line-height: 1.35; }
+.journey-step small { color: var(--accent); font-family: var(--mono); font-size: 0.68rem; line-height: 1.4; }
 .journey-arrow, .plugin-arrow, .protocol-arrow, .scope-divider, .delivered-plus {
   align-self: center;
   padding: 0 0.22rem;
@@ -332,8 +334,8 @@ a { color: var(--accent); text-decoration: none; }
   padding: 0.65rem 0.8rem;
   border: 1px dashed rgba(43, 76, 126, 0.35);
 }
-.rework-loop strong { font-family: var(--serif); font-size: 0.8rem; }
-.rework-loop code, .rework-loop span { font-size: 0.65rem !important; }
+.rework-loop strong { font-family: var(--serif); font-size: 0.9rem; }
+.rework-loop code, .rework-loop span { font-size: 0.78rem !important; }
 .rework-loop span { color: var(--muted); }
 
 /* Per-session protocol. */
@@ -344,7 +346,7 @@ a { color: var(--accent); text-decoration: none; }
 }
 .protocol-step {
   display: flex;
-  min-height: 14.2rem;
+  min-height: 16.4rem;
   flex-direction: column;
   gap: 0.45rem;
   padding: 0.7rem;
@@ -352,9 +354,9 @@ a { color: var(--accent); text-decoration: none; }
   border-radius: 4px;
 }
 .protocol-num { color: var(--accent); font-family: var(--mono); font-size: 1.15rem; }
-.protocol-step strong { font-family: var(--serif); font-size: 0.92rem; }
-.protocol-step code { font-size: 0.58rem !important; line-height: 1.4; }
-.protocol-step p { margin: 0 !important; color: var(--muted); font-size: 0.64rem !important; line-height: 1.45 !important; }
+.protocol-step strong { font-family: var(--serif); font-size: 1.04rem; }
+.protocol-step code { font-size: 0.7rem !important; line-height: 1.45; }
+.protocol-step p { margin: 0 !important; color: var(--muted); font-size: 0.78rem !important; line-height: 1.5 !important; }
 
 /* Shipped plugin mechanics. */
 .plugin-flow {
@@ -362,30 +364,31 @@ a { color: var(--accent); text-decoration: none; }
   grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr auto 1fr;
   align-items: stretch;
 }
+/* Same reason as .journey-step: fixed rows keep the step labels and titles
+   on one baseline across all five nodes even when a title wraps. */
 .plugin-node {
-  display: flex;
-  min-height: 7.4rem;
-  flex-direction: column;
-  justify-content: center;
-  gap: 0.45rem;
-  padding: 0.65rem;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  min-height: 11.4rem;
+  gap: 0.5rem;
+  padding: 1.1rem 0.65rem 0.65rem;
   border-top: 2px solid var(--accent);
   background: rgba(43, 76, 126, 0.04);
   text-align: center;
 }
-.plugin-node strong { font-family: var(--serif); font-size: 0.82rem; }
-.plugin-node code { font-size: 0.58rem !important; line-height: 1.35; }
+.plugin-node strong { font-family: var(--serif); font-size: 0.95rem; }
+.plugin-node code { font-size: 0.71rem !important; line-height: 1.45; }
 .mechanics-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; margin-top: 0.9rem; }
 .mechanics-grid > div {
   display: flex;
-  min-height: 5.1rem;
+  min-height: 7rem;
   flex-direction: column;
   gap: 0.35rem;
   padding-top: 0.55rem;
   border-top: 1px solid var(--line);
 }
-.mechanics-grid strong { font-family: var(--serif); font-size: 0.82rem; }
-.mechanics-grid span { color: var(--muted); font-size: 0.65rem; line-height: 1.45; }
+.mechanics-grid strong { font-family: var(--serif); font-size: 0.94rem; }
+.mechanics-grid span { color: var(--muted); font-size: 0.78rem; line-height: 1.5; }
 
 /* Delivered MVP section. */
 .delivered-map { display: grid; grid-template-columns: 1fr auto 1fr; align-items: stretch; }
@@ -401,19 +404,19 @@ a { color: var(--accent); text-decoration: none; }
 .skill-list { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
 .skill-list > div {
   display: flex;
-  min-height: 4rem;
+  min-height: 4.4rem;
   flex-direction: column;
   gap: 0.25rem;
   padding: 0.45rem;
   border: 1px solid var(--line);
 }
-.skill-list code { font-size: 0.61rem !important; }
-.skill-list span { color: var(--muted); font-size: 0.62rem; line-height: 1.35; }
+.skill-list code { font-size: 0.76rem !important; }
+.skill-list span { color: var(--muted); font-size: 0.75rem; line-height: 1.4; }
 .command-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.55rem; }
-.command-list code { padding: 0.48rem; border: 1px solid var(--line); text-align: center; font-size: 0.68rem !important; }
+.command-list code { padding: 0.55rem; border: 1px solid var(--line); text-align: center; font-size: 0.82rem !important; }
 .delivered-foundation { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.65rem; margin-top: 0.8rem; }
-.delivered-foundation span { padding-top: 0.55rem; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.64rem; line-height: 1.4; }
-.delivered-foundation strong { display: block; color: var(--fg); font-family: var(--serif); font-size: 0.75rem; }
+.delivered-foundation span { padding-top: 0.55rem; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.78rem; line-height: 1.45; }
+.delivered-foundation strong { display: block; color: var(--fg); font-family: var(--serif); font-size: 0.88rem; }
 
 /* Verified-vs-next boundary. */
 .scope-ledger { display: grid; grid-template-columns: 1fr auto 1fr; align-items: stretch; }
@@ -425,7 +428,7 @@ a { color: var(--accent); text-decoration: none; }
 }
 .scope-column.current { border-top-color: var(--accent); }
 .scope-column h3 { margin: 0.3rem 0 0.75rem; font-size: 1.1rem !important; }
-.scope-column ul { padding-left: 1.05rem; font-size: 0.72rem !important; line-height: 1.45 !important; }
+.scope-column ul { padding-left: 1.05rem; font-size: 0.8rem !important; line-height: 1.5 !important; }
 .scope-column li { margin-bottom: 0.45rem !important; }
 .status-note {
   display: grid;
@@ -435,8 +438,8 @@ a { color: var(--accent); text-decoration: none; }
   padding: 0.65rem 0.8rem;
   border: 1px solid var(--line);
 }
-.status-note strong { font-family: var(--serif); font-size: 0.8rem; }
-.status-note span { color: var(--muted); font-size: 0.67rem; line-height: 1.45; }
+.status-note strong { font-family: var(--serif); font-size: 0.9rem; }
+.status-note span { color: var(--muted); font-size: 0.79rem; line-height: 1.5; }
 
 .slidev-v-click-target { transition: opacity 0.3s ease; }
 :root { --slidev-theme-primary: var(--accent); }

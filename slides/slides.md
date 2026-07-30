@@ -292,26 +292,26 @@ class: dense
 
 <div class="architecture-map">
   <div class="human-band">
-    <div><strong>Human stakeholder</strong><span>originates demand · launches sessions · owns merge</span></div>
+    <div><strong>Human stakeholder</strong><span>originates demand · launches sessions · merges</span></div>
     <div class="carrier-note">human terminal · bounded subagent · scheduled command</div>
   </div>
-  <div class="map-arrow">launches a fresh session with one seat, one execution shape, and one scope anchor ↓</div>
+  <div class="map-arrow">launches one fresh session — one seat, one shape, one scope anchor ↓</div>
   <div class="scope-architecture">
     <div class="scope-node board-scope">
       <div class="node-label">BOARD LEVEL · GITHUB PROJECT</div>
       <strong>Producer session</strong>
-      <span>lives with the board · shapes, routes, prioritizes, and dispatches</span>
+      <span>lives with the board — shapes, routes, and dispatches</span>
       <div class="scope-seats">analyst · architect · em · qa</div>
     </div>
     <div class="scope-flow">
-      <span>dispatch artifact →</span>
-      <b>BOARD → CARD</b>
-      <span>← PR · verdict · handoff</span>
+      <span>dispatch →</span>
+      <b>BOARD<br/>↕<br/>CARD</b>
+      <span>← result</span>
     </div>
     <div class="scope-node card-scope">
       <div class="node-label">CARD LEVEL · ONE WORK ITEM</div>
       <strong>Consumer session</strong>
-      <span>lives with exactly one Card · claims and resolves one bounded stage</span>
+      <span>lives with one Card — claims and resolves one stage</span>
       <div class="scope-seats">architect · rd · qa</div>
     </div>
   </div>
@@ -370,7 +370,7 @@ class: dense
   <div class="axis-block">
     <div class="axis-label">LIFECYCLE AXIS</div><h3>Status</h3>
     <div class="token-line"><span>Backlog</span><b>→</b><span>Ready</span><b>→</b><span>In Progress</span><b>→</b><span>In Review</span><b>→</b><span>Done</span></div>
-    <p><code>Blocked</code> interrupts the path; QA rejection moves <code>In Review → In Progress</code>.</p>
+    <p><code>Blocked</code> interrupts the path. A QA rejection returns the Card to <code>In Progress</code> — same Card, same branch, same Pull Request.</p>
   </div>
   <div class="axis-block">
     <div class="axis-label">OWNERSHIP AXIS</div><h3>Role</h3>
@@ -507,40 +507,30 @@ class: dense
 
 # The Producer Surface Is Complete
 
-<div class="eyebrow">DELIVERED IN THIS CHECKOUT · v0.2.0</div>
+<div class="eyebrow">SEVEN SKILLS · SIX MODULES · v0.2.0</div>
 
-<div class="delivered-map">
-  <div class="delivered-core">
-    <span class="node-label">CLAUDE PLUGIN</span><h3>Seven Producer skills</h3>
-    <div class="skill-list">
-      <div><code>using-agent-teams</code><span>bootstrap, then route by seat</span></div>
-      <div><code>intaking-requirement</code><span>Issue → Backlog → architect</span></div>
-      <div><code>authoring-spec</code><span>specify · promote · decompose</span></div>
-      <div><code>briefing-board</code><span>lanes · WIP · merge queue</span></div>
-      <div><code>triaging-board</code><span>blocked work → responsible seat</span></div>
-      <div><code>dispatching-work</code><span>Ready queue → kickoff prompts</span></div>
-      <div><code>inspecting-queue</code><span>order QA work, issue no verdicts</span></div>
-    </div>
-  </div>
-  <div class="delivered-plus">+</div>
-  <div class="delivered-core">
-    <span class="node-label">PYTHON STANDARD LIBRARY · SIX MODULES</span><h3>A layered adapter</h3>
-    <div class="command-list"><code>model</code><code>policy</code><code>config</code><code>github</code><code>board</code><code>workflows</code></div>
-    <p><code>policy</code> imports nothing that touches the network — which is why <strong>every</strong> transition edge and seat pair is asserted, not sampled.</p>
-    <div class="command-list"><code>bootstrap</code><code>doctor</code><code>brief</code><code>triage</code><code>queue</code><code>dispatch</code><code>intake</code><code>promote</code><code>decompose</code><code>transition</code><code>handoff</code></div>
-  </div>
+<div class="skill-list" style="grid-template-columns: repeat(4, minmax(0, 1fr));">
+  <div><code>using-agent-teams</code><span>any seat — bootstrap, then route</span></div>
+  <div><code>intaking-requirement</code><span>analyst — shape one requirement</span></div>
+  <div><code>authoring-spec</code><span>architect — specify, promote, decompose</span></div>
+  <div><code>briefing-board</code><span>em — lanes, WIP, merge queue</span></div>
+  <div><code>triaging-board</code><span>em — blocked work → responsible seat</span></div>
+  <div><code>dispatching-work</code><span>em — Ready queue → kickoff prompts</span></div>
+  <div><code>inspecting-queue</code><span>qa — order the queue, no verdicts</span></div>
+  <div style="border-color: var(--accent); background: rgba(43,76,126,0.05);"><code>model · policy · config<br/>github · board · workflows</code><span>the deterministic layer beneath them</span></div>
 </div>
 
 <div class="delivered-foundation">
-  <span><strong>Governance</strong> six-state machine · handoff cap · WIP · seat action policy</span>
-  <span><strong>Recovery</strong> every partial mutation names its completed prefix</span>
-  <span><strong>Hard floor</strong> no agent seat can merge — not overridable</span>
+  <span><strong>Pure policy</strong> <code>policy.py</code> touches no network — so every transition edge and seat pair is asserted, not sampled</span>
+  <span><strong>Recovery</strong> every partial mutation names the steps that already landed</span>
+  <span><strong>Hard floor</strong> no agent seat can merge, and no override can grant it</span>
 </div>
 
 <!--
 The branch deliberately excludes the earlier full framework: no service, database, virtualenv, hooks, setup engine, or dual backend.
-Growth is 4 skills to 7 and 1 file to 6 modules; the CLI entry point producer_board.py stayed the stable public surface.
-Layer discipline: model and policy are pure, github and board talk to gh, workflows composes transactions.
+Growth is 4 skills to 7 and 1 file to 6 modules; producer_board.py stayed the stable public entry point.
+The eighth cell is the deterministic layer: model and policy are pure, github and board talk to gh, workflows composes transactions.
+Command names are in the README; what matters here is the shape, not the list.
 -->
 
 ---
@@ -554,14 +544,13 @@ class: dense
 
 | Found | Why it mattered |
 |---|---|
-| `architect → analyst` was <span class="accent">missing</span> from the authority matrix | An architect could not return an under-specified card — only guess, or block |
-| Board read capped at <code>--limit 100</code>, <span class="accent">no truncation check</span> | A card past page one was invisible to dispatch. <strong>Reported success while skipping real work</strong> |
-| `doctor` validated <span class="accent">2 of 6</span> Statuses, stopped at the first defect | Six re-runs to learn six things |
-| Generic `transition` could reach `Ready` | Bypassed the `promote_to_ready` refusal — <span class="accent">a hole around the seat policy</span> |
-| Handoff free text could forge a second `**Handoff**` line | A parser would read the forged one |
+| `architect → analyst` missing from the matrix | Could not return a vague card — only guess, or block |
+| Board read capped at 100, no truncation check | <strong>Dispatch skipped real work and reported success</strong> |
+| `doctor` checked <span class="accent">2 of 6</span> Statuses, stopped at the first | Six re-runs to learn six things |
+| Generic `transition` could reach `Ready` | A hole around the `promote_to_ready` refusal |
+| Handoff text could forge a second `**Handoff**` line | A parser would read the forged one |
 
-- The first three contradicted documents we had already written; the last two <span class="accent">only appeared once the rules were executable</span>
-- Both authority holes were caught by tests written expecting them to *pass*
+- Three contradicted docs we had already written; two <span class="accent">only appeared once the rules were executable</span>
 
 <!--
 This is the argument for extracting policy as a pure module, made concretely.
