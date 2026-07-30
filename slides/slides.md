@@ -230,13 +230,6 @@ class: dense
 | 5 | em | `[role:em] dispatch work` | renders `[role:rd] [board-card:#1] …` kickoff |
 | 6 | rd | paste the kickoff | <span class="muted">no rd skill — edge of the MVP</span> |
 
-<<<<<<< HEAD
-- Every mutation announced before it ran; every reported result backed by CLI JSON
-- Handoff = Role flip + comment; Status untouched — <span class="accent">ownership ⊥ lifecycle</span>
-- <span class="muted">Since this run:</span> step 4's manual board edit is now `promote`, which gates on a <span class="accent">merged spec</span> and hands to rd in one governed operation
-
-=======
->>>>>>> origin/mvp/producer-from-scratch
 <!--
 This trace is the record of an actual run against the earlier MVP; it is left unedited on purpose.
 Repeatable live GitHub contract proof still remains pending.
