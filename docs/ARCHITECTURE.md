@@ -1441,6 +1441,25 @@ are different events and must not be reported as one another.
 | Engineering methods | Compose supported sibling skills. | Reimplementing test-driven development, review, browser, and security methods creates drift and unnecessary maintenance. |
 | Backend abstraction | Semantic Kanban Protocol first. | Premature generic multi-backend abstractions weaken the GitHub contract before a second backend is real. |
 
+### 16.1 Settled implementation decisions
+
+The implementation plan's M2 required three contracts to be settled before
+Status operations were built. All three are now decided and enforced in
+`scripts/agent_teams/policy.py`.
+
+| # | Question | Decision | Rationale |
+|---|---|---|---|
+| 1 | Is `architect -> analyst` a legal handoff? | **Yes.** | Section 6.4 and the adaptation dossier's authority matrix both grant it. An architect that cannot return an under-specified Card must either guess at the requirement or block it, and both are worse than asking. The pre-package implementation omitted this edge; that omission was a defect, not a policy. |
+| 2 | Does specification completion mean the Pull Request is opened or merged? | **Merged**, configurable per repository via `spec_completion`. | Implementation work becomes Ready only once the specification is durable on the target branch, so development never builds against a document review may still change. The cost is a human merge inside the analyst-to-development path, which is accepted: it is the same merge gate the architecture already requires, arriving earlier. A repository may set `spec_completion=opened` deliberately. |
+| 3 | Does the intake Card become the implementation Card, or does decomposition create new ones? | **Both, by shape.** A genuine single-Card change is promoted in place. A specification with several independently shippable slices creates flat implementation Cards, and the intake Card keeps a summary comment. | Reusing the intake Card for a multi-slice specification would force one Consumer session to deliver several Pull Requests, breaking the one-Card-one-delivery invariant. Creating a second Card for a genuinely single change adds a hop that carries no information. |
+
+A fourth decision emerged during implementation and is recorded here because
+it closes an authority hole rather than merely choosing between options:
+
+| # | Question | Decision | Rationale |
+|---|---|---|---|
+| 4 | Which seat authority governs a generic Status transition? | The **destination** decides. Moving to `Ready` is checked as `promote_to_ready`; moving to `Done` is checked as `reconcile_done`; every other move is checked as `transition_card`. | Without this, a generic `transition` operation is a hole through which any seat takes an action its own policy row forbids — an analyst could reach `Ready` despite `promote_to_ready` refusing that seat. Keying the check to the destination keeps one rule in one place. |
+
 ## 17. Architectural completion criteria
 
 The complete architecture is realized when a fresh repository can prove all

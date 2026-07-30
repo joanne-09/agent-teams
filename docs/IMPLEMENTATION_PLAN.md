@@ -3,7 +3,7 @@
 Status: active plan for evolving the Producer minimum viable product into the
 proposed Phase 1 agent team
 Applies to: `mvp/producer-from-scratch`
-Last updated: 2026-07-30
+Last updated: 2026-07-31
 
 ## 1. Outcome
 
@@ -23,8 +23,9 @@ The desired outcome is a small but complete Claude Code agent team in which:
 8. standing repository context plus live board state is sufficient for every
    next session to reconstruct its role-appropriate project view and resume.
 
-This plan starts from the current four-skill, one-script minimum viable
-product. It does not assume the larger `board-superpowers` implementation is
+This plan started from a four-skill, one-script minimum viable product. The
+Producer surface is now complete: seven skills over a six-module deterministic
+package. It does not assume the larger `board-superpowers` implementation is
 present.
 
 The plan follows the design relationship defined in
@@ -108,62 +109,85 @@ team-of-teams are not required for either completion level.
 | Work item | Status | Evidence |
 |---|---|---|
 | Entry routing skill | Done | `skills/using-agent-teams/SKILL.md` |
-| Producer context bootstrap | Pending | The entry skill routes and runs `doctor`, but does not yet load a standing project overview and query the live board before every Producer routine. |
+| Producer context bootstrap | Done | `bootstrap --role <seat>` in `workflows.Producer.bootstrap`; owned by the entry skill; `BootstrapTests` proves per-seat views and read-only behaviour |
 | Analyst intake skill | Done | `skills/intaking-requirement/SKILL.md` |
-| Architect docs-only specification skill | Partial | Skill exists; live Git/Pull Request flow unverified |
+| Architect specification skill | Done | `skills/authoring-spec/SKILL.md`; covers the three architect jobs and the readiness gate. Live Git/Pull Request flow still unverified |
 | Engineering Manager dispatch skill | Done | `skills/dispatching-work/SKILL.md` |
-| Research and Development engineer execution skill | Pending | No skill exists |
-| Quality Assurance engineer verification skill | Pending | No skill exists |
+| Engineering Manager briefing skill | Done | `skills/briefing-board/SKILL.md` |
+| Engineering Manager triage skill | Done | `skills/triaging-board/SKILL.md` |
+| Quality Assurance queue inspection skill | Done | `skills/inspecting-queue/SKILL.md`; Producer-shaped, issues no verdicts |
+| Research and Development engineer execution skill | Pending | Consumer-shaped; outside the Producer scope |
+| Quality Assurance engineer verification skill | Pending | Consumer-shaped; outside the Producer scope |
 
 ### 4.3 Board adapter
 
 | Work item | Status | Evidence |
 |---|---|---|
-| Config read/write | Done | Unit-tested round trip |
-| `gh` wrapper with structured failure | Done | Injectable `Gh` class |
-| Project/field/option lookup | Done | Unit-tested with fake `gh` |
-| Project item normalization and repo filtering | Done | Unit-tested |
-| `doctor` | Partial | Validates Roles plus Backlog/Ready, not all Statuses |
+| Config read/write and validation | Done | `config.py`; reports every defect at once; `ConfigTests` (8 tests) |
+| `gh` wrapper with structured failure | Done | `github.py`; injectable `Gh` plus stderr classification into `auth`/`scope`/`not_found`/`permission`/`rate_limit` |
+| Project/field/option lookup | Done | `board.py`; unit-tested with fake `gh` |
+| Project item normalization and repo filtering | Done | `BoardReadTests`; unrecognised Role reads as unset rather than crashing |
+| Pagination and truncation detection | Done | `github.fetch_all_items` escalates until a response returns short; `PaginationTests` proves a 250-Card board reads completely and a 10,000-Card board raises rather than truncating |
+| `doctor` | Done | Validates all six Statuses and all six Roles, reporting every missing option in one response; `DoctorTests` |
 | `list` | Done | Implemented; live response unverified |
 | deterministic `dispatch` | Done | Unit-tested filtering and order |
-| `intake` | Partial | Unit-tested; live and recovery behavior unverified |
-| `handoff` | Partial | Unit-tested; no cap, audit, or concurrency guard |
-| Status transition | Pending | No command |
-| Card claim/worktree | Pending | No command |
-| Pull Request link/verdict/post-merge operations | Pending | No commands |
+| `bootstrap` | Done | Read-only per-seat startup context; `BootstrapTests` |
+| `brief` | Done | Role lanes, work-in-progress, merge queue, data-quality defects, one recommendation; `BriefTests` |
+| `triage` | Done | Blocked Cards grouped by responsible seat; `TriageTests` |
+| `queue` | Done | Quality Assurance queue inspection with kickoff prompts; `VerificationQueueTests` |
+| `intake` | Done | Single Role write; five-step recovery covered by `IntakeFailureTests` |
+| `handoff` | Done | Authority matrix, cap counted from structured comments, partial-comment recovery; `HandoffTests`, `HandoffFailureTests` |
+| Status transition | Done | `transition` command; authority keyed to the destination; `TransitionTests` |
+| `promote` (Backlog to Ready) | Done | Readiness gate plus two independent operations; `PromoteTests`, `PromoteFailureTests` |
+| `create-card` / `decompose` | Done | Flat implementation Cards with spec pointer and provenance; `DecomposeTests`, `DecomposeFailureTests` |
+| Card claim/worktree | Pending | Consumer-shaped; outside the Producer scope |
+| Pull Request link/verdict/post-merge operations | Pending | Consumer-shaped; outside the Producer scope |
+| Append-only audit log | Pending | M7; the partial-failure envelope is not a substitute |
 
 ### 4.4 Verification
 
 | Check | Status | Latest evidence |
 |---|---|---|
-| Python syntax | Done | Passed 2026-07-30 |
-| Focused unit suite | Done | 9/9 passed on 2026-07-30 |
-| Claude plugin validation | Done | Passed 2026-07-30 |
-| Non-mutating Claude namespace load | Done | Recorded in minimum viable product handoff/testing guide |
+| Python syntax | Done | Passed 2026-07-31 |
+| Unit suite | Done | 123/123 passed on 2026-07-31 (`python -m unittest discover -s tests -p "test_*.py"`) |
+| Policy edge coverage | Done | All 36 Status pairs and all 36 Role pairs asserted individually, not sampled (`test_policy.py`) |
+| Partial-failure coverage | Done | Every mutation boundary in intake, handoff, promote, and decompose (`test_partial_failures.py`) |
+| Claude plugin validation | Pending | Manifests bumped to 0.2.0; not re-validated since the seven-skill layout landed |
+| Non-mutating Claude namespace load | Pending | Superseded by the seven-skill layout; the recorded run covered four skills |
 | Test from unrelated repository | Pending | Not proven in current evidence |
 | Persistent marketplace install | Pending | Procedure documented only |
-| Live GitHub Project read | Blocked externally | `gh` not installed |
-| Live mutation | Blocked externally | `gh` and disposable Project required |
+| Live GitHub Project read | Blocked externally | `gh` not installed on this machine |
+| Live mutation | Blocked externally | `gh` and a disposable Project required |
+
+Every "Done" row above is hermetic: it runs against an injected fake `gh` and
+proves the adapter behaves correctly *given the response shapes it assumes*.
+None of it proves those shapes match a real `gh`. That distinction is the
+whole of M1.3 and it remains open.
 
 ## 5. Priority gap map
 
-### P0: prove and close the current slice
+### P0: prove the slice against real GitHub
 
-- expand the entry skill into a common, read-only context bootstrap;
-- load standing repository context and query the live board before Producer work;
-- validate actual `gh project` response shapes;
-- close the Backlog-to-Ready hole;
-- validate all six Status options;
-- report partial mutation state and recovery instructions;
-- test on a disposable Project.
+Everything in this band that could be closed without a live board has been.
+What is left needs `gh`:
+
+- validate actual `gh project` response shapes against the hermetic fixtures;
+- test on a disposable Project;
+- confirm `gh project item-list --limit` behaves as the pagination escalation
+  assumes.
+
+Closed in this change: the read-only context bootstrap, standing-context
+loading, the Backlog-to-Ready hole, all six Status options, and structured
+partial-mutation reporting with recovery instructions.
 
 ### P1: complete the five-seat workflow
 
-- add Status transition policy;
+Producer-side items are done: Status transition policy, the human merge gate
+as a non-overridable floor, and work-in-progress plus handoff-loop safety.
+Remaining items are Consumer-shaped:
+
 - add Research and Development engineer claim/test-driven development/Pull Request workflow;
-- add independent Quality Assurance engineer verdict workflow;
-- enforce human merge gate;
-- add work-in-progress and handoff-loop safety.
+- add independent Quality Assurance engineer verdict workflow.
 
 ### P2: complete proposed governance
 
@@ -183,29 +207,36 @@ team-of-teams are not required for either completion level.
 ## 6. Milestone map
 
 ```text
-M0  Architecture/status docs                         Done in this change
+M0  Architecture/status docs                         Done
  |
-M1  Live GitHub contract proof + adapter hardening
+M1  Live GitHub contract proof + adapter hardening   Done except live proof
+ |                                                   (M1.1-M1.3 need gh)
+M2  Domain policy + Status operations                Done
  |
-M2  Domain policy + Status operations
+M3  Architect -> Ready vertical slice                Done except live proof
  |
-M3  Architect -> Ready vertical slice
+M4  Research and Development engineer execution      Pending (Consumer)
  |
-M4  Research and Development engineer execution and exclusive claim
+M5  Quality Assurance verification + human lane      Queue inspection done;
+ |                                                   verdicts pending (Consumer)
+M6  Engineering Manager operations, WIP, recovery    Done except stale-claim
+ |                                                   detection (needs claims)
+M7  Seat-aware governance and audit                  Policy done; audit pending
  |
-M5  Quality Assurance engineer verification and human merge lane
- |
-M6  Engineering Manager operations, work-in-progress, and recovery
- |
-M7  Seat-aware governance and audit
- |
-M8  Golden-path proof and release
+M8  Golden-path proof and release                    Pending (needs gh)
  |
 `-> Optional: setup automation, carriers, Codex, backends, Phase 2/3
 ```
 
 M1 through M6 produce Functional Phase 1. M7 and M8 produce the governed
 target.
+
+**The Producer surface is complete.** Every Producer-shaped routine in
+`ARCHITECTURE.md` section 7 — analyst intake, architect shaping and
+readiness, Engineering Manager briefing, triage and dispatch, and Quality
+Assurance queue inspection — is implemented and hermetically tested. What
+remains in M4, M5, and M8 is Consumer-shaped work plus the live-GitHub proof
+that no amount of local testing can substitute for.
 
 ## 7. M0 - Architecture and implementation status
 
@@ -244,7 +275,12 @@ Status: **Done when this documentation change lands**
 
 ## 8. M1 - Live GitHub contract proof and adapter hardening
 
-Status: **Pending / externally blocked in part**
+Status: **Adapter hardening done; live contract proof externally blocked**
+
+M1.4 through M1.7 are delivered and test-backed. M1.1 through M1.3 need an
+installed `gh` and a disposable Project and remain the single largest risk in
+the plan: every hermetic test below assumes response shapes that have not yet
+been checked against a real GitHub CLI.
 
 Purpose: prove that the current adapter matches a real `gh` version before
 building more behavior on its assumed JSON shapes.
@@ -285,25 +321,25 @@ Do not make production code more permissive until the real shapes are known.
 
 #### M1.4 Harden `doctor`
 
-- [ ] Validate all six Status options, not only Backlog and Ready.
-- [ ] Report every missing field/option in one diagnostic response.
-- [ ] Validate `repo` as `OWNER/REPO`.
-- [ ] Reject empty custom field/status names.
-- [ ] Reject duplicate dispatch Roles.
-- [ ] Add one focused test per failure.
+- [x] Validate all six Status options, not only Backlog and Ready.
+- [x] Report every missing field/option in one diagnostic response.
+- [x] Validate `repo` as `OWNER/REPO`.
+- [x] Reject empty custom field/status names.
+- [x] Reject duplicate dispatch Roles.
+- [x] Add one focused test per failure.
 
 #### M1.5 Handle Project size and pagination
 
 - [ ] Determine whether `gh project item-list --limit` can safely exceed
       100 on the supported CLI.
-- [ ] Either implement pagination/adequate limit or document and detect the
+- [x] Either implement pagination/adequate limit or document and detect the
       ceiling.
-- [ ] Add a test proving Cards past the first response page are not silently
+- [x] Add a test proving Cards past the first response page are not silently
       lost.
 
 #### M1.6 Make partial failure actionable
 
-- [ ] Define a structured partial-result shape:
+- [x] Define a structured partial-result shape:
 
 ```json
 {
@@ -315,29 +351,29 @@ Do not make production code more permissive until the real shapes are known.
 }
 ```
 
-- [ ] Preserve created Issue URL/number and Project item ID as soon as known.
-- [ ] Add tests for failure after every remote mutation in intake.
-- [ ] Add tests for comment failure after Role mutation in handoff.
-- [ ] Do not claim rollback unless a real compensation succeeded.
+- [x] Preserve created Issue URL/number and Project item ID as soon as known.
+- [x] Add tests for failure after every remote mutation in intake.
+- [x] Add tests for comment failure after Role mutation in handoff.
+- [x] Do not claim rollback unless a real compensation succeeded.
 
 #### M1.7 Producer context bootstrap
 
-- [ ] Make `using-agent-teams` own one common startup contract in addition to
+- [x] Make `using-agent-teams` own one common startup contract in addition to
       intent routing.
-- [ ] Load repository instructions plus compact product, architecture,
+- [x] Load repository instructions plus compact product, architecture,
       decision, and team-configuration pointers before selecting work.
-- [ ] Query the complete live board through the deterministic `list` path
+- [x] Query the complete live board through the deterministic `list` path
       before every Producer routine; never treat the kickoff snapshot as
       authoritative.
-- [ ] Build seat-specific views for System Analyst, System Architect,
+- [x] Build seat-specific views for System Analyst, System Architect,
       Engineering Manager / Team Lead, and Quality Assurance queue work.
-- [ ] Ensure a direct downstream-skill match runs the bootstrap exactly once
+- [x] Ensure a direct downstream-skill match runs the bootstrap exactly once
       rather than skipping it or running it twice.
-- [ ] Keep bootstrap read-only and refuse mutation when configuration,
+- [x] Keep bootstrap read-only and refuse mutation when configuration,
       pagination, identity, or live board state is uncertain.
-- [ ] Add repository-context fixtures and fake-`gh` tests proving that a fresh
+- [x] Add repository-context fixtures and fake-`gh` tests proving that a fresh
       Producer session can reconstruct its view without prior conversation.
-- [ ] Treat bounded subagent, human terminal, and scheduled execution as
+- [x] Treat bounded subagent, human terminal, and scheduled execution as
       equivalent carriers of the same startup contract.
 
 ### Exit criteria
@@ -352,7 +388,11 @@ Do not make production code more permissive until the real shapes are known.
 
 ## 9. M2 - Domain policy and Status operations
 
-Status: **Pending**
+Status: **Done**
+
+All three decision gates are settled and recorded in `ARCHITECTURE.md`
+section 16.1. Policy is pure and exhaustively tested: every Status pair and
+every Role pair is asserted individually.
 
 Purpose: create the deterministic contract required by the System Architect,
 Research and Development engineer, and Quality Assurance engineer instead of
@@ -437,7 +477,11 @@ Adopt a parseable contract:
 
 ## 10. M3 - Architect-to-Ready vertical slice
 
-Status: **Pending**
+Status: **Done except live proof**
+
+`promote` and `decompose` close the gap between specification completion and
+dispatch. The exit criteria requiring a *live* intake-to-Ready run stay open
+until `gh` is available.
 
 Purpose: close the current golden-path break between specification completion
 and Engineering Manager dispatch.
@@ -636,7 +680,12 @@ Create `skills/verifying-delivery/SKILL.md` with:
 
 ## 13. M6 - Engineering Manager operations, work-in-progress, and recovery
 
-Status: **Pending**
+Status: **Done except stale-claim detection**
+
+`brief` and `triage` deliver the Role-lane view, work-in-progress policy,
+handoff-cap visibility, and blocked-work recovery routing. Stale-claim
+detection is deferred to M4, because claims do not exist until the Consumer
+seat does.
 
 Purpose: evolve prompt rendering into safe team operations without coupling
 correctness to autonomous spawning.
@@ -904,18 +953,25 @@ Required principles:
 
 ## 20. Immediate next actions
 
-The next session should:
+The Producer surface is code-complete and hermetically tested. Every
+remaining Producer risk is the same risk: **none of it has met a real GitHub
+CLI.** The next session should close that, in this order:
 
-1. run the unrelated-repository Claude load and record the result;
-2. install `gh` and authenticate with Project scope;
-3. create a disposable Project with the required fields;
-4. capture the real `gh` JSON contracts;
-5. run `doctor`, read-only dispatch, and one disposable intake;
-6. update M1 evidence before changing architecture;
-7. settle the three M2 architect/handoff decisions;
-8. implement the smallest Status transition that closes
-   `(Backlog, architect) -> (Ready, rd)`.
+1. install `gh` and authenticate with Project scope;
+2. create a disposable repository and Project with both six-option fields;
+3. run `doctor` and confirm it reports what is actually missing;
+4. capture the real `gh project view / field-list / item-list / item-add`
+   JSON and convert the captures into hermetic fixtures, replacing the
+   assumed shapes in `tests/fake_gh.py`;
+5. confirm the `--limit` escalation in `github.fetch_all_items` matches how
+   the installed `gh` really paginates -- if `gh` caps `--limit`, the
+   escalation must become a documented ceiling instead;
+6. run one disposable intake, one promote, and one handoff, and check the
+   durable result against what the JSON envelope claimed;
+7. run the unrelated-repository Claude load and confirm all seven skills
+   appear;
+8. update the section 4.4 verification table with the observed evidence.
 
-No Research and Development engineer or Quality Assurance engineer workflow,
-audit system, setup automation, or autonomous carrier work should begin
-before those steps establish a working live-board foundation.
+Only then start Consumer work (M4/M5) or the audit system (M7). Building a
+second seat on unverified response shapes would double the surface that has
+to be re-checked when the first real `gh` call disagrees with a fixture.
