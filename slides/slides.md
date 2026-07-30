@@ -245,22 +245,16 @@ class: dense
 
 # The Board in Action
 
-<div class="kanban">
-  <div><h3>Backlog</h3><span>#42 · architect</span></div>
-  <div><h3>Ready</h3><span>#47 · rd</span></div>
-  <div><h3>In Progress</h3><span>#44 · rd</span></div>
-  <div><h3>In Review</h3><span>#39 · qa</span></div>
-  <div><h3>Done</h3><span>#31 · human</span></div>
+<div class="figure">
+  <img src="./images/board.png" />
 </div>
 
-<img src="./images/board.png" style="max-height: 380px; border: 1px solid var(--line); border-radius: 4px;" />
-
-- Card #1 after the live run: spec-derived acceptance criteria, Status/Role fields, linked implementation PR
+<p class="takeaway">Card #1 after the live run — spec-derived acceptance criteria, <code>Status</code> and <code>Role</code>, linked Pull Request.</p>
 
 <!--
-This replaces the missing screenshot placeholder with a truthful architecture view.
+One real artifact beats an illustrated one: an invented mini-board alongside a real screenshot said two different things about the same run.
 The demo workload now belongs in the sibling agent-teams-test repository, while the plugin remains in agent-teams.
-The current implementation plan still marks disposable-Project e2e proof as pending.
+The current implementation plan still marks disposable-Project end-to-end proof as pending.
 -->
 
 ---
@@ -283,20 +277,16 @@ layout: ppt
 class: dense
 ---
 
-# GitHub Is the Team's Shared Memory
-
-<div class="eyebrow">TARGET PHASE 1</div>
+# Overall Architecture
 
 <div class="architecture-map">
   <div class="human-band">
-    <div><strong>Human stakeholder</strong><span>originates demand · launches sessions · merges</span></div>
-    <div class="carrier-note">human terminal · bounded subagent · scheduled command</div>
+    <div><strong>Human stakeholder</strong></div>
   </div>
-  <div class="map-arrow">launches one fresh session — one seat, one shape, one scope anchor ↓</div>
   <div class="scope-architecture">
     <div class="scope-node board-scope">
       <div class="node-label">BOARD LEVEL · GITHUB PROJECT</div>
-      <strong>Producer session</strong>
+      <strong>Producer</strong>
       <span>lives with the board — shapes, routes, and dispatches</span>
       <div class="scope-seats">analyst · architect · em · qa</div>
     </div>
@@ -307,12 +297,11 @@ class: dense
     </div>
     <div class="scope-node card-scope">
       <div class="node-label">CARD LEVEL · ONE WORK ITEM</div>
-      <strong>Consumer session</strong>
+      <strong>Consumer</strong>
       <span>lives with one Card — claims and resolves one stage</span>
       <div class="scope-seats">architect · rd · qa</div>
     </div>
   </div>
-  <div class="plugin-bridge"><strong>agent-teams</strong><span>skills interpret intent · deterministic services enforce policy</span></div>
   <div class="artifact-row">
     <div><strong>Project</strong><span>Status + Role</span></div>
     <div><strong>Issues</strong><span>scope + comments</span></div>
@@ -336,43 +325,16 @@ layout: ppt
 class: dense
 ---
 
-# Three Layers Keep the System Governed
-
-<div class="eyebrow">TARGET COMPONENT MODEL</div>
-
-<div class="layer-stack">
-  <div class="arch-layer"><span class="layer-index">01</span><div class="layer-copy"><strong>Workflow skills</strong><span>Interpret the request, choose one bounded routine, gather context, and explain refusals.</span></div><div class="layer-examples">router · intake · specification · dispatch · implementation · verification</div></div>
-  <div class="layer-arrow">semantic operation ↓</div>
-  <div class="arch-layer"><span class="layer-index">02</span><div class="layer-copy"><strong>Deterministic services</strong><span>Validate authority and live preconditions; perform transitions, handoffs, claims, PR checks, and recovery.</span></div><div class="layer-examples">policy · workflows · kanban protocol · git · PR contract · audit</div></div>
-  <div class="layer-arrow">validated mutation ↓</div>
-  <div class="arch-layer"><span class="layer-index">03</span><div class="layer-copy"><strong>Durable coordination plane</strong><span>GitHub stores the Card, lifecycle, ownership, context, delivery evidence, and human decision.</span></div><div class="layer-examples">Project · Issue · comment · branch · worktree · Pull Request · review</div></div>
-</div>
-
-<p class="principle-line"><strong>Design rule:</strong> judgment lives in skills; external mutation lives in code; truth lives on GitHub.</p>
-
-<!--
-Layer 2 is now six modules, split where real seams appeared: model, policy, config, github, board, workflows.
-The split was earned, not planned: policy separated from the adapter the moment transitions and caps needed testing without GitHub.
-producer_board.py remains the stable public entry point every skill invokes.
--->
-
----
-layout: ppt
-class: dense
----
-
-# Status Says Where; Role Says Who Acts Next
+# Status And Role
 
 <div class="axis-grid">
   <div class="axis-block">
     <div class="axis-label">LIFECYCLE AXIS</div><h3>Status</h3>
     <div class="token-line"><span>Backlog</span><b>→</b><span>Ready</span><b>→</b><span>In Progress</span><b>→</b><span>In Review</span><b>→</b><span>Done</span></div>
-    <p><code>Blocked</code> interrupts the path. A QA rejection returns the Card to <code>In Progress</code> — same Card, same branch, same Pull Request.</p>
   </div>
   <div class="axis-block">
     <div class="axis-label">OWNERSHIP AXIS</div><h3>Role</h3>
     <div class="role-tokens"><span>analyst</span><span>architect</span><span>rd</span><span>qa</span><span>em</span><span>human</span></div>
-    <p>A handoff changes Role and writes context. It does not silently change Status.</p>
   </div>
 </div>
 
@@ -383,7 +345,7 @@ class: dense
   <div class="pair-example"><code>(In Review, human)</code><span>only human review and merge remain</span></div>
 </div>
 
-<p class="takeaway">The routing state is the pair <code>(Status, Role)</code> — ownership and lifecycle remain orthogonal.</p>
+<p class="takeaway">The routing state is the pair <code>(Status, Role)</code>.</p>
 
 <!--
 When both coordinates move, transition_card and handoff_card are separate semantic operations.
@@ -396,12 +358,12 @@ layout: center
 
 <div class="chapter">
   <div class="chapter-num">Part 4</div>
-  <div class="chapter-title">Work Flow & Plugin Mechanics</div>
+  <div class="chapter-title">Work Flow & Mechanics</div>
   <div class="chapter-sub">How one request becomes one reviewable delivery</div>
 </div>
 
 <!--
-This section follows the target Card lifecycle, then zooms into one session and the shipped prompt-to-GitHub path.
+Five slides: the lifecycle end to end, the handoff that joins two sessions, then one Consumer session, one Producer session, and what happens when a step fails.
 -->
 
 ---
@@ -409,27 +371,25 @@ layout: ppt
 class: dense
 ---
 
-# One Card Moves One Session at a Time
-
-<div class="eyebrow">PHASE 1 GOLDEN PATH</div>
+# From Request to Delivery
 
 <div class="journey">
-  <div class="journey-step"><strong>Human</strong><span>request</span><small>goal + constraints</small></div><div class="journey-arrow">→</div>
-  <div class="journey-step"><strong>Analyst</strong><span>shape demand</span><small>Backlog · architect</small></div><div class="journey-arrow">→</div>
-  <div class="journey-step"><strong>Architect</strong><span>spec + decompose</span><small>Ready · rd</small></div><div class="journey-arrow">→</div>
-  <div class="journey-step"><strong>EM</strong><span>dispatch</span><small>kickoff prompt</small></div><div class="journey-arrow">→</div>
-  <div class="journey-step"><strong>RD</strong><span>claim + TDD + PR</span><small>In Review · qa</small></div><div class="journey-arrow">→</div>
-  <div class="journey-step"><strong>QA</strong><span>evidence + verdict</span><small>In Review · human</small></div><div class="journey-arrow">→</div>
-  <div class="journey-step"><strong>Human</strong><span>verify + merge</span><small>Done</small></div>
+  <div class="journey-step"><strong>Human</strong><span>request</span><small>no Card yet</small></div><div class="journey-arrow">→</div>
+  <div class="journey-step"><strong>Analyst</strong><span>shape demand</span></div><div class="journey-arrow">→</div>
+  <div class="journey-step"><strong>Architect</strong><span>spec + decompose</span></div><div class="journey-arrow">→</div>
+  <div class="journey-step gate"><strong>Human</strong><span>approve ready</span></div><div class="journey-arrow">→</div>
+  <div class="journey-step"><strong>EM</strong><span>dispatch</span></div><div class="journey-arrow">→</div>
+  <div class="journey-step"><strong>RD</strong><span>claim + TDD + PR</span></div><div class="journey-arrow">→</div>
+  <div class="journey-step"><strong>QA</strong><span>evidence + verdict</span></div><div class="journey-arrow">→</div>
+  <div class="journey-step gate"><strong>Human</strong><span>verify + merge</span><small>Done</small></div>
 </div>
 
-<div class="rework-loop"><strong>QA fail path</strong><code>(In Review, qa) → (In Progress, rd)</code><span>Fix the same Card, branch, and Pull Request — do not start a second delivery chain.</span></div>
-
-<p class="takeaway">Each arrow is a durable artifact or field change, not an invisible agent-to-agent message.</p>
+<div class="rework-loop"><strong>QA fail path</strong><code>(In Review, qa) → (In Progress, rd)</code><span>Fix the same Card, branch, then Pull Request.</span></div>
 
 <!--
-The optional specification PR is a separate architect Consumer session and human merge before decomposition resumes.
-EM renders the next legal kickoff artifact; the carrier actually starts the session.
+No process spans two boxes. Every arrow is a GitHub write that the next session reads back on a cold start.
+The optional specification Pull Request is its own architect Consumer session plus a human merge, before decomposition resumes.
+Two steps deliberately do not move the Card. The human request has no Card yet — the analyst creates it. EM dispatch is read-only: it renders the kickoff artifact and a carrier starts the session, so the pair stays (Ready, rd) until the rd Consumer claims it.
 -->
 
 ---
@@ -437,21 +397,21 @@ layout: ppt
 class: dense
 ---
 
-# Every Session Runs the Same Five-Step Protocol
+# Consumer Mechanics
 
 <div class="protocol">
-  <div class="protocol-step"><span class="protocol-num">1</span><strong>Bind</strong><code>[role:rd] [board-card:#42]</code><p>One seat, one execution shape, and—when Consumer-shaped—exactly one Card.</p></div><div class="protocol-arrow">→</div>
-  <div class="protocol-step"><span class="protocol-num">2</span><strong>Preflight</strong><code>expected == live?</code><p>Validate configuration, credentials, authority, Status, Role, and required artifacts.</p></div><div class="protocol-arrow">→</div>
-  <div class="protocol-step"><span class="protocol-num">3</span><strong>Rehydrate</strong><code>Issue + comments + spec + PR</code><p>Recover the assignment from durable state; stale dispatch refuses instead of overwriting.</p></div><div class="protocol-arrow">→</div>
-  <div class="protocol-step"><span class="protocol-num">4</span><strong>Resolve one stage</strong><code>produce | deliver | verify</code><p>Mutate only the permitted queue or bound Card and collect concrete evidence.</p></div><div class="protocol-arrow">→</div>
-  <div class="protocol-step"><span class="protocol-num">5</span><strong>Persist + stop</strong><code>transition + handoff + artifact</code><p>Verify the result, leave the next seat enough context, then terminate without merging.</p></div>
+  <div class="protocol-step"><span class="protocol-num">1</span><strong>Bind</strong><code>[role:rd] [board-card:#42]</code><p>Exactly one Card.</p></div><div class="protocol-arrow">→</div>
+  <div class="protocol-step"><span class="protocol-num">2</span><strong>Preflight</strong><code>expected == live?</code><p>Validate configuration, credentials, authority, Status, Role, and required artifacts before touching anything.</p></div><div class="protocol-arrow">→</div>
+  <div class="protocol-step"><span class="protocol-num">3</span><strong>Rehydrate</strong><code>Issue + PR</code><p>Rebuild the assignment from existing state.</p></div><div class="protocol-arrow">→</div>
+  <div class="protocol-step"><span class="protocol-num">4</span><strong>Resolve one stage</strong><code>produce | deliver | verify</code><p>Implemention and testing.</p></div><div class="protocol-arrow">→</div>
+  <div class="protocol-step"><span class="protocol-num">5</span><strong>Persist + stop</strong><code>transition + artifact</code><p>Verify the durable result, then terminate without merging.</p></div>
 </div>
-
-<p class="principle-line"><strong>Recovery rule:</strong> resume or fix forward from the completed mutation prefix; never pretend a partial GitHub operation rolled back.</p>
 
 <!--
 Producer sessions may inspect a bounded queue; Consumer sessions may mutate only one bound Card and its artifacts.
+Step 4 runs our own skills. agent-teams does not invoke superpowers or gstack — it may reference them as recommended practice, but every skill and script in this plugin is its own.
 The conversational summary helps the human, but GitHub remains authoritative.
+Step 5 is deliberately last: a Consumer that cannot persist its result has not delivered, however good the code is.
 -->
 
 ---
@@ -459,28 +419,54 @@ layout: ppt
 class: dense
 ---
 
-# A Prompt Becomes a Governed GitHub Operation
-
-<div class="eyebrow">SHIPPED PRODUCER SURFACE · v0.2.0</div>
+# Producer Mechanics
 
 <div class="plugin-flow">
-  <div class="plugin-node"><span class="node-label">1 · INPUT</span><strong>Role-marked request</strong><code>[role:analyst] Intake …</code></div><div class="plugin-arrow">→</div>
+  <div class="plugin-node"><span class="node-label">1 · INPUT</span><strong>Requests</strong><code>[role:analyst] Intake …</code></div><div class="plugin-arrow">→</div>
   <div class="plugin-node"><span class="node-label">2 · BOOTSTRAP</span><strong>Read-only orientation</strong><code>bootstrap --role</code></div><div class="plugin-arrow">→</div>
   <div class="plugin-node"><span class="node-label">3 · ORCHESTRATION</span><strong>Workflow skill</strong><code>intake | promote | brief</code></div><div class="plugin-arrow">→</div>
   <div class="plugin-node"><span class="node-label">4 · ENFORCEMENT</span><strong>Policy, then adapter</strong><code>policy.py → board.py</code></div><div class="plugin-arrow">→</div>
   <div class="plugin-node"><span class="node-label">5 · DURABLE EFFECT</span><strong><code>gh</code> → GitHub</strong><code>Project + Issue + comment</code></div>
 </div>
 
-<div class="mechanics-grid">
-  <div><strong>Bootstrap is mandatory</strong><span>No mutation before it completes. Live board state overrides a stale kickoff prompt — the session refuses rather than acting on it.</span></div>
-  <div><strong>Refusals cost nothing</strong><span>Authority is checked <em>before</em> the first GitHub call, so an illegal handoff leaves no partial state to clean up.</span></div>
-  <div><strong>Result channel</strong><span>Mutations succeed only on structured JSON; errors return non-zero and the skill must not invent success.</span></div>
-</div>
-
 <!--
 The model chooses and follows a skill, but it never sets arbitrary Project fields: there is no set_card_field operation.
 Step 4 is two things in order — policy decides legality with no network access, then board.py performs the mutation.
-Dispatch is read-only: a human or another carrier must start the rendered prompt.
+Dispatch is read-only: it renders a prompt. A human or another carrier must start the session.
+-->
+
+---
+layout: ppt
+class: dense
+---
+
+# When a Step Fails
+
+<div class="recovery-split">
+  <div>
+<pre><code>{
+  "ok": false,
+  "partial": true,
+  "completed": ["issue_created",
+                "project_item_added"],
+  "failed": "status_set",
+  "error": "gh project item-edit failed: …",
+  "recovery": [
+    "Issue #61 is on the board, no Status.",
+    "Set Backlog, then Role `architect`."
+  ]
+}</code></pre>
+  </div>
+  <div class="field-notes">
+    <div><strong>Identify the problem</strong><span>Issue creation, the Project write, and the comment are three separate calls.</span></div>
+    <div><strong>Never rollback</strong><span>Create a new Issue instead of rolling back.</span></div>
+  </div>
+</div>
+
+<!--
+The test suite asserts that no result ever contains the words "rolled back", "rollback", "reverted", or "undone".
+A handoff sets Role before it posts the comment, so the failure mode is "owned, but no context" — recovery writes the comment rather than reassigning.
+Same discipline as the merge floor: the system is trusted because it reports what actually happened.
 -->
 
 ---
@@ -490,11 +476,11 @@ layout: center
 <div class="chapter">
   <div class="chapter-num">Part 5</div>
   <div class="chapter-title">What We Have Built</div>
-  <div class="chapter-sub">The concrete Producer MVP and its proof boundary</div>
+  <div class="chapter-sub">The Producer MVP, and what comes after it</div>
 </div>
 
 <!--
-This section distinguishes delivered work from the complete architecture.
+This section distinguishes delivered work from the complete architecture, then names the next milestones in dependency order.
 -->
 
 ---
@@ -504,23 +490,17 @@ class: dense
 
 # The Producer Surface Is Complete
 
-<div class="eyebrow">SEVEN SKILLS · SIX MODULES · v0.2.0</div>
+<div class="eyebrow">SEVEN SKILLS · SIX MODULES</div>
 
 <div class="skill-list" style="grid-template-columns: repeat(4, minmax(0, 1fr));">
-  <div><code>using-agent-teams</code><span>any seat — bootstrap, then route</span></div>
+  <div><code>using-agent-teams</code><span>bootstrap, then route</span></div>
   <div><code>intaking-requirement</code><span>analyst — shape one requirement</span></div>
-  <div><code>authoring-spec</code><span>architect — specify, promote, decompose</span></div>
+  <div><code>authoring-spec</code><span>architect — specify and decompose</span></div>
   <div><code>briefing-board</code><span>em — lanes, WIP, merge queue</span></div>
   <div><code>triaging-board</code><span>em — blocked work → responsible seat</span></div>
   <div><code>dispatching-work</code><span>em — Ready queue → kickoff prompts</span></div>
   <div><code>inspecting-queue</code><span>qa — order the queue, no verdicts</span></div>
-  <div style="border-color: var(--accent); background: rgba(43,76,126,0.05);"><code>model · policy · config<br/>github · board · workflows</code><span>the deterministic layer beneath them</span></div>
-</div>
-
-<div class="delivered-foundation">
-  <span><strong>Pure policy</strong> <code>policy.py</code> touches no network — so every transition edge and seat pair is asserted, not sampled</span>
-  <span><strong>Recovery</strong> every partial mutation names the steps that already landed</span>
-  <span><strong>Hard floor</strong> no agent seat can merge, and no override can grant it</span>
+  <div style="border-color: var(--accent); background: rgba(43,76,126,0.05);"><code>model · policy · config<br/>github · board · workflows</code><span>modules beneath</span></div>
 </div>
 
 <!--
@@ -535,62 +515,27 @@ layout: ppt
 class: dense
 ---
 
-# Writing the Rules Down Found Five Bugs
+# Next Move
 
-<div class="eyebrow">WHAT THE POLICY LAYER CAUGHT</div>
-
-| Found | Why it mattered |
-|---|---|
-| `architect → analyst` missing from the matrix | Could not return a vague card — only guess, or block |
-| Board read capped at 100, no truncation check | <strong>Dispatch skipped real work and reported success</strong> |
-| `doctor` checked <span class="accent">2 of 6</span> Statuses, stopped at the first | Six re-runs to learn six things |
-| Generic `transition` could reach `Ready` | A hole around the `promote_to_ready` refusal |
-| Handoff text could forge a second `**Handoff**` line | A parser would read the forged one |
-
-- Three contradicted docs we had already written; two <span class="accent">only appeared once the rules were executable</span>
-
-<!--
-This is the argument for extracting policy as a pure module, made concretely.
-Prose can hold a contradiction indefinitely. A table with 36 asserted pairs cannot.
-The pagination one is the serious bug: silent truncation is worse than a crash, because dispatch keeps reporting success.
-Both authority holes were found by writing the test first and being surprised — not by review.
--->
-
----
-layout: ppt
-class: dense
----
-
-# Local Checks Pass; Live Proof Is Next
-
-<div class="scope-ledger">
-  <div class="scope-column current">
-    <div class="axis-label">VERIFIED</div><h3>What already passes</h3>
-    <ul>
-      <li><strong>123 / 123</strong> tests with an injected fake <code>gh</code> — up from 9</li>
-      <li>All <strong>36</strong> Status pairs and all <strong>36</strong> Role pairs asserted individually</li>
-      <li>Every partial-mutation boundary in intake, handoff, promote, and decompose</li>
-      <li>Pagination: a 250-card board reads whole; a 10,000-card board <em>refuses</em> rather than truncating</li>
-      <li>Six-state policy, handoff cap, WIP formula, and the non-overridable merge floor</li>
-    </ul>
+<div class="roadmap">
+  <div>
+    <div class="stage">NEXT</div>
+    <div class="roadmap-copy"><strong>The <code>rd</code> Consumer seat</strong><span>Remote claim as the lock, isolated worktree, test-first work, one governed Pull Request.</span></div>
+    <div class="roadmap-note">first Consumer shape</div>
   </div>
-  <div class="scope-divider">→</div>
-  <div class="scope-column target">
-    <div class="axis-label">NOT YET PROVEN / BUILT</div><h3>What closes Phase 1</h3>
-    <ul>
-      <li><strong>Live disposable GitHub Project contracts</strong> — the largest open risk</li>
-      <li>Remote claim, isolated worktree, RD TDD, and governed Pull Request</li>
-      <li>Independent QA verdict and the rejection loop</li>
-      <li>Seat-aware audit and a reconstructable end-to-end trace</li>
-      <li>Plugin manifest re-validation against the seven-skill layout</li>
-    </ul>
+  <div>
+    <div class="stage">THEN</div>
+    <div class="roadmap-copy"><strong>The <code>qa</code> verdict</strong><span>Independent verification with evidence, and the rejection loop back to the same Card.</span></div>
+    <div class="roadmap-note">makes the fail path real</div>
+  </div>
+  <div>
+    <div class="stage">LATER</div>
+    <div class="roadmap-copy"><strong>Audit, then OPS</strong><span>A reconstructable seat-by-seat trace for one Card; CI and merge machinery in phase 2.</span></div>
+    <div class="roadmap-note">only once the path works</div>
   </div>
 </div>
 
-<div class="status-note"><strong>Honest status</strong><span>Every green test is hermetic: it proves the adapter behaves correctly <em>given response shapes that have never met a real</em> <code>gh</code>. That gap is M1.1–M1.3 and it is the next thing to close — not more features.</span></div>
-
 <!--
-The Producer half is done; M4/M5 are Consumer-shaped and M8 is the golden-path proof.
-Say the quiet part out loud: 123 passing tests is a statement about internal consistency, not about GitHub.
-If the installed gh caps --limit, the pagination escalation must become a documented ceiling instead. That is an assumption, not a fact.
+The order is not preference, it is dependency: building a second seat on unverified response shapes doubles what must be re-checked when the first real gh call disagrees with a fixture.
+Say the quiet part out loud: passing tests is a statement about internal consistency, not about GitHub.
 -->

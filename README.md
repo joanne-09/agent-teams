@@ -12,6 +12,19 @@ The durable board is a GitHub Project. Cards are GitHub Issues carrying two
 orthogonal single-select fields: `Status` (where the work is) and `Role`
 (whose turn it is).
 
+**New here? Read [`docs/USAGE.md`](./docs/USAGE.md)** — setup, the daily loop,
+your two gates, and how to read what comes back. This README is the reference;
+that is the walkthrough.
+
+The human holds two gates and nothing between them: **`Backlog -> Ready`**
+(only `human` may run `promote`) and **merge** (no agent seat can, ever). See
+[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) Appendix A.2, decisions 4-6.
+
+agent-teams calls **no other plugin**. `superpowers` and `gstack` are
+referenced by name as recommended disciplines; nothing in `skills/` or
+`scripts/` invokes them, and correctness never depends on either being
+installed.
+
 ## The seven Producer workflows
 
 | Skill | Seat | What it does |
