@@ -1,77 +1,56 @@
-# Decision matrix — Producer rows 1-14 + Consumer rows 100-113 + Bootstrap rows 200-208
+# Seat-aware decision matrix
 
-This is the canonical decision table for the skill. Every mutating action
-maps to one row; the row's `default class` is the starting point for
-classification (see `triage-rule.md` for the short-circuit rule that may
-escalate Auto to Reserved, and `override-parsing.md` for the layered
-overrides that may promote Reserved to Auto).
+Missing seat preserves the legacy one-dimensional class. With a known seat, this table is the authority hard floor before configurable overrides. `N` cannot be promoted by an override.
 
-## Producer rows (1-14)
+| action_id | Action | analyst | architect | rd | qa | em | human |
+|---:|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| 1 | Create cards | A | A | N | N | A | A |
+| 2 | Edit card body | A | A | N | N | A | A |
+| 3 | Split card | N | A | N | N | R | A |
+| 4 | Update agent instruction source | N | R | N | N | R | A |
+| 5 | Backlog to Ready | N | A | N | N | A | A |
+| 6 | Move active work to Blocked | R | R | R | R | R | A |
+| 7 | Close stale card | N | R | N | N | R | A |
+| 8 | Cancel claim | N | R | R | N | R | A |
+| 9 | Adjust WIP limit | N | A | N | N | A | A |
+| 10 | Modify board-superpowers config | N | R | N | N | R | A |
+| 11 | Extend board fields | N | A | N | N | A | A |
+| 12 | Merge PR | N | N | N | N | N | A |
+| 13 | Dispatch Consumer session | N | A | N | N | A | A |
+| 14 | Auto-trigger report | N | N | N | N | A | A |
+| 100 | Claim card | N | A | A | A | N | A |
+| 101 | Surface and suspend | N | R | R | R | N | A |
+| 102 | Terminate success | N | A | A | A | N | A |
+| 103 | Terminate failure | N | R | R | R | R | A |
+| 104 | Write retro notes | N | A | A | A | N | A |
+| 105 | Direct review fix | N | A | A | A | N | A |
+| 106 | Review re-delegation | N | A | A | A | N | A |
+| 107 | Verification chain | N | A | A | A | N | A |
+| 108 | Cross-platform review | N | A | A | A | N | A |
+| 109 | QA pass | N | A | A | A | N | A |
+| 110 | Security audit | N | A | A | A | N | A |
+| 111 | Review cycle completion | N | A | A | A | N | A |
+| 112 | PR preflight card sync | N | A | A | N | N | A |
+| 113 | Post-merge cleanup | N | A | A | A | N | A |
+| 200 | Bootstrap host | N | A | N | N | A | A |
+| 201 | Ensure labels | N | A | N | N | A | A |
+| 202 | Write repo config | N | A | N | N | A | A |
+| 203 | Append gitignore | N | A | N | N | A | A |
+| 204 | Write audit credentials | N | A | N | N | A | A |
+| 205 | Sync venv | N | A | N | N | A | A |
+| 206 | Initialize audit DB | N | A | N | N | A | A |
+| 207 | Inject routing block | N | A | N | N | A | A |
+| 208 | Write repo state | N | A | N | N | A | A |
+| 300 | Handoff card | A | A | A | A | A | A |
+| 301 | Escalate to lead seat | A | A | A | A | A | N |
+| 302 | Reject or bounce card | N | A | N | A | A | A |
+| 303 | Emit agent dispatch | N | A | N | N | A | A |
+| 304 | Write QA verdict | N | N | N | A | N | A |
+| 305 | Refuse illegal handoff | A | A | A | A | A | A |
 
-| `action_id` | Action | Default class | Category |
-|-------------|--------|---------------|----------|
-| 1 | Create cards (decomposition output) | A | forward incremental |
-| 2 | Edit card body (refine description, add acceptance criteria) | A | forward incremental |
-| 3 | Split card | R | cross-card structural |
-| 4 | Update CLAUDE.md / AGENTS.md | R | source of truth |
-| 5 | Backlog → Ready transition | A | forward state advance |
-| 6 | In Progress → Blocked transition | R | interrupts in-flight work |
-| 7 | Close stale card | R | irreversible + interrupts |
-| 8 | Cancel claim | R | interrupts + risks lost work |
-| 9 | Adjust WIP limit | A | reversible parameter |
-| 10 | Modify .board-superpowers/config.yml or config.local.yml | R | source of truth |
-| 11 | Extend GitHub Project fields (add label / add status option) | A | forward incremental, schema-additive |
-| 12 | Auto-merge PR | R | architect's reserved power |
-| 13 | Dispatch Consumer session | A | unlocks overnight batch |
-| 14 | Auto-trigger retro / weekly report (cadence-driven) | A | preflight piggyback |
+## Invariants
 
-## Consumer rows (100-113)
-
-| `action_id` | Action | Default class |
-|-------------|--------|---------------|
-| 100 | Claim card (atomic git-push transaction) | A |
-| 101 | Surface (propose-and-suspend) | R |
-| 102 | Terminate — success path | A |
-| 103 | Terminate — failure path (Blocked + release claim + keep worktree) | R |
-| 104 | Retro Notes write (initial at PR-submit + post-merge supplement) | A |
-| 105 | Review-cycle response — direct one-line fix | A |
-| 106 | Review-cycle response — re-delegation | A |
-| 107 | Review-cycle response — verification chain | A |
-| 108 | Review-cycle response — cross-platform review | A |
-| 109 | Review-cycle response — QA pass | A |
-| 110 | Review-cycle response — security audit | A |
-| 111 | Review-cycle response — cycle completion | A |
-| 112 | PR-submit pre-flight — card body sync (toggle ACs to `[x]`, write implementation summary) | A |
-| 113 | Post-merge cleanup — remove worktree + delete local claim branch + write close audit row | A |
-
-## Bootstrap rows (200-208)
-
-| `action_id` | Action | Default class |
-|-------------|--------|---------------|
-| 200 | Bootstrap host (manifest write) | A |
-| 201 | Bootstrap project step 2a (labels create) | A |
-| 202 | Bootstrap project step 2c (config.yml + config.local.yml write) | A |
-| 203 | Bootstrap project step 2d (.gitignore append) | A |
-| 204 | Bootstrap project step 2e (credentials.yml write) | A |
-| 205 | Bootstrap project step 2f (uv sync per-repo venv) | A |
-| 206 | Bootstrap project step 2g (audit-init dispatch) | A |
-| 207 | Bootstrap project step 4 (routing block injection) | A |
-| 208 | Bootstrap project step 3 (state.yml write) | A |
-
-## Reused Producer rows on the Consumer side
-
-When a Consumer-side action has identical semantics to a Producer-side row,
-it reuses the Producer `action_id` and writes `actor_role = consumer` in
-the audit entry:
-
-- Consumer Ready → In Progress at claim → Producer row 5 (status advance).
-- Consumer cancel claim → Producer row 8 (matches semantics).
-- Consumer attempts Auto-merge → Producer row 12 (which is class N for
-  Consumer; hard-floor block).
-
-## Unknown action_id rule
-
-If the caller passes an `action_id` not listed above, the algorithm
-returns A (default fall-through). This is deliberate — new mutating
-actions that haven't yet been classified default to safe-on-execution
-rather than block-on-unknown.
+- Row 12 is `N` for every agent seat. Only the human merge gate acts.
+- Unknown action ids retain the legacy safe-on-execution fallback when no seat is bound.
+- Unknown seats produce a warning and use the legacy class; they never abort routing.
+- Legal handoff destinations are validated separately by `board-canon`; action 300 being `A` does not make an illegal edge legal.

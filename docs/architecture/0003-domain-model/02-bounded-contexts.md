@@ -101,14 +101,15 @@ have to match downstream tooling expectations).
 ### 3.2.2 Session context
 
 **Scope.** Everything about *the live processes running the
-plugin* — Producer or Consumer, Mode-1 or Mode-2, their
+plugin* — Producer or Consumer execution shape, bound Seat, Mode-1 or
+Mode-2, their
 worktrees, their preflight snapshots, their suspension and
 resumption.
 
 **Owned aggregates.**
 
-- **ProducerSession** — the long-lived Manager session.
-  Owns transient PreflightSnapshots; does NOT persist anything
+- **ProducerSession** — a Producer-shaped analyst, architect, EM, or
+  human-overseer session. Owns transient PreflightSnapshots; does NOT persist anything
   itself (P4a — no plugin-owned durable state).
 - **ConsumerLogical** — the kanban-relative role binding to
   one Card. Owns the persistent ClaimBranch + ClaimMarker +
@@ -281,8 +282,8 @@ no-prompt autonomy gain.
 **Invariants applying here:** I-8 (audit-log uniformity —
 Producer and Consumer entries share the schema). The
 ADR-0006 §5 schema (`timestamp`, `project`, `session_id`,
-`actor_role`, `action_id`, `payload`, `outcome`) is the
-canonical contract.
+`actor_role`, nullable `actor_seat`, `action_id`, `payload`, `outcome`)
+is the canonical contract. Execution shape and Seat remain orthogonal.
 
 ---
 

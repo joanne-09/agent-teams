@@ -493,6 +493,11 @@ modules:
     # settings.yml entries on conflict (project-specific beats
     # user-global).
     autonomy_overrides: []
+    seat_overrides: {}
+    # architect:
+    #   3: A
+    # qa:
+    #   6: A
     #   - action_id: 5
     #     class: A
     #     since: "2026-05-15T09:00:00Z"
@@ -506,6 +511,7 @@ modules:
 |--------------|------|-----------|---------|-------|
 | `modules.m5_repo_configuration.wip_limit` | positive integer | no | `5` | Soft limit; counted as `In Progress + In Review`; `Blocked` does NOT count (I-6). Each architect sets their own value. |
 | `modules.m8_autonomy.autonomy_overrides` | list of objects | no | `[]` | Per-project layer. Merge precedence: this file beats host-shared `~/.board-superpowers/settings.yml:modules.m8_autonomy` on conflict. Per ADR-0006 §4. |
+| `modules.m8_autonomy.seat_overrides` | mapping seat -> mapping/list | no | `{}` | Seat-specific A/R tuning. Known-seat N cells are hard floors and cannot be promoted. |
 
 ### Bootstrap behavior
 
@@ -545,15 +551,33 @@ The `autonomy_overrides[]` entry shape is unchanged from v0.4.0:
 | `evolved_by` | string | yes | GitHub username of the person who made the change |
 | `note` | string | no | Free-form one-liner explaining the rationale |
 
-### Merge semantics (unchanged)
+### `seat_overrides` entry shapes
 
-1. Start with ADR-0006 §3 matrix defaults.
-2. Apply `~/.board-superpowers/settings.yml:modules.m8_autonomy.autonomy_overrides`
-   (user layer, host-shared).
-3. Apply `<repo>/.board-superpowers/settings.local.yml:modules.m8_autonomy.autonomy_overrides`
-   (project layer, repo-clone) — **wins on collision**.
-4. Result: effective class for this `action_id` on this project on
-   this host.
+Either compact mapping or list form is accepted:
+
+```yaml
+seat_overrides:
+  architect:
+    3: A
+  qa:
+    - action_id: 6
+      class: A
+```
+
+Valid seat keys are `analyst`, `architect`, `rd`, `qa`, `em`, and `human`.
+Malformed entries are ignored with a warning. A known-seat `N` from the
+authority matrix is not configurable.
+
+### Merge semantics
+
+1. Start with the legacy action default.
+2. Apply the built-in seat cell when a valid seat is bound.
+3. Apply matching host-user seat then generic overrides.
+4. Apply matching repo-project seat then generic overrides; project wins.
+5. Return the effective class. A known-seat `N` returns before configuration.
+
+This is `project > user > seat > default`. Missing seat preserves the legacy
+action-only path; unknown seat warns and uses the legacy default.
 
 ### Audit gate (unchanged)
 

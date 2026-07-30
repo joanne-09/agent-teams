@@ -38,6 +38,13 @@ operational, this directory is foundational.
 9. [`adr/`](./adr/) — decision records for the choices that defined
    the shape. Read in numeric order.
 
+## Agent-team adaptation
+
+The implementation dossier at [`../agent-team-adaptation/`](../agent-team-adaptation/)
+records the derivation, Producer-slice boundary, file map, and operating runbook.
+The accepted contracts remain in this architecture tree; the dossier tracks
+implementation status and deferred QA/RD work.
+
 ## Evolving these docs
 
 - Architecture changes land **before** the implementation that

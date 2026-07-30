@@ -152,3 +152,12 @@ description but aren't sure which row it lives in.
 - **208: Bootstrap project step 3 (state.yml write)**
   - Examples: writing `~/.board-superpowers/repos/<normalized>/state.yml` with `schema_version`, `repo_bootstrapped_at`, `last_seen_version_in_repo`, `features_enabled`, and `routing_blocks[]` array.
   - Why A-class: state.yml is plugin-managed (silently overwritten by plugin on next state-update cycle if hand-edited); first write is the natural home of host-local state.
+
+## Team rows (300-305)
+
+- **300 Handoff card:** change Role, post the structured comment, audit.
+- **301 Escalate to lead:** handoff plus a separately audited Blocked transition.
+- **302 Reject or bounce:** return work to a lower seat with actionable reason.
+- **303 Dispatch:** emit a seat-bound kickoff instruction. Rendering alone is read-only; the EM dispatch decision is audited.
+- **304 QA verdict:** pass or fail with concrete evidence.
+- **305 Refuse illegal handoff:** record an authority or handoff-cap refusal without changing Role or Status.

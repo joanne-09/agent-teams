@@ -1,0 +1,5 @@
+version: v0.8.0
+layer: molecular
+type: pattern
+mode: claude-code-only
+bounded-context: spec

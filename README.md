@@ -210,22 +210,25 @@ That is it. After step 5 (or step 4 if you skip the routing block), open a fresh
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Three phrases the Manager understands out of the box
+### Role-aware Producer phrases
 
 | You say | Manager does |
 |---|---|
 | `what should I work on?` / `morning briefing` | Daily routine — board snapshot + dispatch recommendation |
 | `I have a new requirement: <X>` | Intake — routes you through design skills, then decomposition |
+| `[role:em] dispatch the team` | EM dispatch — ranks legal Role lanes and renders carrier-neutral kickoff prompts |
+| `[role:analyst] I have a new requirement: <X>` | Analyst intake — shapes a Backlog Card and hands it to architect |
+| `[role:architect] author the spec for card #N` | Architect delivery — claims a docs-only Card, opens a spec PR, then hands implementation slices to RD |
 | `weekly retro` | Retro — aggregates last 7 days of PR notes into a structured report |
 
-Plus eight more documented in the spec — see `docs/architecture/0002-product-features-and-flows/03-producer-surface.md`.
+Role tokens are durable routing hints; the Card Role field remains the ownership source of truth. The v0.8.0 producer slice does not yet ship the QA-owned `verifying-delivery` routine.md`.
 
 ### Dispatching a Consumer
 
 When the Manager hands you a kick-off prompt like:
 
 ```
-[board-card:#42] Work on card #42 in project acme/3.
+[role:rd] [board-card:#42] Work on card #42 in project acme/3.
 
 Start by invoking `consuming-card` skill. It will handle the full
 lifecycle: claim (atomic) -> implement -> PR -> update board.

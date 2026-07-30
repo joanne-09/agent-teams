@@ -189,10 +189,10 @@ jsonl trace (next section) is the v1-minimum substitute. This section
 documents the v1-target shape so future implementations (and current
 architect understanding) align on what the deferred surface looks like.
 
-### Schema — 8 columns
+### Schema — 9 columns
 
 The single source of truth for the column-level schema is
-`0005-contracts/06-audit-log-schema.md` § "Core schema — 8 columns".
+`0005-contracts/06-audit-log-schema.md` § "Core schema — 9 columns".
 Reproduced here for ease of lookup; if the two diverge, the contracts
 file is canonical.
 
@@ -201,7 +201,8 @@ file is canonical.
 | `timestamp` | `TIMESTAMPTZ` | UTC; wall-clock of write |
 | `project` | `TEXT` | `OWNER/NUMBER` (round-trip stable per ADR-0005) |
 | `session_id` | `TEXT` | CC / Codex session id (UUID-shaped at v1) |
-| `actor_role` | `TEXT` (CHECK in `('producer','consumer')`) | lowercase per `0005-contracts/06-audit-log-schema.md` table note ("§1.4 cross-cutting note + 0003 § 3.3.8"); same row schema is enforced for both Producer and Consumer entries by I-8 (audit-log uniformity) |
+| `actor_role` | `TEXT` (CHECK in `('producer','consumer')`) | execution shape, independent of Seat; lowercase per the canonical schema |
+| `actor_seat` | `TEXT` nullable | `analyst|architect|rd|qa|em|human`; NULL for legacy or unbound rows |
 | `action_id` | `SMALLINT` | matrix row id from `classifying-actions` (deferred) |
 | `payload` | `JSONB` | per-`action_id` schema; canonical sub-schemas in `0005-contracts/06-audit-log-schema.md` |
 | `outcome` | `TEXT` (CHECK in `('success','failure')`) | execution-layer terminal state |

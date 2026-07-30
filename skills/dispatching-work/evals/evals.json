@@ -1,0 +1,31 @@
+{
+  "skill_name": "dispatching-work",
+  "schema_version": "skill-creator-v1",
+  "notes": "Regime 2 routing and correct-application scenarios for the Producer team slice.",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "EM dispatch with one QA In Review and two Ready RD cards",
+      "expected_output": "Orders QA first, applies WIP/cap, emits seat-bound prompts, and audits action 303.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Dispatch a Role-less card",
+      "expected_output": "Refuses dispatch and places it in unassigned triage; never guesses RD.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "RD lane at WIP cap",
+      "expected_output": "Does not issue a new claim dispatch; permits continuation of active work.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "Card already has six handoff comments",
+      "expected_output": "Refuses another transfer and routes to EM triage.",
+      "files": []
+    }
+  ]
+}

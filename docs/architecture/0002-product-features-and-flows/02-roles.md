@@ -7,6 +7,13 @@ session's master agent can carry other specific roles
 (orchestration, specialist work, review, ...) on top of its
 kanban-relative role; those other roles are out of scope here.
 
+The v0.8.0 Producer team slice names an orthogonal **Seat** capability:
+`analyst`, `architect`, `rd`, `qa`, `em`, or `human`. Seat answers *which
+capability and authority set acts*; Producer / Consumer answers *what execution
+shape this session has with respect to the kanban*. Card ownership is persisted
+in the nullable `Role` field using the same six Seat values. A session token
+`[role:<seat>]` hints routing but never grants authority or overwrites Role.
+
 With respect to the kanban, every session's master agent is in
 exactly one of two roles. **The distinction is purpose, not
 literal I/O direction** — both roles read and write; what differs
@@ -27,7 +34,7 @@ is what the session ultimately delivers.
   is fine; mutating one's own item's status is required; touching
   anyone else's item belongs to a different session.
 
-The two roles never blend within one session — one session = one
+The two execution shapes never blend within one session — one session = one
 master agent = one kanban-relative role for the lifetime of the
 session. The same human architect can drive sessions of either
 role (and typically does, daily); they just don't multiplex
@@ -65,3 +72,18 @@ vs proposed by board-superpowers).**
     review) layered on top — canonical methodology does not
     separate these two layers explicitly
 
+
+
+#### Producer team seat mapping (v0.8.0 slice)
+
+| Seat | Default execution shape | Shipped owned routine |
+|---|---|---|
+| `analyst` | Producer | `intaking-requirement` |
+| `architect` | Producer; Consumer-shaped only while delivering one docs Card | `authoring-spec`, `decomposing-into-milestones` |
+| `em` | Producer | `briefing-daily`, `triaging-board`, `dispatching-work` |
+| `rd` | Consumer | `consuming-card` |
+| `qa` | Producer review queue in this slice | `reviewing-pr-queue`; independent `verifying-delivery` is deferred |
+| `human` | oversight / merge gate | no autonomous routine |
+
+Seat ownership moves only through the `handoff_card` protocol action. Role and
+Status are orthogonal; neither mutation implies the other.

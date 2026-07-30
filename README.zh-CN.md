@@ -210,22 +210,24 @@ bash ~/.claude/plugins/board-superpowers/scripts/register-codex-hooks.sh --insta
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Manager 开箱即用的三句话
+### 支持 Role 的 Producer 指令
 
-| 你说 | Manager 做 |
+| 你说 | Producer 做 |
 |---|---|
 | `what should I work on?` / `morning briefing` | 日常 routine——板子快照 + 当日 dispatch 推荐 |
-| `I have a new requirement: <X>` | Intake——把你引导穿过设计 skill，再到 decomposition |
+| `[role:em] dispatch the team` | EM 派发——按 Role lane 排序合法工作，并生成与 carrier 无关的 kick-off prompt |
+| `[role:analyst] I have a new requirement: <X>` | Analyst intake——塑形 Backlog Card，并 handoff 给 architect |
+| `[role:architect] author the spec for card #N` | Architect 交付——claim 纯文档 Card、提交 spec PR，再把实现切片 handoff 给 RD |
 | `weekly retro` | Retro——把过去 7 天的 PR 笔记聚合成结构化报告 |
 
-还有 8 句记录在 spec 里——见 `docs/architecture/0002-product-features-and-flows/03-producer-surface.md`。
+Role token 是可靠的路由提示；Card 的 `Role` 字段仍然是所有权的 source of truth。v0.8.0 的 producer slice 尚未交付 QA 所有的 `verifying-delivery` routine。
 
 ### 派发一个 Consumer
 
 Manager 会递给你一段 kick-off prompt，形如：
 
 ```
-[board-card:#42] Work on card #42 in project acme/3.
+[role:rd] [board-card:#42] Work on card #42 in project acme/3.
 
 Start by invoking `consuming-card` skill. It will handle the full
 lifecycle: claim (atomic) -> implement -> PR -> update board.

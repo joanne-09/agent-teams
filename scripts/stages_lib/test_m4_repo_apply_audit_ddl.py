@@ -74,12 +74,13 @@ def ctx_with_sqlite_tables(ctx_with_sqlite_dsn):
     ctx, dsn, db_path = ctx_with_sqlite_dsn
     # Create the audit_log, audit_outbox, audit_schema_meta tables
     conn = sqlite3.connect(str(db_path))
-    conn.execute("CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY)")
+    conn.execute("CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY, actor_seat TEXT NULL)")
     conn.execute("CREATE TABLE IF NOT EXISTS audit_outbox (id INTEGER PRIMARY KEY)")
     conn.execute(
         "CREATE TABLE IF NOT EXISTS audit_schema_meta "
-        "(id INTEGER PRIMARY KEY, version INTEGER, applied_at TEXT)"
+        "(id INTEGER PRIMARY KEY, version INTEGER, migrated_at TEXT)"
     )
+    conn.execute("INSERT INTO audit_schema_meta (id, version, migrated_at) VALUES (1, 3, 'now')")
     conn.commit()
     conn.close()
     return ctx, dsn, db_path
@@ -142,7 +143,7 @@ def test_compute_target_state_has_audit_schema_meta(ctx):
 def test_compute_target_state_includes_key_columns(ctx):
     ts = compute_target_state(ctx)
     cols = ts["audit_log"]["columns_required"]
-    for col in ["timestamp", "project", "session_id", "actor_role", "action_id"]:
+    for col in ["timestamp", "project", "session_id", "actor_role", "actor_seat", "action_id"]:
         assert col in cols, f"required column {col!r} missing"
 
 
@@ -154,14 +155,23 @@ def test_compute_target_state_includes_key_columns(ctx):
 def test_predicate_valid_state():
     state = {
         "audit_log": {
-            "schema_version": 2,
-            "columns_required": ["id", "timestamp"],
+            "schema_version": 3,
+            "columns_required": ["id", "timestamp", "actor_seat"],
             "indexes_required": [],
         },
         "audit_outbox": {"columns_required": ["id"]},
         "audit_schema_meta": {"columns_required": ["id", "version"]},
     }
     assert target_state_predicate(state) is True
+
+
+def test_predicate_rejects_v2_without_actor_seat():
+    state = {
+        "audit_log": {"schema_version": 2, "columns_required": ["id", "timestamp"], "indexes_required": []},
+        "audit_outbox": {"columns_required": ["id"]},
+        "audit_schema_meta": {"columns_required": ["id", "version"]},
+    }
+    assert target_state_predicate(state) is False
 
 
 def test_predicate_invalid_missing_audit_log():
@@ -309,7 +319,7 @@ def test_executor_handles_subprocess_oserror(ctx_with_sqlite_dsn):
 def test_compute_target_state_validates_against_registry_schema(ctx):
     import jsonschema
     registry_path = Path(__file__).parent.parent / "stages-registry.yml"
-    registry = yaml.safe_load(registry_path.read_text())
+    registry = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
     stage = next(
         s for s in registry["stages"]
         if s["stage_id"] == "m4.repo.apply-audit-ddl"

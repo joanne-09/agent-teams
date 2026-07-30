@@ -311,7 +311,7 @@ def test_compute_target_state_validates_against_registry_schema(ctx):
     import yaml
     import jsonschema
     registry_path = Path(__file__).parent.parent / "stages-registry.yml"
-    registry = yaml.safe_load(registry_path.read_text())
+    registry = yaml.safe_load(registry_path.read_text(encoding='utf-8'))
     stage = next(s for s in registry["stages"] if s["stage_id"] == "m2.repo.sync-venv")
     schema = stage["target_state_schema"]
     # ctx fixture already creates uv.lock under .board-superpowers/

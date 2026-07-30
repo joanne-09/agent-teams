@@ -7,7 +7,7 @@ Purpose: Run `uv sync --project <repo>/.board-superpowers/` to materialize
 Registry target_state_schema (stages-registry.yml):
   {venv_path: str, uv_lock_hash: str}
 
-Idempotency: .venv/bin/python3 exists AND stored uv_lock_hash matches
+Idempotency: the platform venv interpreter exists AND stored uv_lock_hash matches
   the current uv.lock sha256 → present=True (no re-sync needed).
 
 Persisted state: uv_lock_hash + venv_path written to
@@ -50,7 +50,12 @@ def _venv_path(ctx: Any) -> Path:
 
 
 def _python_bin(ctx: Any) -> Path:
-    return _venv_path(ctx) / "bin" / "python3"
+    candidates = [
+        _venv_path(ctx) / "bin" / "python3",
+        _venv_path(ctx) / "Scripts" / "python.exe",
+        _venv_path(ctx) / "Scripts" / "python3.exe",
+    ]
+    return next((candidate for candidate in candidates if candidate.exists()), candidates[0])
 
 
 def _sha256_of(path: Path) -> str:

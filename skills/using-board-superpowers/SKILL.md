@@ -1,6 +1,6 @@
 ---
 name: using-board-superpowers
-description: Use as the FIRST skill in any board-superpowers session AND as the plugin's manual page. Read this skill (body + references/) for a complete, self-contained orientation — what the plugin is, the 14-skill catalog, the 6-state Card lifecycle, on-disk state, and dispatch routing. Routes ambiguous sessions into the correct Producer routine (briefing-daily / intaking-requirement / reviewing-pr-queue / triaging-board) or Consumer mode (consuming-card, for claiming card N). Skip when the message clearly matches a downstream skill directly (e.g., "[board-card:#12]" → consuming-card).
+description: Use as the FIRST skill in any board-superpowers session AND as the plugin's manual page. Read this skill (body + references/) for a complete, self-contained orientation — what the plugin is, the 16-skill catalog, the 6-state Card lifecycle, on-disk state, and dispatch routing. Routes ambiguous sessions into the correct Producer routine (briefing-daily / intaking-requirement / reviewing-pr-queue / triaging-board) or Consumer mode (consuming-card, for claiming card N). A leading `[role:<seat>]` token is parsed before intent routing. Skip when the message clearly matches a downstream skill directly (e.g., "[board-card:#12]" → consuming-card).
 when_to_use: Use when intent is ambiguous, when no other board-superpowers skill matched, when the user asks "what is this plugin / how does this work / what skills exist / explain the architecture", OR when the SessionStart hook injected an INVOKE marker pointing at a downstream skill.
 ---
 
@@ -162,6 +162,7 @@ flowchart TD
 
 | Signal in user message | Route to |
 |------------------------|----------|
+| Literal `[role:<seat>]` | Bind the seat, then route through `references/routing.md`; unknown seat asks instead of guessing |
 | Literal `[board-card:#N]` | `board-superpowers:consuming-card` (with N as `$card_number`) |
 | "claim card N" / "work on card N" / "implement #N" | `board-superpowers:consuming-card` |
 | "what should I work on" / "morning briefing" / "today's plan" / "board overview" | `board-superpowers:briefing-daily` |

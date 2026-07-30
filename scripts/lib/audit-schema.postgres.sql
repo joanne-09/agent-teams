@@ -1,5 +1,5 @@
 -- board-superpowers audit log schema (Postgres dialect).
--- 9 columns (8 core + event_uuid for idempotent replay), literally aligned
+-- 10 contract columns (9 core + event_uuid), literally aligned
 -- with mysql + sqlite siblings.
 -- Per docs/architecture/0005-contracts/06-audit-log-schema.md.
 
@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
     project         TEXT NOT NULL,
     session_id      TEXT NOT NULL,
     actor_role      TEXT NOT NULL CHECK (actor_role IN ('producer','consumer')),
+    actor_seat      TEXT NULL,
     action_id       SMALLINT NOT NULL,
     payload         JSONB NOT NULL,
     outcome         TEXT NOT NULL CHECK (outcome IN ('success','failure')),
@@ -34,8 +35,8 @@ CREATE TABLE IF NOT EXISTS audit_schema_meta (
     migrated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- v2 schema baseline (fresh init); existing v1 DBs migrate via scripts/migrations/audit-v1-to-v2.sh (Task 4b).
+-- v3 schema baseline (fresh init); existing v1 DBs migrate via scripts/migrations/audit-v1-to-v2.sh (Task 4b).
 -- migrated_at is passed explicitly so the INSERT works even when a user
 -- has dropped the column-side DEFAULT (#43 followup-2 robustness).
-INSERT INTO audit_schema_meta (id, version, migrated_at) VALUES (1, 2, CURRENT_TIMESTAMP)
-    ON CONFLICT (id) DO UPDATE SET version = 2, migrated_at = CURRENT_TIMESTAMP;
+INSERT INTO audit_schema_meta (id, version, migrated_at) VALUES (1, 3, CURRENT_TIMESTAMP)
+    ON CONFLICT (id) DO UPDATE SET version = 3, migrated_at = CURRENT_TIMESTAMP;

@@ -12,9 +12,9 @@ You arrive here with an action name. Find its section below. Each section gives 
 
 Run the recipe in your active projection's reference file (`references/<projection-id>.md`) using the rules below. The protocol contracts (intent, pre/post conditions, idempotency property) are uniform across every projection; only the invocation shape differs by Form.
 
-## Audit hand-off — sequencing rule for the seven mutating actions
+## Audit hand-off — sequencing rule for the seven mutating action families
 
-Before invoking any of `create_card` / `transition_card` / `claim_card` / `release_claim` / `link_pr_to_card` / `comment_on_card`, your molecular skill MUST have already consulted `classifying-actions` and started the audit sequence. This skill sits in the middle of the sandwich:
+Before invoking any of `create_card` / `transition_card` / `claim_card` / `release_claim` / `link_pr_to_card` / `comment_on_card` / `handoff_card`, your molecular skill MUST have already consulted `classifying-actions` and started the audit sequence. This skill sits in the middle of the sandwich:
 
 1. Caller's molecular skill consults `classifying-actions` → gets `A` or `R`.
 2. Caller writes the propose audit row (R) or notes the auto-class (A) per `auditing-actions`.
@@ -110,6 +110,25 @@ This skill does not write audit rows; the caller does. The split keeps dispatch 
 - **Form C — REST / GraphQL**: HTTP POST to the backend's comments endpoint.
 - **Idempotent?**: NO — each call posts a new comment. The protocol does not require retry guard.
 - **Failure tier**: tier C for transient transport, tier B for length-exceeded (caller decides whether to truncate). See `failure-mode-dispatch.md`.
+
+## `handoff_card`
+
+- **Intent**: transfer the Card's work obligation from one seat to another.
+- **What you pass**: `(kanban_id, card_key, from_seat, to_seat, reason,
+  needs?, artifacts?)`. Validate the authority edge and cap through
+  `board-superpowers:board-canon` before dispatch.
+- **What you get back**: `(handed_off | refused_illegal | refused_cap |
+  conflict | partial_failure)`.
+- **Form A -- bash CLI**: `scripts/handoff-card.sh`; the active projection
+  resolves Role field, option, Project item, and Card comment targets.
+- **Forms B/C**: set the projection's semantic Role/owner lane, then append
+  the structured handoff comment. Never model this as a generic field setter.
+- **Idempotent?**: setting the Role is idempotent; the comment is not. The
+  projection refuses a from-seat mismatch and counts prior marker comments
+  before mutation to prevent accidental duplicate retries.
+- **Failure tier**: illegal edge and cap are tier D refusals. A Role write
+  followed by comment failure is a surfaced partial failure and must not be
+  silently retried. Status is never touched.
 
 ## Related
 

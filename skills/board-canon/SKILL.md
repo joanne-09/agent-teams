@@ -1,6 +1,6 @@
 ---
 name: board-canon
-description: Use whenever any board operation in board-superpowers needs the canonical contract — the 6-state machine, the Card body schema, the branch-naming convention (claim/<kanban-id>-<key-slug>-<title-slug>), or the WIP counting formula. This is the read-only source of truth that every other board-superpowers skill consults before transitioning a card, validating a claim, or checking WIP. Use it even when the user doesn't say "schema" or "state machine" — any time card, branch, Status, or WIP comes up, this is what defines the rules.
+description: Use whenever any board operation in board-superpowers needs the canonical contract — the 6-state machine, the orthogonal Role lane and handoff authority, the Card body schema, the branch-naming convention (claim/<kanban-id>-<key-slug>-<title-slug>), or the WIP counting formula. This is the read-only source of truth that every other board-superpowers skill consults before transitioning a card, validating a claim, or checking WIP. Use it even when the user doesn't say "schema" or "state machine" — any time card, branch, Status, or WIP comes up, this is what defines the rules.
 when_to_use: Use whenever a card transition, claim push, branch name, WIP cap check, or PR-to-card linkage is being reasoned about. Also when validating that a manual edit to the board respects the contract.
 user-invocable: false
 ---
@@ -17,6 +17,7 @@ Consult this skill before any card transition, claim push, branch name, or WIP c
 | Resolve a claim conflict or release a stale claim | § Claim protocol + `references/claim-protocol.md` |
 | Generate a claim branch name from a card | § Branch naming + `references/branch-naming.md` |
 | Compute a Consumer's WIP count vs cap | § WIP counting + `references/wip-counting.md` |
+| Validate a Role handoff or handoff cap | `references/handoff-authority.md` |
 | Validate a card body's section shape | § Card body schema + `references/card-body-schema.md` |
 
 ## State machine
@@ -173,7 +174,7 @@ A two-segment legacy form exists on repos authored under earlier plugin versions
 
 ## What this skill does NOT cover
 
-- **WHO transitions a card** — that depends on the role (Producer vs Consumer), which is decided by other skills.
+- **WHICH routine initiates a legal transition or handoff** — that depends on the role (Producer vs Consumer), which is decided by other skills.
 - **WHEN to transition** — that's per-routine in the four Producer routines (`briefing-daily`, `intaking-requirement`, `reviewing-pr-queue`, `triaging-board`) and `consuming-card` (Consumer).
 - **HOW to communicate decisions** — that's `enforcing-pr-contract` for PR shape and the audit log writer for the trace.
 

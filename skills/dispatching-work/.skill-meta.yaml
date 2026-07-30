@@ -1,0 +1,5 @@
+version: v0.8.0
+layer: molecular
+type: technique
+mode: claude-code-only
+bounded-context: session

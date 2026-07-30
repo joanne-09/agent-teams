@@ -1,6 +1,6 @@
 {
   "name": "board-superpowers",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Agile scheduling layer for Codex CLI: turn GitHub Projects into the central dispatcher, one session = one PR. Depends on superpowers and gstack.",
   "author": "board-superpowers contributors",
   "license": "MIT",
@@ -8,7 +8,7 @@
   "interface": {
     "displayName": "board-superpowers",
     "shortDescription": "GitHub-Project-driven scheduling for AI coding sessions",
-    "longDescription": "board-superpowers turns a GitHub Project into the central dispatcher for AI-driven coding sessions. Routes every session into a Producer routine (briefing-daily / intaking-requirement / reviewing-pr-queue / triaging-board, post-#72) or Consumer mode (one-card-to-PR). Delegates real work — TDD, debugging, review, QA, security — to superpowers and gstack. v1 catalog: 1 entry + 7 molecular + 6 atomic = 14 skills, all shipped. Producer Shape Y refactor shipped in v0.7.0 (#72); sibling-plugin invocation SPOT (`composing-siblings` atomic) shipped in v0.6.0 (#71); setup-stages substrate shipped in v0.5.0 (#67).",
+    "longDescription": "board-superpowers turns a kanban projection into the durable dispatcher for role-seated AI coding sessions. v0.8.0 adds the Producer team slice: Role-lane EM dispatch, architect-owned specification delivery, seat-aware autonomy, audited handoffs, and audit schema v3 actor-seat attribution. The original v1 catalog remains 14/14 shipped; the runtime catalog is now 1 entry + 9 molecular + 6 atomic = 16 skills. QA-owned independent delivery verification remains a later slice. Delegates TDD, debugging, review, QA, and security to superpowers and gstack.",
     "developerName": "board-superpowers contributors",
     "category": "developer-tools",
     "websiteURL": "https://github.com/PanQiWei/board-superpowers"

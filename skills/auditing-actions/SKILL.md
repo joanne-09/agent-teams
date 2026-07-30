@@ -56,6 +56,7 @@ bash <plugin-root>/scripts/audit-log-write.sh \
   --action-id <int> \
   --decision A \
   --skill <calling-skill-name> \
+  --actor-seat <analyst|architect|rd|qa|em|human> \
   --approval-stage auto \
   --outcome <success|failure> \
   --payload '<json-per-action_id>'
@@ -66,17 +67,19 @@ For R-class actions, two invocations — propose, then resolve:
 ```bash
 # Step 1: propose entry (before architect ack)
 bash <plugin-root>/scripts/audit-log-write.sh \
-  --action-id <int> --decision R --skill <name> \
+  --action-id <int> --decision R --skill <name> --actor-seat <seat> \
   --approval-stage propose --outcome success \
   --payload '<proposal-json>'
 
 # Step 2: resolve entry (after architect approves OR declines)
 bash <plugin-root>/scripts/audit-log-write.sh \
-  --action-id <int> --decision R --skill <name> \
+  --action-id <int> --decision R --skill <name> --actor-seat <seat> \
   --approval-stage approved \         # OR rejected
   --outcome <success|failure> \       # OR success (for rejected)
   --payload '<full-action-json>'      # OR '<decline-reason-json>'
 ```
+
+`--actor-seat` is optional for backward compatibility; omit it only when no seat is bound. The script writes SQL NULL for legacy rows.
 
 The script returns exit 0 when the row was written somewhere — to the
 configured RDBMS (preferred) or to a host-local jsonl file (fallback).

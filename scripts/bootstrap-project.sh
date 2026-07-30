@@ -861,7 +861,7 @@ COPIED_LOCK=0
 # never destroys a working venv the architect had before re-running
 # bootstrap. Only remove .venv on rollback if THIS step created it.
 VENV_PREEXISTED=0
-if [ -f "${REPO_ROOT}/.board-superpowers/.venv/bin/python3" ]; then
+if bsp_venv_python_path "${REPO_ROOT}" >/dev/null 2>&1; then
     VENV_PREEXISTED=1
 fi
 

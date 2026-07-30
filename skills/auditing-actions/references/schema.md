@@ -1,6 +1,6 @@
-# Audit log schema — 8 columns
+# Audit log schema — 9 columns
 
-The audit_log table (in postgres / mysql / sqlite) has 8 columns. Every
+The audit_log table (in postgres / mysql / sqlite) has the shared columns below. Every
 audit row is one INSERT.
 
 ## Columns
@@ -11,7 +11,8 @@ audit row is one INSERT.
 | `timestamp` | TIMESTAMPTZ / DATETIME(3) / TEXT (ISO8601 UTC) | yes | When the row was written; UTC. |
 | `project` | TEXT / VARCHAR(255) / TEXT | yes | `OWNER/NUMBER` form per the BoardAdapter. |
 | `session_id` | TEXT / VARCHAR(64) / TEXT | yes | The Claude Code or Codex session id. |
-| `actor_role` | CHECK / ENUM ('producer','consumer') | yes | Lowercase. |
+| `actor_role` | CHECK / ENUM ('producer','consumer') | yes | Execution shape, lowercase. |
+| `actor_seat` | TEXT / VARCHAR(16) / TEXT | no | `analyst|architect|rd|qa|em|human`; NULL on pre-seat rows. |
 | `action_id` | SMALLINT / SMALLINT / INTEGER | yes | Matrix row from classifying-actions. |
 | `payload` | JSONB / JSON / TEXT (JSON-as-string) | yes | Per-action_id shape; see db-write-conventions.md. |
 | `outcome` | CHECK / ENUM ('success','failure') | yes | Did the action's effect land? |
@@ -34,7 +35,7 @@ the starter set.
 ## Schema version sentinel
 
 A sibling table `audit_schema_meta` carries a `version` integer; the
-current sentinel version is `1`. Future schema migrations bump this
+current sentinel version is `3`. Future schema migrations bump this
 lazily on first write per session.
 
 ## Append-only

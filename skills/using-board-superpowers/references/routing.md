@@ -11,6 +11,25 @@ The project's `CLAUDE.md` / `AGENTS.md` may carry a routing block, but those are
 
 Removing either makes the system less robust. Project routing block alone risks the agent picking the wrong downstream skill silently; entry SKILL.md alone risks the agent not knowing the plugin exists when no trigger fires.
 
+
+## Seat token is parsed first
+
+A literal `[role:<seat>]` binds the session before natural-language routing.
+Accepted seats are `em`, `analyst`, `architect`, `rd`, `qa`, and `human`. An
+unknown value asks the user; it never falls through to a guessed routine.
+
+| Seat | Default | Also available |
+|---|---|---|
+| `em` | `board-superpowers:briefing-daily` | `board-superpowers:triaging-board`, `board-superpowers:dispatching-work` |
+| `analyst` | `board-superpowers:intaking-requirement` | read-only briefing |
+| `architect` | `board-superpowers:decomposing-into-milestones` | `board-superpowers:authoring-spec`, `board-superpowers:intaking-requirement` |
+| `rd` | `board-superpowers:consuming-card` | none |
+| `qa` | `board-superpowers:reviewing-pr-queue` | delivery verification is deferred until its dedicated skill ships |
+| `human` | ask which oversight action is intended | merge gate and explicit questions |
+
+`[role:rd] [board-card:#42]` routes to consuming-card with seat `rd`. With no
+seat token, preserve the existing Producer/Consumer phrase routing exactly.
+
 ## When the message matches multiple rows
 
 Messages can hit multiple rows of the routing table. Examples:

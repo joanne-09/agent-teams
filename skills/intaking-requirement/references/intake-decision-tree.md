@@ -24,8 +24,8 @@ routed to the first matching row (rows are listed by escalation priority).
 | `gstack:/plan-ceo-review` | "Rethink the problem", "10-star product", "challenge the premise", "expand scope" | CEO-mode scope critique | Updated scope decision; resume intake at Step 2 with revised requirement. |
 | `gstack:/plan-eng-review` | Architecture decision questions: "which adapter shape", "which storage", "schema choice", "data flow", "interface design" | Architecture lock — diagrams, edge cases, decision record | Output may be a durable ADR or a gitignored `docs/plans/<feature>/eng-review.md`. |
 | `superpowers:brainstorming` | "Let's explore this", "I'm not sure of the design", multi-step requirement that's direction-set but not design-locked | Sharpened requirements + design notes | After brainstorming, resume intake at Step 2 with the sharper artifact. |
-| `board-superpowers:decomposing-into-milestones` | scope-shape-judgment.md routes to "multi-card" or "milestone-grouped" | INVEST-compliant batch of Ready cards on the board | Attach walking-skeleton hint for brand-new feature surfaces. |
-| **Direct card creation** (this skill's own flow, Step 4 → § "Direct card creation") | shape = single card AND spec preconditions are clear | One Ready card on the board | Card on the GitHub Project (durable). |
+| `board-superpowers:decomposing-into-milestones` | scope-shape-judgment.md routes to "multi-card" or "milestone-grouped" | INVEST-compliant batch of implementation-ready Cards assigned to Role `rd` | Attach walking-skeleton hint for brand-new feature surfaces. |
+| **Direct card creation** (this skill's own flow, Step 4 → § "Direct card creation") | shape = single card AND spec preconditions are clear | One Backlog Card with Role `architect` and a structured analyst handoff | Card on the GitHub Project (durable). |
 
 ### Routing decision flow
 

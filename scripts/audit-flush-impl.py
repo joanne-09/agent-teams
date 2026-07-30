@@ -68,9 +68,9 @@ def insert_row(audit_db_url, row):
     if 'payload=' in summary_str:
         payload = summary_str.split('payload=', 1)[1]
 
-    actor_role = 'producer'
-    if row.get('skill', '') == 'consuming-card':
-        actor_role = 'consumer'
+    actor_role = row.get('actor_role')
+    if actor_role not in ('producer', 'consumer'):
+        actor_role = 'consumer' if row.get('skill', '') == 'consuming-card' else 'producer'
 
     outcome = 'success' if 'outcome=success' in summary_str else 'failure'
     if 'approval=propose' in summary_str:
@@ -92,6 +92,7 @@ def insert_row(audit_db_url, row):
         row.get('project', 'unknown/0'),
         row.get('session_id', 'flush-' + str(row.get('event_uuid', ''))[:8]),
         actor_role,
+        row.get('actor_seat'),
         action_id,
         payload or '{}',
         outcome,
@@ -108,9 +109,9 @@ def insert_row(audit_db_url, row):
             conn = sqlite3.connect(db_path)
             conn.execute(
                 "INSERT OR IGNORE INTO audit_log "
-                "(timestamp, project, session_id, actor_role, action_id, "
+                "(timestamp, project, session_id, actor_role, actor_seat, action_id, "
                 "payload, outcome, approval_stage, event_uuid) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 values,
             )
             conn.commit()
@@ -122,9 +123,9 @@ def insert_row(audit_db_url, row):
             with conn.cursor() as cur:
                 cur.execute(
                     "INSERT INTO audit_log "
-                    "(timestamp, project, session_id, actor_role, action_id, "
+                    "(timestamp, project, session_id, actor_role, actor_seat, action_id, "
                     "payload, outcome, approval_stage, event_uuid) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
                     "ON CONFLICT (event_uuid) DO NOTHING",
                     values,
                 )
@@ -145,9 +146,9 @@ def insert_row(audit_db_url, row):
                 # vs INSERT IGNORE which swallows truncation/JSON errors
                 cur.execute(
                     "INSERT INTO audit_log "
-                    "(timestamp, project, session_id, actor_role, action_id, "
+                    "(timestamp, project, session_id, actor_role, actor_seat, action_id, "
                     "payload, outcome, approval_stage, event_uuid) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
                     "ON DUPLICATE KEY UPDATE event_uuid=event_uuid",
                     values,
                 )

@@ -60,6 +60,18 @@ RC=0
 sqlite3 "${DB}" "INSERT INTO audit_log (timestamp,project,session_id,actor_role,action_id,payload,outcome,approval_stage,event_uuid) VALUES ('2026-01-03','p/1','s3','consumer',202,'{}','success','auto','test-uuid-1')" 2>/dev/null || RC=$?
 [ "${RC}" != 0 ] || { echo "FAIL: duplicate event_uuid INSERT should fail post-migration"; exit 1; }
 
+# Assert 7: v2 -> v3 adds nullable actor_seat and is idempotent.
+python "${ROOT}/scripts/migrations/audit-v2-to-v3-impl.py"
+[ "$(sqlite3 "${DB}" 'SELECT version FROM audit_schema_meta WHERE id=1')" = 3 ] \
+    || { echo "FAIL: version not 3 after v2-to-v3 migration"; exit 1; }
+sqlite3 "${DB}" 'PRAGMA table_info(audit_log)' | grep -q actor_seat \
+    || { echo "FAIL: actor_seat column missing after v2-to-v3 migration"; exit 1; }
+[ "$(sqlite3 "${DB}" 'SELECT COUNT(*) FROM audit_log WHERE actor_seat IS NULL')" -ge 1 ] \
+    || { echo "FAIL: legacy rows did not retain NULL actor_seat"; exit 1; }
+python "${ROOT}/scripts/migrations/audit-v2-to-v3-impl.py"
+[ "$(sqlite3 "${DB}" 'SELECT version FROM audit_schema_meta WHERE id=1')" = 3 ] \
+    || { echo "FAIL: v3 migration idempotency broken"; exit 1; }
+
 # --- Assert 7 — robustness against schema_meta without DEFAULT (#43 followup-2)
 # The migration must not partial-apply (column added, schema_meta
 # unchanged) when audit_schema_meta.migrated_at lacks a DEFAULT clause.
@@ -92,5 +104,10 @@ bash "${ROOT}/scripts/migrations/audit-v1-to-v2.sh" \
     || { echo "FAIL: schema_meta did not advance to v2 (no-DEFAULT regression)"; exit 1; }
 sqlite3 "${DB2}" 'PRAGMA table_info(audit_log)' | grep -q event_uuid \
     || { echo "FAIL: event_uuid column missing post-migration in no-DEFAULT mode"; exit 1; }
+python "${ROOT}/scripts/migrations/audit-v2-to-v3-impl.py"
+[ "$(sqlite3 "${DB2}" 'SELECT version FROM audit_schema_meta WHERE id=1')" = 3 ] \
+    || { echo "FAIL: schema_meta did not advance to v3 in no-DEFAULT mode"; exit 1; }
+sqlite3 "${DB2}" 'PRAGMA table_info(audit_log)' | grep -q actor_seat \
+    || { echo "FAIL: actor_seat missing in no-DEFAULT mode"; exit 1; }
 
 echo "PASS"

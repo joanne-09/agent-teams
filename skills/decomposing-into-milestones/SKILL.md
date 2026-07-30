@@ -170,7 +170,7 @@ The batch creation is a mutating action governed by the atomic SKILLs:
    and routes the per-Form invocation (Form A bash → `gh issue create` for the
    `github-project-v2` projection). Each create_card lands the card in `Backlog` (per protocol § create_card
    post-condition `status = Backlog` — see 00-kanban-protocol.md § "Action contracts");
-   decomposing then dispatches an immediate `transition_card` to `Ready` for each new card.
+   decomposing then invokes `handoff_card` from `architect` to `rd` so every implementation Card has Role `rd`, followed by the immediate `transition_card` to `Ready` only after the INVEST and dependency gates pass.
    Both actions are batched into the same governance dispatch (action_id 1) — classify-once,
    audit-once for the entire batch. Prepend pattern (Form A example, current projection):
    ```bash
@@ -183,7 +183,7 @@ The batch creation is a mutating action governed by the atomic SKILLs:
    constraints, and `skills/operating-kanban/SKILL.md` for the dispatch contract.
 4. If R: surface the Step 7 artifact to the architect; wait for ack; on approve, run step 3.
 5. Invoke `board-superpowers:auditing-actions` with `action_id=1, decision_class=A|R, summary` carrying the batch metadata: `{batch_size: N, card_numbers: [...], total_loc_estimate: X, source_artifact_sha256: ...}`.
-6. Hand the batch back to `intaking-requirement` to close out the intake (the board now has the new Ready cards; the intake routine confirms completion).
+6. Hand the batch back to `intaking-requirement` to close out the intake (the board now has the new Ready Cards in the RD lane; the intake routine confirms completion).
 
 ## Common Rationalizations
 

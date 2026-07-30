@@ -70,16 +70,25 @@ the fence.
 <!-- routing-block:start -->
 ## board-superpowers session routing
 
-This project uses the `board-superpowers` plugin (v0.5.0).
-Any Claude Code session in this project plays one of two roles:
+This project uses the `board-superpowers` plugin (v0.8.0).
+Parse an optional `[role:<seat>]` token before intent routing. Valid seats are
+`em`, `analyst`, `architect`, `rd`, `qa`, and `human`; ask on an unknown seat.
 
-- **Board Consumer** — if the first message contains `[board-card:#N]`,
+- `em` routes to `briefing-daily`, `triaging-board`, or `dispatching-work`.
+- `analyst` routes to `intaking-requirement`.
+- `architect` routes to `authoring-spec`, `decomposing-into-milestones`, or
+  `intaking-requirement`.
+- `rd` plus `[board-card:#N]` routes to `consuming-card`.
+- `qa` routes to `reviewing-pr-queue` in the Producer slice.
+- `human` handles explicit questions and the merge gate.
+
+With no seat token, preserve the existing two-shape routing:
+
+- **Board Consumer** -- if the first message contains `[board-card:#N]`,
   or the user asks to work on / claim / implement card N, invoke the
-  `consuming-card` skill immediately. That skill owns the full
-  lifecycle: claim → implement → PR → update board.
-- **Board Manager** — if the user asks about planning today's work,
-  reviewing the board, decomposing a requirement, triaging blocked
-  cards, or running a retro, invoke the appropriate Producer routine skill (`briefing-daily`, `intaking-requirement`, `reviewing-pr-queue`, or `triaging-board`).
+  `consuming-card` skill immediately.
+- **Board Producer** -- route morning briefing, intake, PR review, or board
+  triage to the matching routine skill.
 - When unsure, invoke `using-board-superpowers` first.
 
 board-superpowers depends on the `superpowers` and `gstack` plugins

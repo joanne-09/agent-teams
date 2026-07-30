@@ -13,6 +13,8 @@
 #   --outcome success|failure
 #   --payload <json>
 #   [--repo-root <path>]          default: bsp_primary_repo_root from PWD
+#   [--actor-role <role>]         producer|consumer; inferred when omitted
+#   [--actor-seat <seat>]         orthogonal capability seat; optional
 #   [--mode <bootstrap-pending>]  outbox path (#43 AC4 write); writes a
 #                                 jsonl row with event_uuid + status=pending
 #                                 + retry_count=0 + pending_since and
@@ -45,6 +47,8 @@ OUTCOME=""
 PAYLOAD=""
 REPO_ROOT=""
 MODE=""
+ACTOR_SEAT=""
+ACTOR_ROLE=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -56,6 +60,8 @@ while [ $# -gt 0 ]; do
         --payload)          PAYLOAD="$2"; shift 2 ;;
         --repo-root)        REPO_ROOT="$2"; shift 2 ;;
         --mode)             MODE="$2"; shift 2 ;;
+        --actor-seat)       ACTOR_SEAT="$2"; shift 2 ;;
+        --actor-role)       ACTOR_ROLE="$2"; shift 2 ;;
         *) bsp_warn "unknown arg: $1"; exit 2 ;;
     esac
 done
@@ -70,6 +76,20 @@ for v in ACTION_ID DECISION SKILL APPROVAL_STAGE OUTCOME PAYLOAD; do
         exit 2
     fi
 done
+
+if [ -n "${ACTOR_SEAT}" ]; then
+    case "${ACTOR_SEAT}" in analyst|architect|rd|qa|em|human) ;; *) bsp_warn "invalid --actor-seat: ${ACTOR_SEAT}"; exit 2 ;; esac
+fi
+if [ -n "${ACTOR_ROLE}" ]; then
+    case "${ACTOR_ROLE}" in producer|consumer) ;; *) bsp_warn "invalid --actor-role: ${ACTOR_ROLE}"; exit 2 ;; esac
+else
+    case "${SKILL}:${ACTION_ID}" in
+        consuming-card:*|authoring-spec:100|authoring-spec:101|authoring-spec:102|authoring-spec:103) ACTOR_ROLE="consumer" ;;
+        *) ACTOR_ROLE="producer" ;;
+    esac
+fi
+export BSP_ACTOR_SEAT="${ACTOR_SEAT}"
+export BSP_ACTOR_ROLE="${ACTOR_ROLE}"
 
 [ -z "${REPO_ROOT}" ] && REPO_ROOT="$(bsp_primary_repo_root "${PWD}" 2>/dev/null || echo "${PWD}")"
 
@@ -261,7 +281,8 @@ BSP_REPO_ROOT="${REPO_ROOT}" \
 BSP_AUDIT_DB_URL="${AUDIT_DB_URL}" \
 BSP_PROJECT="${PROJECT_NAME}" \
 BSP_SESSION_ID="$(bsp_resolve_session_id)" \
-BSP_ACTOR_ROLE="$( [ "${SKILL}" = "consuming-card" ] && echo consumer || echo producer )" \
+BSP_ACTOR_ROLE="${ACTOR_ROLE}" \
+BSP_ACTOR_SEAT="${ACTOR_SEAT}" \
 BSP_ACTION_ID="${ACTION_ID}" \
 BSP_PAYLOAD="${PAYLOAD}" \
 BSP_OUTCOME="${OUTCOME}" \
@@ -278,12 +299,13 @@ ts = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
 project = os.environ['BSP_PROJECT']
 session_id = os.environ['BSP_SESSION_ID']
 actor_role = os.environ['BSP_ACTOR_ROLE']
+actor_seat = os.environ.get('BSP_ACTOR_SEAT') or None
 action_id = int(os.environ['BSP_ACTION_ID'])
 payload = os.environ['BSP_PAYLOAD']
 outcome = os.environ['BSP_OUTCOME']
 approval_stage = os.environ['BSP_APPROVAL_STAGE']
 
-values = (ts, project, session_id, actor_role, action_id, payload, outcome, approval_stage)
+values = (ts, project, session_id, actor_role, actor_seat, action_id, payload, outcome, approval_stage)
 
 if scheme in ('sqlite', 'sqlite3'):
     db_path = url_str.replace(scheme + '://', '', 1)
@@ -293,8 +315,8 @@ if scheme in ('sqlite', 'sqlite3'):
     conn = sqlite3.connect(db_path)
     conn.execute(
         "INSERT INTO audit_log "
-        "(timestamp, project, session_id, actor_role, action_id, payload, outcome, approval_stage) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "(timestamp, project, session_id, actor_role, actor_seat, action_id, payload, outcome, approval_stage) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         values,
     )
     conn.commit()
@@ -302,13 +324,13 @@ if scheme in ('sqlite', 'sqlite3'):
 elif scheme in ('postgresql', 'postgres'):
     # Use psql -v parameterization. Each value passed as variable.
     args = ['psql', url_str, '-v', 'ON_ERROR_STOP=1']
-    for k, v in zip(['ts', 'project', 'session_id', 'actor_role', 'action_id',
+    for k, v in zip(['ts', 'project', 'session_id', 'actor_role', 'actor_seat', 'action_id',
                      'payload', 'outcome', 'approval_stage'], values):
-        args.extend(['-v', '{k}={v}'.format(k=k, v=v)])
+        args.extend(['-v', '{k}={v}'.format(k=k, v='' if v is None else v)])
     args.extend(['-c',
         "INSERT INTO audit_log "
-        "(timestamp, project, session_id, actor_role, action_id, payload, outcome, approval_stage) "
-        "VALUES (:'ts', :'project', :'session_id', :'actor_role', :'action_id'::int, "
+        "(timestamp, project, session_id, actor_role, actor_seat, action_id, payload, outcome, approval_stage) "
+        "VALUES (:'ts', :'project', :'session_id', :'actor_role', NULLIF(:'actor_seat',''), :'action_id'::int, "
         ":'payload', :'outcome', :'approval_stage')"
     ])
     r = subprocess.run(args, capture_output=True)
@@ -329,8 +351,8 @@ elif scheme in ('mysql', 'mysql+pymysql'):
     with conn.cursor() as cur:
         cur.execute(
             "INSERT INTO audit_log "
-            "(timestamp, project, session_id, actor_role, action_id, payload, outcome, approval_stage) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            "(timestamp, project, session_id, actor_role, actor_seat, action_id, payload, outcome, approval_stage) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             values,
         )
     conn.commit()

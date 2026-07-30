@@ -72,7 +72,7 @@ Omit if no such notes apply.
 | [0003](./0003-worktree-per-consumer.md) | One worktree per Consumer session | accepted |
 | [0004](./0004-composition-over-reimplementation.md) | Composition over reimplementation of TDD/QA | accepted |
 | [0005](./0005-board-adapter-contract.md) | v1 BoardAdapter contract surface | accepted; § Consequences amended by ADR-0010; § Decision and § Type definitions amended by ADR-0025 (rescoped to v1 GitHubProjectAdapter projection) |
-| [0006](./0006-producer-autonomy-boundary.md) | Producer autonomy boundary — autonomous-with-transparency, with explicit permission matrix | accepted |
+| [0006](./0006-producer-autonomy-boundary.md) | Producer autonomy boundary — autonomous-with-transparency, with explicit permission matrix | superseded by ADR-0030 |
 | [0007](./0007-plugin-runtime-derived-constraints.md) | Plugin-runtime-derived constraints — three constraints arising from CC / Codex plugin physics | proposed |
 | [0008](./0008-plugin-to-plugin-skill-invocation.md) | Plugin-to-plugin composition via SKILL invocation (vs subagent spawn / MCP / direct import) | accepted |
 | [0009](./0009-allow-sqlite-as-byo-audit-db.md) | Allow SQLite as a BYO audit DB scheme (supersedes ADR-0006 §5 partial) | accepted |
@@ -95,3 +95,6 @@ Omit if no such notes apply.
 | [0026](./0026-multi-kanban-lifecycle-and-flat-card-hierarchy.md) | Multi-kanban support + lifecycle states + flat-Card hierarchy stance | accepted |
 | [0027](./0027-m3-dispatch-via-kanban-protocol-projection.md) | M3 capability dispatch via Kanban Protocol projection (supersedes ADR-0022 § M3; renames ADR-0024 § Part B's M10 stage canonical name) | accepted |
 | [0028](./0028-cron-as-trigger-carrier.md) | Cron as a trigger carrier — external schedulers as a first-class plugin entry mechanism (complement to ADR-0007; closes the J2 `cron-job` Open / TBD in `0005-contracts/09-session-agent-protocol.md`) | accepted |
+| [0029](./0029-agent-seats-at-plugin-layer.md) | Agent seats at the plugin layer | accepted |
+| [0030](./0030-seat-dimension-autonomy.md) | Seat-dimension autonomy and handoff authority | accepted; supersedes ADR-0006 |
+| [0031](./0031-handoff-card-protocol-action.md) | handoff_card as the ninth Kanban Protocol action | accepted; extends ADR-0025 |

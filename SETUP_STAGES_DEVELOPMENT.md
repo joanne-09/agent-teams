@@ -568,6 +568,11 @@ defines the current M3-dispatch model (supersedes ADR-0022 BoardAdapter dispatch
   `applicable_when: kanban_projection_capability: card_status_label`.
   Projections declare which capabilities they support in their reference file
   under `skills/operating-kanban/references/<projection-id>.md § 'Setup capabilities'`.
+- **Role is an M3 board-preparation capability** —
+  `m3.repo.ensure-role-field` depends on `ensure-role-field`. The GitHub
+  projection creates an absent Role single-select automatically; an existing
+  malformed option set becomes agentic-on-failure because `gh` cannot safely
+  rewrite single-select options in place.
 
 ### Judgment: adding a new capability
 
@@ -664,7 +669,7 @@ Any stage callable (`executor` or `apply_choice`) that writes to a
 
 A fresh `data = {... "modules": {"lifecycle": {...}}, ...}` literal
 followed by `write_settings(...)` is the **canonical anti-pattern**.
-It clobbers peer state and rolls all 22 stages back to `pending` on
+It clobbers peer state and rolls all 23 stages back to `pending` on
 re-bootstrap. The fix is structural: read → modify → write, not write
 fresh.
 

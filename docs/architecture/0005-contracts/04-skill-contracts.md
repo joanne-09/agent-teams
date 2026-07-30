@@ -159,22 +159,27 @@ subsection (Mode-2 procedural fallback table).
 
 ## board-superpowers' own SKILL surface
 
-Fourteen skills ship at v1 (post-#72): 1 entry + 7 molecular + 6 atomic. All use
-only the portable (`name`, `description`) frontmatter subset and are Codex-portable.
+The original fourteen-skill v1 catalog remains fully shipped (post-#72).
+The v0.8.0 Producer team slice adds two molecular skills, for a runtime total
+of 16: 1 entry + 9 molecular + 6 atomic. The v1 skills retain the portable
+frontmatter subset. The two team-slice skills are marked `claude-code-only`
+in metadata while cross-platform seat-carrier parity remains unverified.
 
 | Skill | Layer | Description (one-line summary) | Composes (sibling skills it invokes) | Mode-2 safe? |
 |-------|-------|--------------------------------|--------------------------------------|--------------|
-| `using-board-superpowers` | Entry | Entry skill: preflight + role disambiguation + first-time bootstrap | all 4 Producer routine skills + `consuming-card` (its own siblings) | yes — procedural |
+| `using-board-superpowers` | Entry | Entry skill: preflight + lifecycle / Seat / Role routing | six Producer/team routines + `consuming-card` + `bootstrapping-repo` | yes — procedural |
 | `briefing-daily` | Molecular | Producer daily orientation — board read, WIP flagging, stale-claim detection, next-action recommendation | `board-canon`, `operating-kanban` (`read_board`), `composing-siblings`; `gstack:/office-hours`, `gstack:/plan-ceo-review`, `gstack:/plan-eng-review` (extended orientation) | yes — procedural |
 | `intaking-requirement` | Molecular | Producer intake — acknowledge, shape-judge, spec-first check, route to sibling skill or create card | `board-canon`, `operating-kanban` (`create_card`), `composing-siblings`; `gstack:/office-hours`, `/plan-ceo-review`, `/plan-eng-review`; `superpowers:brainstorming`, `writing-plans` | yes — procedural |
 | `reviewing-pr-queue` | Molecular | Producer review queue — validate PRs via enforcing-pr-contract, comment on violations, transition cards | `board-canon`, `operating-kanban` (`read_board`, `transition_card`), `enforcing-pr-contract`, `composing-siblings` | yes — procedural |
 | `triaging-board` | Molecular | Producer triage — Blocked-card 3-class remediation, stale-claim detection and release | `board-canon`, `operating-kanban` (`read_board`, `release_claim`, `transition_card`), `composing-siblings` | yes — procedural |
+| `dispatching-work` | Molecular | EM Role-lane queue selection and carrier-neutral kickoff generation | `board-canon`, `operating-kanban`, `classifying-actions`, `auditing-actions` | procedural; metadata is CC-only pending carrier parity |
+| `authoring-spec` | Molecular | Architect-owned docs Card from claim/worktree through spec PR and RD handoff | `board-canon`, `operating-kanban`, `composing-siblings`, `classifying-actions`, `auditing-actions`; design siblings | procedural; metadata is CC-only pending carrier parity |
 | `consuming-card` | Molecular | Consumer session main skill (23-node Shape X: F1-F4 claim/implement/verify/submit + B1-B5 bootstrap + G1-G4 governance + C1-C4 sibling handoffs) | via `composing-siblings`: `superpowers:writing-plans` (B1 plan synthesis), `superpowers:subagent-driven-development` (**TBD B2**) / `test-driven-development` (B2), `verification-before-completion` + `requesting-code-review` (C1 verify); `gstack:/review` (C1), `/codex` (C2), `/qa` (C3), `/cso` (C4) | yes for the SKILL body itself; the B2 delegation depends on per-sibling verification |
 | `decomposing-into-milestones` | Molecular | Producer's INVEST + slicing engine (turns design doc into cards) | `superpowers:writing-plans`; `gstack:/plan-eng-review` | yes — procedural |
 | `bootstrapping-repo` | Molecular | Sole executor for setup-stages — first-time setup + plugin-upgrade reconvergence | none | yes — procedural |
 | `board-canon` | Atomic | Shared contract: card schema + state machine + branching + WIP — the in-session SPOT for Kanban Protocol semantics (per [`00-kanban-protocol.md`](./00-kanban-protocol.md) + ADR-0025). | none (read-only) | yes — procedural, read-only |
 | `enforcing-pr-contract` | Atomic | PR three-section shape enforcement + card body AC sync | none | yes — procedural |
-| `operating-kanban` | Atomic | 8-action Kanban Protocol dispatch over the active backend projection | none in-plugin (dispatches to `gh` / MCP / REST externally) | yes — procedural |
+| `operating-kanban` | Atomic | 9-action Kanban Protocol dispatch over the active backend projection | none in-plugin (dispatches to `gh` / MCP / REST externally) | yes — procedural |
 | `classifying-actions` | Atomic | D-AUTONOMY-1 matrix + override parsing — returns A/R/N decision | none | yes — procedural |
 | `auditing-actions` | Atomic | Audit log schema + two-entry rule + BYO RDBMS write | none in-plugin (invokes `audit-log-write.sh`) | yes — procedural |
 | `composing-siblings` | Atomic | Sibling-plugin invocation SPOT — namespace prefix rules + Mode-2 max_depth=1 compatibility for all `gstack:*` / `superpowers:*` handoffs | none in-plugin (defines rules, does not itself invoke siblings) | yes — procedural |

@@ -12,7 +12,7 @@
 > **GitHubProjectAdapter projection's** artifact contract — every
 > shape pinned here (Card body sections, ClaimMarker, PR sections,
 > routing markers, Project v2 Status enum, standard labels, branch
-> naming) is what the Kanban Protocol's eight actions / six states /
+> naming) is what the Kanban Protocol's nine actions / six states /
 > Card aggregate look like when the active backend is GitHub
 > Project v2. Future backend projections (Linear, Jira, future)
 > ship sibling artifact specs; the cross-backend semantic contract

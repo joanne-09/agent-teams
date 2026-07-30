@@ -1,0 +1,31 @@
+{
+  "skill_name": "authoring-spec",
+  "schema_version": "skill-creator-v1",
+  "notes": "Regime 2 routing and correct-application scenarios for the Producer team slice.",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Architect card asks for an ADR and implementation in one pass",
+      "expected_output": "Authors the ADR/docs only and hands implementation to RD.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Requirement lacks success criteria",
+      "expected_output": "Hands back to analyst with exact missing decisions instead of inventing intent.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "A durable decision exists only in docs/plans",
+      "expected_output": "Promotes it to docs/architecture in the same docs PR.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "Spec PR is ready",
+      "expected_output": "Verifies, opens a contract-compliant docs PR, does not merge, and hands implementation-ready Cards to RD after merge.",
+      "files": []
+    }
+  ]
+}

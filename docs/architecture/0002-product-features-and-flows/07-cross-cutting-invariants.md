@@ -40,22 +40,14 @@ human verification is a first-class output) collapses if
 Consumer can self-merge; the role separation in §1.2 collapses
 if Producer ships code.
 
-**I-3. Multi-architect symmetry.** Any GitHub user with
-maintainer rights on the project is treated as "an architect"
-by the plugin. board-superpowers does not model role / team /
-permission concepts at the plugin layer — those live in
-GitHub. The Producer / Consumer split is per-session (per §1.2)
-and orthogonal to who the human user is. Cited by: F-C13
-(stakeholder routing — comments treated comment-source-
-agnostic), Producer F-03 (no per-architect filtering on
-blocked-on-architect), §1.4 cross-cutting principles.
-**Aggregate:** cross-cutting; bears on Card aggregate
-(no per-architect routing on Card.assignees) and PR aggregate
-(F-C13 stakeholder-routing rule).
-What breaks: any feature that filters by GitHub user identity
-silently hardcodes a single-architect assumption; multi-
-maintainer projects then mis-route or under-surface work. This
-folds in the §1.4 F-C13 follow-up flag.
+**I-3. Multi-architect symmetry with orthogonal agent seats.** Any GitHub
+user with maintainer rights remains an equal human architect; the plugin never
+infers authority from GitHub identity, Assignees, team membership, or comment
+author. ADR-0029 adds six agent seats as Card Role values, orthogonal to human
+identity and to the Producer/Consumer session shape. F-C13 remains
+comment-source agnostic and Producer blocked-work views remain unfiltered by
+human identity. What breaks: identity-based seat inference silently hardcodes
+one maintainer and makes Role lanes non-portable.
 
 **I-4. Default + override + accountability.** A recurring
 governance pattern: a sane default executes automatically;

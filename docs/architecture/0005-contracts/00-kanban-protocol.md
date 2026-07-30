@@ -107,7 +107,7 @@ differently:
 
 | Audience | What they extract | How they use it |
 |----------|-------------------|-----------------|
-| **Agents** (runtime) | The eight action semantics + the six-state machine + identity rules | Form a mental model of "what is happening on the board"; dispatch to per-backend projection (operating-kanban references) for invocation |
+| **Agents** (runtime) | The nine action semantics + the six-state machine + identity rules | Form a mental model of "what is happening on the board"; dispatch to per-backend projection (operating-kanban references) for invocation |
 | **Second-adapter authors** (design-time) | The action contracts (pre/post/error/idempotency) + the custom-state folding rule + the body-schema contract | Translate to native API on the new backend; produce a projection (SKILL reference + optional MCP server + optional CLI wrapper) |
 | **Plugin maintainers** (evolution) | The "IS / IS NOT" boundary + the immutability commitment + the protocol→projection ownership split | Decide whether a feature request lands at protocol layer or projection layer; resist projection-shaped concepts leaking into protocol |
 
@@ -145,7 +145,7 @@ Maps to: `Project` aggregate in
 A leaf work item — the smallest unit of kanban flow. Has identity
 (`Card.key`), human-readable display (`Card.title`), narrative
 content (`Card.body` in markdown), state membership
-(`Card.status`), classification (`Card.labels`), web pointer
+(`Card.status`), work obligation (`Card.role`, nullable until team bootstrap), classification (`Card.labels`), web pointer
 (`Card.url`), and timestamps.
 
 Maps to: `Card` aggregate in
@@ -168,6 +168,19 @@ The full state machine and per-transition contracts live in
 [`board-canon`](../../../skills/board-canon/SKILL.md) § State
 machine; that skill is the single point of truth (SPOT) for the
 state machine. Protocol document references it; does not duplicate.
+
+### Role
+
+The seat holding the Card's next work obligation. Protocol-level Role is a
+nullable closed enum once team mode is provisioned:
+
+```text
+analyst | architect | rd | qa | em | human
+```
+
+Role is orthogonal to Status, Claim, and backend Assignees. A projection with
+no Role field surfaces `Card.role = null`; callers route to bootstrap or
+unassigned triage rather than guessing.
 
 ### Claim
 
@@ -601,7 +614,7 @@ Each is rejected for reasons in ADR-0026.
 
 ## Action contracts
 
-The protocol surface is **eight actions**. Every backend projection
+The protocol surface is **nine actions**. Every backend projection
 MUST implement actions through L1 compliance (see [Compliance
 levels](#compliance-levels) below). Actions through L2 are
 required for backends supporting Consumer claim flow.
@@ -619,7 +632,7 @@ canonical statuses.
 
 **Pre-condition.** Board exists; agent has read access.
 
-**Post-condition.** Agent holds a list of `(key, title, status,
+**Post-condition.** Agent holds a list of `(key, title, status, role,
 labels, url)` tuples covering every card visible to the agent.
 Order is backend-native; callers sort client-side if order matters
 to them.
@@ -647,7 +660,7 @@ status).
 **Pre-condition.** Card exists on the board.
 
 **Post-condition.** Agent holds the full Card record (key, title,
-body, status, labels, url, timestamps).
+body, status, role, labels, url, timestamps).
 
 **Failure modes.**
 - Card not found → projection surfaces distinctly; not a transport
@@ -668,7 +681,7 @@ labels named in the call exist on the board (label provisioning
 is bootstrap responsibility, NOT projection responsibility).
 
 **Post-condition.** A new card exists on the board with the
-specified body, labels, and `status = Backlog`. Card.key is
+specified body, labels, optional initial Role, and `status = Backlog`. Card.key is
 assigned by the backend; agent receives it.
 
 **Failure modes.**
@@ -821,13 +834,32 @@ projection layer.
 
 **Idempotency.** Not idempotent (each call is a new comment).
 
+### `handoff_card`
+
+**Intent.** Transfer a Card's next work obligation from one seat to another.
+
+**Pre-condition.** Card exists; current Role equals `from_seat` when non-null;
+the authority edge is legal; handoff count is below the configured cap; and
+the projection supports Role.
+
+**Post-condition.** `Card.role = to_seat`; exactly one new structured handoff
+comment names the reason, receiving obligation, and artifacts. Status is
+unchanged. The caller writes action 300 with the originating `actor_seat`.
+
+**Failure modes.** Illegal edge or cap breach refuses before mutation. A
+concurrent Role change is a conflict. A Role write followed by comment failure
+is a surfaced partial failure and must not be blindly retried.
+
+**Idempotency.** The Role write is idempotent; comment creation is not. The
+projection checks current Role and handoff count before mutation.
+
 ---
 
 ## Setup capabilities
 
-The eight protocol actions above are **runtime** contracts: every
+The nine protocol actions above are **runtime** contracts: every
 agentic flow that reads or mutates the board issues one of those
-eight named actions, on every invocation, for the lifetime of the
+nine named actions, on every invocation, for the lifetime of the
 repo. Setup capabilities are a separate projection-authoring
 surface, layered on the same projection but **not consumed at
 runtime**. They cover the **one-time board-preparation
@@ -854,8 +886,7 @@ capabilities". The strings are **registry-internal** — no
 external API exposes them, no end user types them, and renames
 are cheap until a second projection ships.
 
-The v0.5.0 GitHub Project v2 projection declares two
-capabilities. Each capability entry in the projection's reference
+The GitHub Project v2 projection declares three capabilities: label provisioning, Status validation, and Role provisioning. Each capability entry in the projection's reference
 file follows this shape:
 
 ```yaml
@@ -973,17 +1004,17 @@ accordingly without source edits anywhere else.
 
 ### Why "setup" is not a runtime action
 
-A capability is **not** a ninth protocol action and never
+A capability is **not** a tenth protocol action and never
 appears in the Action contracts catalog above. The split exists
 because:
 
-- **Runtime actions are stable** — the eight names and their
+- **Runtime actions are stable** — the nine names and their
   semantic contracts are versioned modulo superseding ADR
   (per § Versioning + immutability). Setup capabilities are
   registry-internal vocabulary owned by the projection layer,
   with no equivalent stability commitment.
 - **Runtime actions are agent-issued** — agents reason in the
-  protocol's eight names every time they touch the board.
+  protocol's nine names every time they touch the board.
   Setup capabilities are issued exclusively by the bootstrap
   stage executor, once per repo per first-time setup, with no
   agent involvement.
@@ -993,7 +1024,7 @@ because:
   per-projection: a Linear-via-MCP projection that surfaces
   Linear's project-default-state inheritance may declare zero
   or one setup capabilities; the GitHub Form A projection
-  declares two; a future projection may declare more.
+  declares three; a future projection may declare more.
 
 If a future bootstrap need turns out to be uniform across **all**
 projections, that signals the operation belongs in a runtime
@@ -1024,7 +1055,7 @@ modules:
 | Level | Required actions | What it enables |
 |-------|------------------|-----------------|
 | **L0** (read-only) | `read_board`, `read_card` | `briefing-daily` routine; review-only Producer flows |
-| **L1** (write) | L0 + `create_card`, `transition_card`, `comment_on_card` (optional flag) | Producer intake (F-08), `decomposing-into-milestones`, basic Manager mutation |
+| **L1** (write) | L0 + `create_card`, `transition_card`, `comment_on_card` (optional flag), `handoff_card` | Producer intake (F-08), `decomposing-into-milestones`, basic Manager mutation |
 | **L2** (claim) | L1 + `claim_card`, `release_claim`, `link_pr_to_card` | Full Consumer flow (F-C0..F-C14) |
 | **L3** (full v1) | L2 + verified body-schema preservation + custom-state folding documentation | All v1 features |
 
@@ -1215,7 +1246,7 @@ a v1 supersession of this protocol document).
 The Kanban Protocol is **immutable modulo superseding ADR**. Any
 change to:
 
-- The eight action names or semantic contracts.
+- The nine action names or semantic contracts.
 - The six canonical state names or legal transitions.
 - The ontology object set (Board / Card / Status / Claim / PR
   Link / Label / Comment).

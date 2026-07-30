@@ -6,12 +6,13 @@ user-facing overview.
 
 @SKILLS.md
 
-## Project status — v1 catalog 14/14 shipped
+## Project status — v1 catalog 14/14 + Producer team slice 2/2 shipped
 
 > **The plugin is loadable at runtime.** `hooks/`,
 > `scripts/`, and `skills/` directories exist at the repo root.
-> `SessionStart` fires. The 14 v1-catalog skills auto-match.
-> The plugin dogfoods itself for any new skill / script / hook.
+> `SessionStart` fires. The 14 v1-catalog skills plus the 2 Producer
+> team-slice skills auto-match. The plugin dogfoods itself for any new
+> skill / script / hook.
 
 **v1 catalog = 14 of 14 skills shipped** (post-#72 —
 `managing-board` mega-SKILL retired; 4 per-routine molecular SKILLs
@@ -25,6 +26,10 @@ ship in its place: `briefing-daily`, `intaking-requirement`,
   `enforcing-pr-contract` + `classifying-actions` +
   `auditing-actions` + `operating-kanban` + `composing-siblings`
   (atomic).
+- **Producer team slice (v0.8.0)**: `dispatching-work` (EM queue
+  orchestration) + `authoring-spec` (architect-owned docs delivery).
+  The runtime catalog is now 16 skills. QA-owned independent delivery
+  verification and the RD terminal QA handoff remain outside this slice.
 
 **Remaining degraded behavior**: v1 catalog complete; no
 remaining v1-minimum workarounds. Plugin-upgrade reconvergence
@@ -93,7 +98,7 @@ the artifacts the methodology has approved.
 | [`FEATURE_DESIGN_METHODOLOGY.md`](./FEATURE_DESIGN_METHODOLOGY.md) (~1000 lines) | analytical methodology — three-stage derivation pipeline (Stage 1 two-list user-journey enumeration; Stage 2 five requirement-layer dimensions J1–J5 = trigger-actor / trigger-carrier / autonomy class / D-META-1 strength / result destination; Stage 3 ROI function = (capability gap × frequency × failure cost) / (maintenance cost + routing complexity) producing three SKILL-form archetypes A/B/C); long-term plugin health signals (falsification test for SKILL existence, base-model-evolution-driven pruning); anti-patterns. Read **before** designing a new surface / specific role, **before** proposing a new SKILL outside an existing surface, when an existing SKILL feels mis-sized, and after major base-model upgrades. The other companion docs presuppose the methodology has produced a SKILL candidate. |
 | [`SKILL_DEVELOPMENT.md`](./SKILL_DEVELOPMENT.md) (~1290 lines) | skill authoring — frontmatter, body skeletons, anti-patterns, testing, `.skill-meta.yaml` schema. |
 | [`SETUP_STAGES_DEVELOPMENT.md`](./SETUP_STAGES_DEVELOPMENT.md) (~700 lines) | setup-stages system — `scripts/stages-registry.yml`, `scripts/stages_lib/`, `scripts/stages-registry.schema.json`, `hooks/session-start.sh` lifecycle diff, `skills/bootstrapping-repo/`, the four partitioned `settings.yml` files. Read before adding/editing/removing a stage, before changing the 5-callable contract, before introducing a new `applicable_when` form, or before any spec change touching § 1.5 (Bootstrap surface redesign). The legacy filename `BOOTSTRAP_STAGES_DEVELOPMENT.md` is a one-line shim that redirects here. |
-| [`BOARD_DEVELOPMENT.md`](./BOARD_DEVELOPMENT.md) (~600 lines) | board / card / Kanban Protocol layer — `docs/architecture/0005-contracts/00-kanban-protocol.md`, ADR-0025 + ADR-0026, `skills/board-canon/`, the shipped `skills/operating-kanban/` (v0.5.0), `scripts/claim-card.sh`, the eight protocol actions, six canonical statuses, multi-kanban semantics, flat-Card hierarchy + display-only metadata, AI-native concept hygiene anchors. Read before editing the Kanban Protocol document, before authoring/changing `board-canon` or `operating-kanban`, before adding a new backend projection (Linear / Jira / others), or before touching multi-kanban schema / kanban lifecycle / branch naming / claim primitive. § 7 "Setup-stages bridge" documents how the board layer meets `SETUP_STAGES_DEVELOPMENT.md`'s M10 module. |
+| [`BOARD_DEVELOPMENT.md`](./BOARD_DEVELOPMENT.md) (~600 lines) | board / card / Kanban Protocol layer — `docs/architecture/0005-contracts/00-kanban-protocol.md`, ADR-0025 + ADR-0026, `skills/board-canon/`, the shipped `skills/operating-kanban/` (v0.5.0), `scripts/claim-card.sh`, the nine protocol actions, six canonical statuses, multi-kanban semantics, flat-Card hierarchy + display-only metadata, AI-native concept hygiene anchors. Read before editing the Kanban Protocol document, before authoring/changing `board-canon` or `operating-kanban`, before adding a new backend projection (Linear / Jira / others), or before touching multi-kanban schema / kanban lifecycle / branch naming / claim primitive. § 7 "Setup-stages bridge" documents how the board layer meets `SETUP_STAGES_DEVELOPMENT.md`'s M10 module. |
 
 **Do not "fix" these references back to `@`-prefix** — that
 change would force-load all six docs into every session and
@@ -170,7 +175,7 @@ it does four things:
    a local jsonl trace and the entry's `mode` field records the
    degradation cause (see spec 06 § "jsonl fallback mode-field").
 
-### Skills system — the v1 catalog (14 skills, 3 layers)
+### Skills system — 14-skill v1 catalog + 2-skill Producer team slice
 
 The `skills/` directory **is** the agent's action system. It is
 designed as a graph of nodes (skills) and edges (cross-skill
@@ -184,7 +189,7 @@ Entry layer (1) — first-touch router, routes only, never works
   using-board-superpowers     reliable dep gate + role routing
                               (consumes hook-injected INVOKE: markers)
 
-Molecular layer (7) — business workflows, state-machine-shaped
+Molecular layer (9) — business workflows, state-machine-shaped
 ─────────────────────────────────────────────────────────────────
   briefing-daily              Producer daily orientation (board read,
                               WIP flagging, stale-claim detection,
@@ -206,6 +211,10 @@ Molecular layer (7) — business workflows, state-machine-shaped
                               deferred migrating-repo-version per
                               ADR-0012) + agentic config-item
                               elicitation
+  dispatching-work            EM Role-lane queue selection + carrier-
+                              neutral kickoff rendering
+  authoring-spec              architect-owned docs-card lifecycle +
+                              implementation handoff
 
 Atomic layer (6) — single-purpose primitives, reflexive (no upward calls)
 ─────────────────────────────────────────────────────────────────
@@ -214,7 +223,7 @@ Atomic layer (6) — single-purpose primitives, reflexive (no upward calls)
   enforcing-pr-contract       PR three-section injection + validation
   classifying-actions         D-AUTONOMY-1 matrix + triage + overrides
   auditing-actions            audit log schema + two-entry rule + BYO DB
-  operating-kanban            8-action protocol dispatch over the active
+  operating-kanban            9-action protocol dispatch over the active
                               projection (backend selection + Form A/B/C)
   composing-siblings          sibling-plugin invocation SPOT — namespace
                               prefix rules + Mode-2 compatibility checks
@@ -549,23 +558,25 @@ cross-cutting checks that span multiple subdirectories.
 <!-- board-superpowers:routing -->
 ## board-superpowers session routing
 
-This project uses the `board-superpowers` plugin (v0.7.0).
-Any Claude Code session in this project plays one of two roles:
+This project uses the `board-superpowers` plugin (v0.8.0).
+Parse an optional `[role:<seat>]` token before intent routing. Valid seats are
+`em`, `analyst`, `architect`, `rd`, `qa`, and `human`; ask on an unknown seat.
 
-- **Board Consumer** — if the first message contains `[board-card:#N]`,
+- `em` routes to `briefing-daily`, `triaging-board`, or `dispatching-work`.
+- `analyst` routes to `intaking-requirement`.
+- `architect` routes to `authoring-spec`, `decomposing-into-milestones`, or
+  `intaking-requirement`.
+- `rd` plus `[board-card:#N]` routes to `consuming-card`.
+- `qa` routes to `reviewing-pr-queue` in the Producer slice.
+- `human` handles explicit questions and the merge gate.
+
+With no seat token, preserve the existing two-shape routing:
+
+- **Board Consumer** -- if the first message contains `[board-card:#N]`,
   or the user asks to work on / claim / implement card N, invoke the
-  `consuming-card` skill immediately. That skill owns the full
-  lifecycle: claim → implement → PR → update board.
-- **Board Producer** — route to the appropriate routine SKILL based on
-  the user's signal:
-  - "morning briefing" / "what should I work on" / "today's plan" /
-    "board overview" → `briefing-daily`
-  - "new requirement" / "intake this idea" / "I have a feature" →
-    `intaking-requirement`
-  - "review the PRs" / "what's in In Review" / "merge ready" →
-    `reviewing-pr-queue`
-  - "what's blocked" / "triage the board" / "release stale claims" →
-    `triaging-board`
+  `consuming-card` skill immediately.
+- **Board Producer** -- route morning briefing, intake, PR review, or board
+  triage to the matching routine skill.
 - When unsure, invoke `using-board-superpowers` first.
 
 board-superpowers depends on the `superpowers` and `gstack` plugins

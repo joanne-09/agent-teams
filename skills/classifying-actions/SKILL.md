@@ -1,98 +1,73 @@
 ---
 name: classifying-actions
 description: |
-  Use when a board-superpowers SKILL is about to perform a mutating action
-  — changing card status, editing card body, pushing a claim branch,
-  opening or merging a PR, writing project config, writing host-local
-  credentials, deleting a worktree, deleting a branch — and needs to
-  know whether the action proceeds automatically or waits for architect
-  approval. Apply at every mutating-action decision point inside any
-  board-superpowers skill (briefing-daily / intaking-requirement /
-  reviewing-pr-queue / triaging-board / consuming-card /
-  bootstrapping-repo). Apply even when the action looks obviously safe;
-  the decision table is the source of truth, not intuition. Do NOT use
-  for read-only actions or for queries that surface information without
-  changing state. Do NOT invoke for the audit-row write step that
-  follows the decision — that is `board-superpowers:auditing-actions`.
+  Use when a board-superpowers workflow is about to mutate board, git,
+  configuration, audit, or session state and must decide whether the bound
+  seat may act automatically, must request approval, or must refuse. Use at
+  every mutation gate, including handoffs and dispatches. Do not use for
+  read-only work or for writing the audit row after the decision.
 user-invocable: false
 ---
 
 # classifying-actions
 
-This skill is the decision-table authority for every mutating action a
-board-superpowers SKILL performs. It answers "does this action proceed
-automatically or wait for architect approval?" using:
+This is the single decision-table authority for mutating actions. Call it
+with `(action_id, seat)`. It returns `A`, `R`, or `N`.
 
-1. A 14-row Producer matrix + 14-row Consumer catalog (see
-   `references/matrix.md` + `references/action-id-catalog.md`).
-2. A 5-step short-circuit triage rule that escalates Auto-class actions
-   to Reserved-class when they touch architect-reserved powers, source
-   of truth, in-flight work, or cross-card structure (see
-   `references/triage-rule.md`).
-3. A two-layer override system — user-level `~/.board-superpowers/overrides.yml`
-   and project-level `<repo>/.board-superpowers/config.local.yml` —
-   where project layer wins on conflict (see `references/override-parsing.md`).
+- `A`: execute, then write one audit row.
+- `R`: write a proposal row, wait for human resolution, then write the
+  approved or rejected row.
+- `N`: refuse before mutation and record the refusal when a refusal action id
+  exists.
 
-## Decision tree at a glance
+## Algorithm
 
-```mermaid
-flowchart TD
-    Start["Caller: action_id + repo_root"] --> M["Look up default class\nin references/matrix.md"]
-    M --> D["Default class: A, R, or N"]
-    D --> T{"5-step triage:\nany short-circuit\nmatches?"}
-    T -- "yes, default was A" --> Esc["Escalate to R"]
-    T -- "yes, default was R" --> KeepR["Already R; no change"]
-    T -- no --> Keep["Use matrix default"]
-    Esc --> O["bsp_resolve_autonomy_class:\nmerge user + project\nautonomyoverrides\n(project layer wins)"]
-    KeepR --> O
-    Keep --> O
-    O --> Final(["Return final A, R, or N"])
+1. Find the action in `references/action-id-catalog.md`.
+2. If a valid seat is bound, read its cell in `references/matrix.md`.
+   Missing seat preserves the legacy one-dimensional behavior. Unknown seats
+   warn and use the legacy default.
+3. Treat `N` as an authority hard floor. Configuration cannot promote it.
+4. Apply `references/triage-rule.md`; a matching safety condition may promote
+   `A` to `R`, never the reverse.
+5. Resolve configuration with:
+
+```bash
+bsp_resolve_autonomy_class <action_id> <repo_root> [seat]
 ```
 
-## How to apply this skill
+6. Use the returned class. Never infer permission from job title or from an
+   earlier action on the same Card.
 
-Caller passes an `action_id` (an integer from the catalog) and the repo
-root. Caller receives back one of:
+## Override precedence
 
-- `A` — Auto. Caller acts immediately, then writes one audit row.
-- `R` — Reserved. Caller drafts a proposal, surfaces to the architect,
-  waits for ack, then acts and writes the resolve audit row.
-- `N` — No-go. Caller refuses; surfaces the block reason. (No matrix
-  row currently maps to N; the value exists for `autonomy_overrides:`
-  users who want to disable specific actions outright.)
+The helper recognizes legacy and modular settings. Precedence is:
 
-The decision algorithm:
+```text
+project generic/seat override
+  > user generic/seat override
+  > built-in seat cell
+  > legacy action default
+```
 
-1. Look up the action's default class in `references/matrix.md`.
-2. Apply the 5-step triage rule from `references/triage-rule.md` —
-   if any step matches and the matrix says A, escalate to R.
-3. Invoke `bsp_resolve_autonomy_class <action_id> <repo_root>` (in
-   `scripts/lib/common.sh`) to merge in any layered overrides.
-4. Return the final class.
+Read `references/override-parsing.md` for accepted YAML shapes. Project and
+user layers may tune `A` versus `R`; neither can promote an `N` seat cell.
 
-The helper handles yaml parsing of the override files via venv-managed
-PyYAML; if venv is unavailable, the helper falls back to the matrix
-default (this is conservative — overrides cannot promote R to A
-without a working venv).
+## Non-negotiable examples
 
-## Quick reference
+- Merge action 12 is `N` for analyst, architect, RD, QA, and EM.
+- Architect may split a Card automatically; RD may not split it.
+- RD may claim implementation work; analyst and EM may not.
+- QA verdict action 304 belongs to QA; another seat cannot self-certify.
+- Handoff action 300 still requires the separate authority edge check in
+  `board-superpowers:board-canon`.
 
-| What you have | What you need |
-|---------------|---------------|
-| an action description | look up its `action_id` in `references/action-id-catalog.md` |
-| an `action_id` | look up its default class in `references/matrix.md` |
-| an Auto-class default | check `references/triage-rule.md` for escalation triggers |
-| an override system question | read `references/override-parsing.md` |
+## Reference routing
 
-## What this skill does NOT cover
+| Need | Read |
+|---|---|
+| Exact seat class | `references/matrix.md` |
+| Action meaning | `references/action-id-catalog.md` |
+| Safety escalation | `references/triage-rule.md` |
+| YAML and precedence | `references/override-parsing.md` |
 
-- **Writing the audit row** — that's `board-superpowers:auditing-actions`.
-  This skill decides; the other records.
-- **Surfacing the proposal to the architect** — that's the molecular
-  caller's UX responsibility (the four Producer routines / consuming-card /
-  bootstrapping-repo).
-- **Tracking proposal acks across architect prompts** — that's the
-  caller's session-state responsibility.
-
-This skill defines **what class an action is**. The caller decides
-when and how to act on it.
+This skill classifies. `board-superpowers:auditing-actions` records.

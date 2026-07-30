@@ -26,7 +26,7 @@ when_to_use: |
 This is the Producer's intake routine. It acknowledges a fresh requirement,
 runs a 4-step pipeline (shape judgment → spec-first check → skill routing →
 card creation), and ends with either a design artifact handed to a sibling
-skill or a Ready card on the board.
+skill or a Backlog card in the architect Role lane.
 
 **Required sub-skills**:
 - `board-superpowers:board-canon` — Card body schema for direct card creation;
@@ -169,15 +169,17 @@ When Steps 2–4 land at "single card, ready to draft":
    Then dispatch the `create_card` protocol action via
    `board-superpowers:operating-kanban`.
 
-4. Set Status to Ready (or Backlog if the card needs further sizing before
-   claiming). Status transition is also mutating — apply the governance
-   sequence (action_id = 3 for Status flip to Ready).
+4. Keep Status at `Backlog`. Intake never marks its own requirement Ready.
 
-5. Invoke `board-superpowers:auditing-actions` to record the card creation.
+5. Invoke `handoff_card` from `analyst` to `architect`, naming the requirement
+   artifact and what the architect must decide. The handoff sets Role only;
+   Status remains Backlog.
+
+6. Invoke `board-superpowers:auditing-actions` to record the card creation and handoff.
 
 ## How mutating actions are handled
 
-Every mutating action this skill performs (card creation, Status flip, card
+Every mutating action this skill performs (card creation, Role handoff, card
 body edit) follows this 5-step governance sequence:
 
 At each mutating action point in this routine:
@@ -233,7 +235,7 @@ After the sibling completes, resume intake at Step 2 with the output artifact.
 | Action | Default class | Rationale |
 |--------|--------------|-----------|
 | Card creation (new card on board) | A (auto) | Standard intake output; Producer drove the session. |
-| Status flip to Ready | A (auto) | Follows card creation; redundant proposal adds friction. |
+| Analyst handoff to architect | A when the authority edge is legal | Role changes; Status remains Backlog. |
 | Card body edit (after creation, pre-claim) | R (requires approval) | Mutates existing work; Consumer may have already read the body. |
 | Sibling-plugin routing decision | A (auto) | Routing is informational; no board mutation. |
 

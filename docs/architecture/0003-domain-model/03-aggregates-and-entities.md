@@ -56,6 +56,12 @@ shape value backing v1's `Card.key`.
   `board-protocol` table). Each transition emits the
   `Card.Status.Transitioned` domain event
   (`04-domain-events.md`).
+- **RoleBinding** — the current ownership seat (`analyst`, `architect`,
+  `rd`, `qa`, `em`, or `human`) or null before assignment. Role is
+  orthogonal to Status; changing either never implies changing the other.
+- **HandoffHistory** — append-only structured Card comments recording
+  legal Role transfers. The latest entry supplies receiving obligations;
+  the complete history enforces the default six-handoff cap.
 - **LabelSet** — the `type:*` and `size:*` labels currently
   applied. Created by `bootstrap-project.sh`; assignment is
   per-Card.
@@ -91,6 +97,8 @@ shape value backing v1's `Card.key`.
   `<title-slug>` half of `claim/<key-slug>-<title-slug>`.
 - **Status** — typed enum from ADR-0005:
   `Backlog | Ready | In Progress | In Review | Done | Blocked`.
+- **Role** — nullable ownership enum: `analyst | architect | rd | qa |
+  em | human`. This is not GitHub Assignee and is not execution shape.
 - **Estimate** — `XS | S | M | L`. `XL` is invalid by design
   (§1.6.1 Small letter — exceeding L forces re-split before the
   card lands). Realized in card body as the `**Estimate**:`
@@ -370,7 +378,9 @@ small-team scale at v1).
 
 ### 3.3.4 ProducerSession aggregate
 
-The long-lived Manager session. Spans Session context.
+A live Producer-shaped session. Spans Session context. The session also
+binds one Seat (`analyst`, `architect`, `em`, or an overseeing `human`);
+execution shape and Seat are independent facts.
 Considerably simpler than ConsumerLogical because Producer
 holds no claim, owns no worktree, and is bound only by
 informal "at most one per project at any time" cardinality
@@ -391,6 +401,9 @@ informal "at most one per project at any time" cardinality
 **Value objects.**
 
 - **SessionId** — same shape as ConsumerProcess.SessionId.
+- **Seat** — the current actor capability (`analyst`, `architect`, `rd`,
+  `qa`, `em`, or `human`), resolved from the role token and durable Card
+  ownership rules.
 - **PromptCount** — informal monotonically-increasing counter
   (purely for preflight-piggyback observability — every
   PreflightSnapshot is keyed by it).
@@ -673,15 +686,16 @@ immutable AuditEntry value objects.
 
 **Value objects.**
 
-- **AuditEntry** — one row in the BYO RDBMS. Schema (draft
-  v1, from ADR-0006 §5):
+- **AuditEntry** — one row in the BYO RDBMS. Schema v3, canonical in
+  `0005-contracts/06-audit-log-schema.md`:
 
   | Column | Type | Notes |
   |--------|------|-------|
   | `timestamp` | TIMESTAMPTZ | When the entry was written |
   | `project` | TEXT | `OWNER/NUMBER` string |
   | `session_id` | TEXT | The CC / Codex session originating the action |
-  | `actor_role` | ENUM(`producer`, `consumer`) | Which role acted (lowercase to match §1.4 cross-cutting note) |
+  | `actor_role` | ENUM(`producer`, `consumer`) | Execution shape of the acting session |
+  | `actor_seat` | nullable Seat | `analyst|architect|rd|qa|em|human`; null for legacy rows |
   | `action_id` | SMALLINT | Matrix row 1–14 from ADR-0006 §3 (Producer-side); symmetric Consumer rows TBD-3 below |
   | `payload` | JSONB | Action-specific data — see TBD-3 for per-`action_id` shape hardening |
   | `outcome` | ENUM(`success`, `failure`, `escalated`, `rejected`) | Terminal state of this action |

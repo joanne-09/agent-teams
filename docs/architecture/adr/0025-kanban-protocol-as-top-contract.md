@@ -1,6 +1,6 @@
 # ADR 0025: Kanban Protocol as top-level contract; ADR-0005 rescoped to v1 GitHubProjectAdapter projection
 
-**Status:** accepted
+**Status:** accepted; extended by ADR-0031
 **Date:** 2026-04-28
 **Deciders:** PanQiWei (maintainer)
 

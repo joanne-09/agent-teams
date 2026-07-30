@@ -321,7 +321,7 @@ sys.exit(1)
 #   On no match: no migration; just create the new path and append.
 
 bsp_audit_local_write() {
-    local repo_root="${1:?usage: bsp_audit_local_write <repo_root> <action_id> <class> <skill> <summary> [<mode>] [--event-uuid <uuid>] [--status <s>] [--retry-count <n>] [--pending-since <ts>]}"
+    local repo_root="${1:?usage: bsp_audit_local_write <repo_root> <action_id> <class> <skill> <summary> [<mode>] [--event-uuid <uuid>] [--status <s>] [--retry-count <n>] [--pending-since <ts>] [--actor-seat <seat>]}"
     local action_id="${2:?}"
     local decision="${3:?}"
     local skill="${4:?}"
@@ -346,7 +346,7 @@ bsp_audit_local_write() {
     # propagates it into the DB INSERT instead of falling back to
     # 'unknown/0'. Empty by default (e.g., host bootstrap before any
     # per-repo config.yml exists).
-    local event_uuid="" status="" retry_count="" pending_since="" project=""
+    local event_uuid="" status="" retry_count="" pending_since="" project="" actor_seat="${BSP_ACTOR_SEAT:-}"
     while [ $# -gt 0 ]; do
         case "$1" in
             --event-uuid)    event_uuid="$2"; shift 2 ;;
@@ -354,6 +354,7 @@ bsp_audit_local_write() {
             --retry-count)   retry_count="$2"; shift 2 ;;
             --pending-since) pending_since="$2"; shift 2 ;;
             --project)       project="$2"; shift 2 ;;
+            --actor-seat)    actor_seat="$2"; shift 2 ;;
             *)
                 bsp_warn "bsp_audit_local_write: unknown arg '$1'"
                 return 2
@@ -522,6 +523,8 @@ v1-minimum-degraded|contract-violation|bootstrap-pending|audit-dead-letter) ;;
     BSP_RETRY_COUNT="${retry_count}" \
     BSP_PENDING_SINCE="${pending_since}" \
     BSP_PROJECT="${project}" \
+    BSP_ACTOR_SEAT="${actor_seat}" \
+    BSP_ACTOR_ROLE="${BSP_ACTOR_ROLE:-}" \
     python3 -c '
 import json, os, time
 entry = {
@@ -550,6 +553,10 @@ if os.environ.get("BSP_PENDING_SINCE"):
 # falls back to "unknown/0" otherwise.
 if os.environ.get("BSP_PROJECT"):
     entry["project"] = os.environ["BSP_PROJECT"]
+if os.environ.get("BSP_ACTOR_ROLE"):
+    entry["actor_role"] = os.environ["BSP_ACTOR_ROLE"]
+if os.environ.get("BSP_ACTOR_SEAT"):
+    entry["actor_seat"] = os.environ["BSP_ACTOR_SEAT"]
 with open(os.environ["BSP_PATH"], "a") as f:
     f.write(json.dumps(entry) + "\n")
 '
@@ -1132,11 +1139,27 @@ bsp_slugify() {
 #   6 - plugin template corruption (templates/pyproject.toml absent)
 #   7 - uv sync failed (network / proxy / lock conflict / disk full)
 
+bsp_venv_python_path() {
+    local repo_root="${1:?usage: bsp_venv_python_path <repo_root>}"
+    local candidate
+    for candidate in \
+        "${repo_root}/.board-superpowers/.venv/bin/python3" \
+        "${repo_root}/.board-superpowers/.venv/Scripts/python.exe" \
+        "${repo_root}/.board-superpowers/.venv/Scripts/python3.exe"
+    do
+        if [ -x "${candidate}" ] || [ -f "${candidate}" ]; then
+            printf '%s\n' "${candidate}"
+            return 0
+        fi
+    done
+    return 1
+}
+
 bsp_ensure_venv() {
     local repo_root="${1:?usage: bsp_ensure_venv <repo_root>}"
-    local venv_python="${repo_root}/.board-superpowers/.venv/bin/python3"
+    local venv_python=""
 
-    if [ -x "${venv_python}" ]; then
+    if venv_python="$(bsp_venv_python_path "${repo_root}" 2>/dev/null)"; then
         printf '%s\n' "${venv_python}"
         return 0
     fi
@@ -1167,7 +1190,7 @@ bsp_ensure_venv() {
 
     # Re-check after acquiring lock — another caller may have already
     # created the venv between our first check and lock acquisition.
-    if [ -x "${venv_python}" ]; then
+    if venv_python="$(bsp_venv_python_path "${repo_root}" 2>/dev/null)"; then
         rmdir "${lockdir}" 2>/dev/null || true
         printf '%s\n' "${venv_python}"
         return 0
@@ -1182,9 +1205,11 @@ bsp_ensure_venv() {
     fi
 
     if (cd "${repo_root}/.board-superpowers/" && uv sync 2>&1) >&2; then
-        rmdir "${lockdir}" 2>/dev/null || true
-        printf '%s\n' "${venv_python}"
-        return 0
+        if venv_python="$(bsp_venv_python_path "${repo_root}" 2>/dev/null)"; then
+            rmdir "${lockdir}" 2>/dev/null || true
+            printf '%s\n' "${venv_python}"
+            return 0
+        fi
     fi
     rmdir "${lockdir}" 2>/dev/null || true
     return 7
@@ -1348,82 +1373,116 @@ bsp_resolve_active_projection() {
 # Falls back to ADR-0006 default when venv unavailable.
 
 bsp_resolve_autonomy_class() {
-    local action_id="${1:?usage: bsp_resolve_autonomy_class <action_id> [<repo_root>]}"
+    local action_id="${1:?usage: bsp_resolve_autonomy_class <action_id> [<repo_root>] [<seat>]}"
     local repo_root="${2:-${PWD}}"
-
-    # ADR-0006 §3 matrix defaults (Producer rows 1-14 + Consumer 100-111).
-    # 'A' default rows: 1, 2, 5, 9, 11, 13, 14, 100, 102, 104, 105, 106, 107, 108, 109, 110, 111
-    # 'R' default rows: 3, 4, 6, 7, 8, 10, 12, 101, 103
+    local seat="${3:-}"
     local default_class
     case "${action_id}" in
-        1|2|5|9|11|13|14|100|102|104|105|106|107|108|109|110|111) default_class="A" ;;
+        1|2|5|9|11|13|14|100|102|104|105|106|107|108|109|110|111|112|113|200|201|202|203|204|205|206|207|208|300|301|302|303|304|305) default_class="A" ;;
         3|4|6|7|8|10|12|101|103) default_class="R" ;;
-        *) printf '%s\n' "A"; return 0 ;;  # unknown rows fall through to A per ADR-0006 triage rule step 5
+        *) printf '%s\n' "A"; return 0 ;;
     esac
 
-    # Try venv-python for yaml-aware override merge. Falls back to default.
+    # Missing seat preserves the legacy one-dimensional behavior. An unknown
+    # non-empty seat is advisory-only and returns the legacy default.
+    if [ -n "${seat}" ]; then
+        case "${seat}" in analyst|architect|rd|qa|em|human) ;; *) bsp_warn "unknown actor seat '${seat}'; using legacy default for action_id=${action_id}"; printf '%s\n' "${default_class}"; return 0 ;; esac
+        case "${action_id}:${seat}" in
+            1:analyst|1:architect|1:em|1:human) default_class=A ;;
+            2:analyst|2:architect|2:em|2:human) default_class=A ;;
+            3:architect) default_class=A ;; 3:em) default_class=R ;; 3:human) default_class=A ;; 3:*) default_class=N ;;
+            4:architect|4:em) default_class=R ;; 4:human) default_class=A ;; 4:*) default_class=N ;;
+            5:architect|5:em|5:human) default_class=A ;; 5:*) default_class=N ;;
+            6:human) default_class=A ;; 6:*) default_class=R ;;
+            7:architect|7:em) default_class=R ;; 7:human) default_class=A ;; 7:*) default_class=N ;;
+            8:architect|8:rd|8:em) default_class=R ;; 8:human) default_class=A ;; 8:*) default_class=N ;;
+            9:architect|9:em|9:human) default_class=A ;; 9:*) default_class=N ;;
+            10:architect|10:em) default_class=R ;; 10:human) default_class=A ;; 10:*) default_class=N ;;
+            11:architect|11:em|11:human) default_class=A ;; 11:*) default_class=N ;;
+            12:human) default_class=A ;; 12:*) default_class=N ;;
+            13:architect|13:em|13:human) default_class=A ;; 13:*) default_class=N ;;
+            14:em|14:human) default_class=A ;; 14:*) default_class=N ;;
+            100:architect|100:rd|100:qa|100:human) default_class=A ;; 100:*) default_class=N ;;
+            101:architect|101:rd|101:qa) default_class=R ;; 101:human) default_class=A ;; 101:*) default_class=N ;;
+            102:architect|102:rd|102:qa|102:human) default_class=A ;; 102:*) default_class=N ;;
+            103:architect|103:rd|103:qa|103:em) default_class=R ;; 103:human) default_class=A ;; 103:*) default_class=N ;;
+            104:architect|104:rd|104:qa|104:human) default_class=A ;; 104:*) default_class=N ;;
+            105:architect|105:rd|105:qa|105:human|106:architect|106:rd|106:qa|106:human|107:architect|107:rd|107:qa|107:human|108:architect|108:rd|108:qa|108:human|109:architect|109:rd|109:qa|109:human|110:architect|110:rd|110:qa|110:human|111:architect|111:rd|111:qa|111:human) default_class=A ;;
+            112:architect|112:rd|112:human) default_class=A ;; 112:*) default_class=N ;;
+            113:architect|113:rd|113:qa|113:human) default_class=A ;; 113:*) default_class=N ;;
+            200:architect|200:em|200:human|201:architect|201:em|201:human|202:architect|202:em|202:human|203:architect|203:em|203:human|204:architect|204:em|204:human|205:architect|205:em|205:human|206:architect|206:em|206:human|207:architect|207:em|207:human|208:architect|208:em|208:human) default_class=A ;;
+            200:*|201:*|202:*|203:*|204:*|205:*|206:*|207:*|208:*) default_class=N ;;
+            300:*) default_class=A ;;
+            301:human) default_class=N ;; 301:*) default_class=A ;;
+            302:architect|302:qa|302:em|302:human) default_class=A ;; 302:*) default_class=N ;;
+            303:architect|303:em|303:human) default_class=A ;; 303:*) default_class=N ;;
+            304:qa|304:human) default_class=A ;; 304:*) default_class=N ;;
+            305:*) default_class=A ;;
+            1:*|2:*) default_class=N ;;
+        esac
+        # N is an authority hard floor. No configuration promotes it.
+        if [ "${default_class}" = N ]; then printf '%s\n' N; return 0; fi
+    fi
+
     local venv_python
     if venv_python="$(bsp_ensure_venv "${repo_root}" 2>/dev/null)"; then
         local override_class
-        override_class="$(BSP_REPO_ROOT="${repo_root}" \
-                          BSP_ACTION_ID="${action_id}" \
-                          "${venv_python}" - <<'PY'
+        override_class="$(BSP_REPO_ROOT="${repo_root}" BSP_ACTION_ID="${action_id}" BSP_ACTOR_SEAT="${seat}" BSP_DEFAULT_CLASS="${default_class}" "${venv_python}" - <<'PY'
 import os, sys
 try:
     import yaml
 except ImportError:
-    sys.stderr.write(
-        '[bsp WARN] PyYAML missing in venv; autonomy_overrides not applied '
-        '(falling back to ADR-0006 matrix default). Run uv sync in '
-        '<repo>/.board-superpowers/ to install.\n'
-    )
     sys.exit(0)
+repo_root=os.environ['BSP_REPO_ROOT']; action_id=int(os.environ['BSP_ACTION_ID']); seat=os.environ.get('BSP_ACTOR_SEAT','')
+home=os.path.expanduser('~'); valid={'A','R','N'}
 
-repo_root = os.environ['BSP_REPO_ROOT']
-action_id = int(os.environ['BSP_ACTION_ID'])
-home = os.path.expanduser('~')
-
-def load_overrides(path):
-    if not os.path.isfile(path):
-        return []
+def load(path):
+    if not os.path.isfile(path): return {}, {}
     try:
-        with open(path) as f:
-            data = yaml.safe_load(f) or {}
-        return data.get('autonomy_overrides', []) or []
+        data=yaml.safe_load(open(path)) or {}
     except Exception:
-        return []
+        return {}, {}
+    module=(data.get('modules') or {}).get('m8_autonomy') or {}
+    generic=module.get('autonomy_overrides', data.get('autonomy_overrides', [])) or []
+    seats=module.get('seat_overrides', data.get('seat_overrides', {})) or {}
+    return generic, seats
 
-user_overrides = load_overrides(os.path.join(home, '.board-superpowers', 'overrides.yml'))
-project_overrides = load_overrides(os.path.join(repo_root, '.board-superpowers', 'config.local.yml'))
+def seat_value(seats):
+    entries=seats.get(seat, {}) if isinstance(seats,dict) else {}
+    if isinstance(entries,dict):
+        value=entries.get(action_id, entries.get(str(action_id)))
+        if isinstance(value,dict): value=value.get('class')
+        return value
+    if isinstance(entries,list):
+        for entry in entries:
+            if isinstance(entry,dict) and entry.get('action_id')==action_id: return entry.get('class')
+    return None
 
-# Project layer wins on conflict per spec 03 § Merge semantics. Validate
-# class enum BEFORE assignment so a malformed entry (missing or bad
-# `class`) does NOT silently overwrite a valid earlier entry.
-VALID_CLASSES = ('A', 'R', 'N')
-chosen = None
-for layer_name, entries in (('user', user_overrides), ('project', project_overrides)):
-    for entry in entries:
-        if entry.get('action_id') != action_id:
-            continue
-        klass = entry.get('class')
-        if klass in VALID_CLASSES:
-            chosen = klass
-        else:
-            sys.stderr.write(
-                f'[bsp WARN] {layer_name}-layer override entry for '
-                f'action_id={action_id} has invalid class {klass!r}; ignoring.\n'
-            )
+def generic_value(entries):
+    chosen=None
+    for entry in entries if isinstance(entries,list) else []:
+        if isinstance(entry,dict) and entry.get('action_id')==action_id and entry.get('class') in valid: chosen=entry['class']
+    return chosen
 
-if chosen in VALID_CLASSES:
-    print(chosen)
+paths=[os.path.join(home,'.board-superpowers','overrides.yml'),os.path.join(home,'.board-superpowers','settings.yml')]
+project_paths=[os.path.join(repo_root,'.board-superpowers','config.local.yml'),os.path.join(repo_root,'.board-superpowers','settings.local.yml')]
+chosen=None
+# Precedence: project > user > matching seat configuration > built-in seat/default.
+for group in (paths, project_paths):
+    group_seat=None; group_generic=None
+    for path in group:
+        generic,seats=load(path)
+        value=seat_value(seats)
+        if value in valid: group_seat=value
+        value=generic_value(generic)
+        if value in valid: group_generic=value
+    if group_seat in valid: chosen=group_seat
+    if group_generic in valid: chosen=group_generic
+if chosen in valid: print(chosen)
 PY
 )"
-        if [ -n "${override_class}" ]; then
-            printf '%s\n' "${override_class}"
-            return 0
-        fi
+        if [ -n "${override_class}" ]; then printf '%s\n' "${override_class}"; return 0; fi
     fi
-
     printf '%s\n' "${default_class}"
     return 0
 }

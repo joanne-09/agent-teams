@@ -172,20 +172,15 @@ Which subsystem does this stage configure? Nine values
   `host-shared` (uv binary), `repo-git`
   (`pyproject.toml` + `uv.lock`), and `repo-clone`
   (`.venv/`).
-- **`M3` — Board operations (BoardAdapter-driven).**
-  Operations against the selected board backend (labels,
-  Status field schema, etc.). All M3 stages have
-  `external` locality and dispatch through the
-  BoardAdapter abstraction (ADR-0005), **not** through a
-  hard-coded backend. Each M3 stage declares an
-  `applicable_when: board_capability: <name>` predicate;
-  the stage runs only when the selected backend (per
-  M10) declares it supports that capability. v0.5.0's
-  GitHub-Project-v2 adapter declares
-  `[ensure-labels, status-field-schema]`; future Linear
-  / Jira adapters declare overlapping or different
-  capability sets, and M3 stages re-route automatically
-  via the lifecycle's `not-applicable` state.
+- **`M3` — Board operations (projection-capability driven).**
+  Operations against the selected kanban projection (labels, Status field,
+  Role field). All M3 stages have `external` locality and declare
+  `applicable_when: kanban_projection_capability: <name>`, per ADR-0027.
+  The active projection reference supplies the implementation; no M3 stage
+  branches on a backend name. The GitHub Project v2 projection declares
+  `ensure-labels`, `validate-status-field`, and `ensure-role-field`.
+  Projections with different capability sets place unsupported stages in the
+  lifecycle's `not-applicable` state.
 - **`M4` — Audit logging.** BYO RDBMS / SQLite audit-log
   subsystem (per-repo credentials + schema + flush +
   health reporting). **All M4 stages are per-repo** —
@@ -308,8 +303,9 @@ contract" below.
 | `m2.host.install-uv` | uv installer | Detect / install `uv` Python tool host-wide via `astral.sh/uv/install.sh` or PATH probe | M2 | automated | host-shared | both | `heavy`, `network-required` | v0.3.0 | — | `scripts/bootstrap-host.sh` |
 | `m2.repo.copy-uv-templates` | uv templates | Copy plugin's `pyproject.toml` + `uv.lock` from `<plugin>/scripts/templates/` into `<repo>/.board-superpowers/` | M2 | automated | repo-git | both | — | v0.3.0 | `m1.repo.write-state-yml` | `scripts/bootstrap-project.sh` |
 | `m2.repo.sync-venv` | venv sync | Run `uv sync` to materialize `<repo>/.board-superpowers/.venv/` from the copied lock | M2 | automated | repo-clone | both | `heavy` | v0.3.0 | `m2.host.install-uv`, `m2.repo.copy-uv-templates` | `scripts/bootstrap-project.sh` |
-| `m3.repo.ensure-labels` | standard labels | Ensure 13 standard board labels exist (calls `BoardAdapter.ensure_labels()`; current GitHub-Project-v2 adapter delegates to `gh` CLI). `applicable_when: board_capability=ensure-labels` (any backend declaring this capability participates) | M3 | automated | external | both | — | v0.1.0-minimum | `m10.repo.choose-kanban-backend` | `scripts/setup-labels.sh` |
-| `m3.repo.validate-status-field` | status field validation | Validate the board's Status field schema (calls `BoardAdapter.validate_status_field()`); agentic only on failure. `applicable_when: board_capability=status-field-schema` | M3 | agentic | external | both | `confirm-only`, `agentic-on-failure` | v0.1.0-minimum | `m10.repo.choose-kanban-backend` | `SKILL: bootstrapping-repo` (failure path) / `scripts/validate-status-field.sh` (read path) |
+| `m3.repo.ensure-labels` | standard labels | Ensure the canonical label set through projection capability `ensure-labels` | M3 | automated | external | both | — | v0.1.0-minimum | `m10.repo.choose-kanban-projection` | projection reference / `scripts/setup-labels.sh` |
+| `m3.repo.validate-status-field` | status field validation | Validate the six canonical Status options through `validate-status-field`; agentic only on failure | M3 | agentic | external | both | `confirm-only`, `agentic-on-failure` | v0.1.0-minimum | `m10.repo.choose-kanban-projection` | projection reference / `SKILL: bootstrapping-repo` |
+| `m3.repo.ensure-role-field` | Role field | Ensure Role is a single-select with `analyst`, `architect`, `rd`, `qa`, `em`, `human`; create when absent, request UI repair when malformed | M3 | automated | external | both | `network-required`, `agentic-on-failure` | v0.8.0 | `m10.repo.choose-kanban-projection` | `scripts/stages_lib/m3_repo_ensure_role_field.py` |
 | `m4.repo.acquire-dsn` | audit DSN | Acquire BYO RDBMS DSN; write per-repo `credentials.yml` (chmod 0600); first-time agentic, re-use automated | M4 | agentic | repo-shared | both | `confirm-only` (re-use path is automated) | v0.3.0 (host-shared); per-repo since vX.0.0 (this redesign) | `m1.repo.write-state-yml` | `SKILL: bootstrapping-repo` (first-time) / `scripts/bootstrap-project.sh` (re-use) |
 | `m4.repo.apply-audit-ddl` | audit DDL | Apply audit-log DDL to the resolved DB (3-dialect dispatch via `audit-init.sh`) | M4 | automated | external | both | — | v0.3.0 | `m4.repo.acquire-dsn` | `scripts/audit-init.sh` |
 | `m4.repo.flush-pending-audit` | audit flush | Replay `mode=bootstrap-pending` rows from jsonl into DB (idempotent via UNIQUE event_uuid) | M4 | automated | external | both | — | v0.3.0 | `m4.repo.apply-audit-ddl` | `scripts/audit-flush-pending.sh` |
@@ -325,8 +321,9 @@ contract" below.
 | `m8.host.bootstrap-overrides-yml` | autonomy overrides | Prompt architect with curated autonomy-override presets; persist selected subset into the `host-shared` settings file (empty selection is a valid completed state) | M8 | agentic | host-shared | both | `confirm-only` | vX.0.0 (this redesign) | `m1.host.write-manifest` | `SKILL: bootstrapping-repo` |
 | `m10.repo.choose-kanban-backend` | kanban backend | Prompt architect to choose BoardAdapter backend per ADR-0005 (`github-project-v2` / `linear` / `jira`). At v0.5.0 the enum has only `github-project-v2`; M3 stages depend on this selection | M10 | agentic | repo-git | both | `confirm-only`, `single-choice-currently` | vX.0.0 (this redesign) | `m1.repo.write-state-yml` | `SKILL: bootstrapping-repo` |
 
-**22 stages** — 14 v0.4.0 baseline (M7 v0.4.0 single-block
-stage replaced) + 8 net new / restructured this redesign
+**23 stages** — 14 v0.4.0 baseline (M7 v0.4.0 single-block
+stage replaced) + 8 net new / restructured this redesign + the v0.8.0
+Role-field stage
 (`m7.repo.detect-agentsmd-form`,
 `m7.repo.inject-block.routing-rule`,
 `m7.repo.inject-block.skill-routing`,
@@ -652,7 +649,7 @@ own their target shape's lifecycle.
 
 ### External stage TTL cache (in repo-shared state.yml)
 
-External-locality stages (M3 labels, M3 Status field, M4
+External-locality stages (M3 labels, M3 Status field, M3 Role field, M4
 DDL, M4 audit-flush) cache their last validation outcome in
 `repo-shared`'s `state.yml` to avoid hitting GitHub / DB on
 every session start. Entry shape extends with two extra
@@ -1436,8 +1433,8 @@ Resolved (as discussion progresses, decisions move down to the
   `applicable_when_fn` Python ref. Hook-side cheap
   evaluation (no IO).
 - **M3 stages dispatch through BoardAdapter capabilities,
-  not backend names** — `m3.repo.ensure-labels` and
-  `m3.repo.validate-status-field` declare
+  not backend names** — `m3.repo.ensure-labels`, `m3.repo.validate-status-field`, and
+  `m3.repo.ensure-role-field` declare
   `applicable_when: {board_capability: <name>}`; M3 module
   is renamed "Board operations (BoardAdapter-driven)".
   Resolves the implicit GitHub-Project-v2 hard-coding in
@@ -1524,7 +1521,7 @@ Resolved (as discussion progresses, decisions move down to the
   comparison: `generation` int → `target_state_hash` →
   `target_state` structural diff. See above "K8s-style
   three-layer fingerprint".
-- **M3 Status field validation uses TTL caching** in
+- **M3 Status and Role field validation use TTL caching** in
   `repo-shared`'s `state.yml`, not every-session re-check.
   Default TTL 24h per § "Declarative state schema" external
   cache.

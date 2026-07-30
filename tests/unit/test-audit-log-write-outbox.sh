@@ -18,6 +18,7 @@ bash "${ROOT}/scripts/audit-log-write.sh" \
     --approval-stage auto \
     --outcome success \
     --payload '{"test":1}' \
+    --actor-role producer --actor-seat architect \
     --mode bootstrap-pending
 
 JSONL=$(find "${HOME}/.board-superpowers/repos/" -name 'audit-local.jsonl' 2>/dev/null | head -1)
@@ -30,6 +31,8 @@ grep -q '"retry_count": 0' "${JSONL}" || { echo "FAIL: retry_count=0 missing"; e
 grep -qE '"pending_since": "[0-9]{4}-[0-9]{2}-[0-9]{2}T' "${JSONL}" \
     || { echo "FAIL: pending_since missing"; exit 1; }
 grep -q '"mode": "bootstrap-pending"' "${JSONL}" || { echo "FAIL: mode=bootstrap-pending missing"; exit 1; }
+grep -q '"actor_role": "producer"' "${JSONL}" || { echo "FAIL: actor_role missing"; exit 1; }
+grep -q '"actor_seat": "architect"' "${JSONL}" || { echo "FAIL: actor_seat missing"; exit 1; }
 # project field — resolved from this repo's .board-superpowers/config.yml
 # (PanQiWei/4). Asserts the #43 final-review fix that PROJECT_NAME is
 # resolved BEFORE the bootstrap-pending short-circuit so the outbox row

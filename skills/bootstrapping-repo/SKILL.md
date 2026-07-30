@@ -266,6 +266,7 @@ For the full A/R default classification of each, consult the action-id catalog i
 |---------|----------|
 | DB unavailable during audit | Write goes to local jsonl fallback (`audit-local.jsonl`); row's `mode` field records the degradation cause. Session continues. |
 | Network unavailable during M3 label sync | M3 stage records `failed`; lifecycle marks it for retry. Other stages continue. |
+| Existing Role field has missing/extra seat options | Repair the Role single-select options in Project settings, then re-run the M3 ensure-role-field stage. |
 | Custom Status field options on the kanban board | M3 validate-status-field stage surfaces the mismatch to the architect; waits for fix before retrying. |
 | Agentic stage with architect unreachable (CI / scripted env) | Stage records `blocked`; flow halts cleanly. Next interactive session re-prompts. |
 | Stage executor exits non-zero | Stage records `failed` + `last_error`. Downstream `depends_on` stages are skipped. All other stages continue. |

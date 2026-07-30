@@ -98,7 +98,7 @@ vocabulary from leaking into another.
 Per ADR-0025 the ACL is reframed: it is **the per-backend
 projection of the Kanban Protocol**
 (`0005-contracts/00-kanban-protocol.md`). The protocol is the
-canonical mental model — eight actions, six canonical states,
+canonical mental model — nine actions, six canonical states,
 the Board / Card / Status / Claim / PR Link / Label / Comment
 ontology, the `Card.key` opaque identifier, the
 `claim/<key-slug>-<title-slug>` branch-naming convention.

@@ -212,6 +212,21 @@ gh issue comment "$card_key" \
 - **Idempotency**: NO — each call posts a fresh comment. Do not retry on transient failures unless the caller has explicit dedup logic.
 - **On non-zero exit**: surface stderr verbatim per `failure-mode-dispatch.md`.
 
+### `handoff_card`
+
+Invoke the semantic Form A projection:
+
+```bash
+bash "${plugin_root}/scripts/handoff-card.sh" \
+  --card "$card_key" --from-seat "$from_seat" --to-seat "$to_seat" \
+  --reason "$reason" --project "$BSP_PROJECT_REF" --repo "$BSP_REPO"
+```
+
+The wrapper validates authority and cap before mutation, sets the Role option,
+posts the fixed marker comment, then writes action 300 with `actor_seat`.
+Exit `10` is illegal authority, `20` is cap, and `22`/`23` are surfaced
+partial or transport failures. It never changes Status.
+
 ## Setup capabilities
 
 ### `ensure-labels`
@@ -263,6 +278,21 @@ print("ok")'
 - **Idempotency**: pure read — validation never mutates the field.
 - **Exit codes**: `0` success (all six canonical options present); `2` missing canonical option (architect intervention required); `1` underlying `gh` error.
 - **On non-zero exit**: for exit `2`, surface the diff to the architect via the bootstrap-stage config-item elicitation protocol — the architect either adds the missing option in the GitHub Project UI or accepts a custom-state-folding decision. For exit `1`, route per `failure-mode-dispatch.md`.
+
+### `ensure-role-field`
+
+Use `gh project field-list` to probe for a `Role` single-select field. When
+absent, create it idempotently with:
+
+```bash
+gh project field-create "$project_num" --owner "$owner" --name Role \
+  --data-type SINGLE_SELECT \
+  --single-select-options "analyst,architect,rd,qa,em,human"
+```
+
+An existing field with missing or extra options is not rewritten blindly;
+the setup stage requests repair in Project settings and re-validates. This
+capability is consumed by `m3.repo.ensure-role-field`.
 
 ## Failure-mode overrides
 

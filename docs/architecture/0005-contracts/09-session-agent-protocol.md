@@ -347,6 +347,24 @@ The protocol does not introduce a new J2 value for this
 case; it is an explicit-prompt sub-mode noted in the
 Producer surface spec's distribution declaration.
 
+## Seat-routing extension
+
+Seat is orthogonal to J1-J5 and to Producer / Consumer execution shape. The
+optional first-message token `[role:<seat>]`, where seat is one of `analyst`,
+`architect`, `rd`, `qa`, `em`, or `human`, is a routing carrier hint. It does
+not grant board authority and does not overwrite `Card.role`.
+
+When a Card token and Role token coexist, the entry skill reads the durable
+Card Role before selecting a molecular routine. A mismatch is surfaced or
+resolved through the legal `handoff_card` action; it is never silently coerced.
+For non-Card Producer work, the Role token selects the seat-specific routine.
+Unknown seat values are warnings and fall back to legacy routing, never to a
+privileged seat.
+
+The M7 injected routing block and `using-board-superpowers` reference are the
+runtime mirrors of this extension. Carrier formats may add wrapper syntax, but
+the bracket token remains byte-stable across paste, subagent, and cron forms.
+
 ## Versioning + evolution
 
 The five-axis structure is intentionally compact. Changes

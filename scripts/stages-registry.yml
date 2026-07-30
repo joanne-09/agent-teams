@@ -1,7 +1,7 @@
-# board-superpowers stage registry — 22 stages.
+# board-superpowers stage registry — 23 stages.
 #
 # Authoritative reference: docs/architecture/0002-product-features-and-flows/
-# 05-bootstrap-surface.md § "Stages" (the 22-row table). M3 + M10 rows
+# 05-bootstrap-surface.md § "Stages" (the 23-row table). M3 + M10 rows
 # follow ADR-0027 vocabulary (kanban_projection_capability predicate +
 # m10.repo.choose-kanban-projection canonical name) — NOT the pre-#70 wording
 # in the design-doc table itself (Phase 4 cutover updates the design-doc table).
@@ -19,7 +19,7 @@
 meta:
   schema_version: 1
   description: |
-    v0.5.0 stage registry. 22 stages across 10 modules. Vocabulary anchored to:
+    v0.8.0 stage registry. 23 stages across 10 modules. Vocabulary anchored to:
     ADR-0014 (3-artifact contract); ADR-0013 (5-state lifecycle + 3-layer
     fingerprint); ADR-0023 (5-element config item protocol); ADR-0024 (settings.yml
     family rename); ADR-0027 (M3 capability dispatch via Kanban Protocol projection +
@@ -274,7 +274,7 @@ stages:
     module_section_path: modules.m10_kanban
 
   # =========================================================================
-  # M3 — board provisioning (2 stages; both gated by ADR-0027 § 2 predicate
+  # M3 — board provisioning (3 stages; both gated by ADR-0027 § 2 predicate
   # `kanban_projection_capability` against the active projection's reference
   # file `skills/operating-kanban/references/<projection-id>.md`
   # § "Setup capabilities". v0.5.0 github-project-v2 declares both: see
@@ -406,6 +406,47 @@ stages:
     applicable_when:
       kanban_projection_capability: validate-status-field
 
+  - stage_id: m3.repo.ensure-role-field
+    stage_name: Role field
+    description: >-
+      Ensure the active kanban projection exposes the canonical Role
+      single-select field with analyst, architect, rd, qa, em, and human.
+      Creates an absent field automatically and routes malformed existing
+      option sets to the projection UI for repair.
+    module: M3
+    character: automated
+    locality: external
+    platforms: both
+    flags:
+      - network-required
+      - agentic-on-failure
+    introduced_in_version: v0.8.0
+    executor: scripts/stages_lib/m3_repo_ensure_role_field.py
+    generation: 1
+    depends_on:
+      - m10.repo.choose-kanban-projection
+    target_state_schema:
+      type: object
+      required: [role_field_present, field_name, options]
+      properties:
+        role_field_present:
+          type: boolean
+        field_name:
+          type: string
+          const: Role
+        options:
+          type: array
+          items:
+            type: string
+            enum: [analyst, architect, rd, qa, em, human]
+          minItems: 6
+          maxItems: 6
+          uniqueItems: true
+    target_state_schema_version: 1
+    external_ttl_seconds: 86400
+    applicable_when:
+      kanban_projection_capability: ensure-role-field
+
   # =========================================================================
   # M4 — audit (4 stages, mostly external)
   # =========================================================================
@@ -465,7 +506,7 @@ stages:
     flags: []
     introduced_in_version: v0.3.0
     executor: scripts/audit-init.sh
-    generation: 1
+    generation: 2
     depends_on:
       - m4.repo.acquire-dsn
     target_state_schema:
@@ -756,7 +797,7 @@ stages:
       - block-size-capped
     introduced_in_version: v0.5.0
     executor: scripts/bootstrap-project.sh
-    generation: 1
+    generation: 2
     depends_on:
       - m7.repo.detect-agentsmd-form
     target_state_schema:

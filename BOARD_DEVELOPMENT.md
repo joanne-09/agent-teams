@@ -8,7 +8,7 @@
 > - Adding a new **backend projection** (Linear, Jira, others)
 >   for the Kanban Protocol.
 > - Touching multi-kanban schema, kanban lifecycle states, the
->   eight protocol actions, the six canonical statuses, the Card
+>   nine protocol actions, the six canonical statuses, the Card
 >   ontology / hierarchy decision, branch-naming convention, or
 >   the claim primitive.
 > - Updating any of the spec docs that anchor the protocol
@@ -55,7 +55,7 @@ plugin"; board layer is "operate the kanban during use."
 
 The board layer's contract surface is the **Kanban Protocol**
 (per ADR-0025). The protocol is a *semantic mental model* agents
-reason in — eight named actions, six canonical statuses, a small
+reason in — nine named actions, six canonical statuses, a small
 ontology (Board / Card / Status / Claim / PR Link / Label /
 Comment), and identity rules. **It is NOT an SDK** — there are
 no function signatures, no parameter lists, no return types. The
@@ -108,7 +108,7 @@ canonical reading order on first pass:**
 |-------|------|-----------------|
 | 1 | [`docs/architecture/0001-positioning.md`](./docs/architecture/0001-positioning.md) — premises P2a + P2b + § "AI-native concept hygiene" | Why we have a kanban layer at all; what we deliberately refuse (sprint, sub-issue, story points, etc.) |
 | 2 | [`docs/architecture/adr/0025-kanban-protocol-as-top-contract.md`](./docs/architecture/adr/0025-kanban-protocol-as-top-contract.md) | Why the contract is protocol-shape, not SDK-shape; ADR-0005 rescoping |
-| 3 | [`docs/architecture/0005-contracts/00-kanban-protocol.md`](./docs/architecture/0005-contracts/00-kanban-protocol.md) | The protocol itself — ontology, identity, 8 action contracts, 6 statuses, body schema, custom-state folding, multi-kanban semantics, card hierarchy stance, compliance levels, projection forms |
+| 3 | [`docs/architecture/0005-contracts/00-kanban-protocol.md`](./docs/architecture/0005-contracts/00-kanban-protocol.md) | The protocol itself — ontology, identity, 9 action contracts, 6 statuses, body schema, custom-state folding, multi-kanban semantics, card hierarchy stance, compliance levels, projection forms |
 | 4 | [`docs/architecture/adr/0026-multi-kanban-lifecycle-and-flat-card-hierarchy.md`](./docs/architecture/adr/0026-multi-kanban-lifecycle-and-flat-card-hierarchy.md) | Three coupled v0.5.0+ decisions: lifecycle (5 states); multi-kanban schema (`modules.m10_kanban.kanbans`); flat-Card hierarchy + display-only metadata |
 | 4b | [`docs/architecture/adr/0027-m3-dispatch-via-kanban-protocol-projection.md`](./docs/architecture/adr/0027-m3-dispatch-via-kanban-protocol-projection.md) | Supersedes ADR-0022 § M3 capability dispatch; routes capability dispatch through Kanban Protocol projections rather than ADR-0005's SDK-shaped adapter handles |
 | 5 | [`docs/architecture/adr/0001-pluggable-board-backend-with-github-project-v1.md`](./docs/architecture/adr/0001-pluggable-board-backend-with-github-project-v1.md) | Substrate-pluggability commitment (ADR rescoped reading note included) |
@@ -144,11 +144,18 @@ ADR-0005 was originally an SDK-shape contract (5 methods +
 top-level contract as a protocol; ADR-0005 is now scoped to "the
 v1 GitHubProjectAdapter implementation projection" only.
 
-### The eight actions
+### The nine actions
 
 `read_board`, `read_card`, `create_card`, `transition_card`,
 `claim_card`, `release_claim`, `link_pr_to_card`,
-`comment_on_card` (OPTIONAL).
+`comment_on_card` (OPTIONAL), and `handoff_card`.
+
+`handoff_card` changes the Card Role single-select and appends a
+structured, immutable handoff comment. Role is ownership; Status is
+flow state. A handoff never implies a Status transition, and a Status
+transition never implies a handoff. The authority graph and default
+six-handoff cap live in `skills/board-canon/references/handoff-authority.md`;
+projection mechanics live in `skills/operating-kanban/references/`.
 
 Each is a **semantic contract** with pre/post/error/idempotency.
 NOT a function signature. The protocol document is the SoT.

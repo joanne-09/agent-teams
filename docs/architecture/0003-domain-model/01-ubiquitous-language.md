@@ -309,6 +309,11 @@ fields at v1: `schema_version: 1`, `host_bootstrapped_at`,
 `last_seen_version`). Per-machine, never tracked in git
 (I-13). Source: §1.5 state-file table, I-13.
 
+**Handoff.** A semantic transfer of a Card's next work obligation from
+one Seat to another. It changes Role, appends a structured marker comment,
+and writes action 300; it never changes Status. Illegal authority edges and
+the handoff cap refuse before mutation. Source: ADR-0031.
+
 ### I
 
 **Implementer.** The single Consumer specific role at v1
@@ -389,6 +394,10 @@ rule: projections do NOT auto-create labels; unknown label →
 `schema_mismatch` error (uniform across backends; ADR-0005
 v1 projection). Source: `0005-contracts/00-kanban-protocol.md`
 § Label, `bootstrap-project.sh` header, ADR-0005.
+
+**Lane.** The queryable set of Cards sharing one Role value. Lanes express
+agent work obligations and must not be inferred from backend Assignees. A
+Role-less Card belongs to the unassigned lane. Source: ADR-0029.
 
 ### M
 
@@ -671,6 +680,11 @@ surface fired and the Consumer is awaiting architect (Mode-1)
 or Producer-mediated (Mode-2) input. Resolved by F-C14
 wake-up. Source: §1.4 F-C8, F-C14. Expanded in:
 `03-aggregates-and-entities.md` § ConsumerLogical.
+
+**Seat.** One of `analyst`, `architect`, `rd`, `qa`, `em`, or `human`;
+the agent-team specialization bound by `[role:<seat>]` and stored as Card
+Role. Seat is orthogonal to Producer/Consumer execution shape and to GitHub
+identity. Source: ADR-0029.
 
 ### T
 

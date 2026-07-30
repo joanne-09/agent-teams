@@ -3,9 +3,10 @@
 The capabilities a Producer-role session exposes. Producer is
 the kanban-relative role from §1.2 — its purpose is to keep
 the kanban populated and well-shaped. Concrete Producer
-sessions take on **specific roles** that bundle related
-capabilities. v1 ships one such specific role — **Manager** —
-whose 15 features are documented in §1.3.1. Future Producer
+sessions take on **specific roles / Seats** that bundle related
+capabilities. The original v1 ships Manager. The v0.8.0 team slice makes its
+analyst, architect, and EM responsibilities explicit without removing the
+15-feature Manager catalog. Future Producer
 specific roles (e.g., a dedicated Triager split out of Manager,
 a dedicated Lint runner) become sibling subsections under §1.3.
 
@@ -42,6 +43,25 @@ facing briefing.
   conversational scaffold for the architect to capture their
   own.
 
+#### 1.3.0 Producer team specialization (v0.8.0)
+
+The team slice distributes existing Producer responsibilities across durable
+Role lanes:
+
+- `analyst` owns intake and creates Backlog work; it hands specification work
+  to `architect` and never promotes implementation directly to Ready.
+- `architect` owns durable specification delivery and INVEST decomposition. It
+  hands validated implementation Cards to `rd`, then promotes them to Ready as
+  a separate Status mutation.
+- `em` owns aggregate briefing, triage, Role-lane queue selection, WIP / handoff
+  pressure, and carrier-neutral kickoff generation.
+- `qa` continues to use `reviewing-pr-queue` in this Producer-only slice. The
+  independent Consumer-shaped verification routine is intentionally deferred.
+
+All mutations resolve the two-dimensional Seat autonomy matrix. `N` is a hard
+floor; repository overrides cannot loosen it. Every successful handoff is the
+ninth Kanban Protocol action and writes audit action 300 with `actor_seat`.
+
 #### 1.3.1 Manager (specific role)
 
 A **Manager** session is a Producer-role session whose specific
@@ -62,7 +82,7 @@ architect-initiated commands (the architect prompts; Manager
 preflights then responds). Per C-PLUGIN-2 there is no daemon
 — Manager only acts in response to architect prompts.
 
-**Trigger phrases** (route via the 4 Producer routine SKILL
+**Trigger phrases** (route via the Producer/team routine SKILL
 descriptions matching — `briefing-daily` / `intaking-requirement`
 / `reviewing-pr-queue` / `triaging-board` — per
 `PLUGIN_DEVELOPMENT.md`):

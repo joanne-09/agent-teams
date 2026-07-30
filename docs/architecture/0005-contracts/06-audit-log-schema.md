@@ -1,6 +1,6 @@
 # 06 — Audit log schema
 
-> Pin the BYO-RDBMS audit-log shape: the core 8 columns, per-
+> Pin the BYO-RDBMS audit-log shape: the core 9 columns, per-
 > `action_id` payload sub-schemas, the orthogonal `outcome` /
 > `approval_stage` enums, AuditTrail scope (per-Project), DDL
 > ownership (one-shot init script), and the migration model.
@@ -22,7 +22,7 @@
 
 ---
 
-## Core schema — 8 columns
+## Core schema — 9 columns
 
 The AuditEntry value object. Append-only; immutable once written;
 no UPDATE / DELETE supported in the contract.
@@ -33,6 +33,7 @@ no UPDATE / DELETE supported in the contract.
 | `project` | `TEXT` | `VARCHAR(255)` | yes | Backend-shaped opaque project identifier — for the v1 GitHubProjectAdapter projection it is the `OWNER/NUMBER` GitHub Project string (round-trip stable per ADR-0005's projection). Future backends write whatever their `project_ref` shape is per the active `kanban.backend` (see [`03-config-schemas.md`](./03-config-schemas.md) `kanban:` block). The column name and width are protocol-stable; the field's content is projection-specific. |
 | `session_id` | `TEXT` | `VARCHAR(64)` | yes | The originating CC or Codex session id (UUID-shaped at v1). |
 | `actor_role` | `TEXT` (CHECK in `('producer','consumer')`) | `ENUM('producer','consumer')` | yes | Lowercase per §1.4 cross-cutting note + 0003 § 3.3.8. |
+| `actor_seat` | `TEXT` nullable | `VARCHAR(16)` nullable | no | `analyst`, `architect`, `rd`, `qa`, `em`, or `human`; NULL for pre-seat and unbound legacy rows. Independent of execution shape. |
 | `action_id` | `SMALLINT` | `SMALLINT` | yes | Matrix row id; see "action_id catalog" below. |
 | `payload` | `JSONB` | `JSON` | yes | Per-`action_id` shape; see "Per-`action_id` payload sub-schemas" below. |
 | `outcome` | `TEXT` (CHECK in `('success','failure')`) | `ENUM('success','failure')` | yes | **Execution-layer** terminal state — did the action's effect land cleanly. See "outcome enum" below. |
@@ -129,7 +130,7 @@ makes the dominant queries crisp:
 ## `action_id` catalog
 
 `action_id` is a stable integer reference into a documented
-matrix. The matrix has three halves:
+matrix. The catalog has four stable blocks:
 
 - **Producer rows: 1–14** — from ADR-0006 §3 (canonical).
 - **Consumer rows: 100–113** — finalized here per TBD-3 (canonical
@@ -250,6 +251,22 @@ validation) is read-only and does NOT receive an `action_id`.
 - Higher numbers (above the current ceiling of 208) are NOT
   pre-reserved per the SPOT contract — new bootstrap actions
   take the next free integer at the time they are added.
+
+---
+
+### Team rows ? 300?305
+
+| `action_id` | Action | Default class |
+|---:|---|:---:|
+| 300 | Handoff Card to another seat | A |
+| 301 | Escalate to lead seat (handoff plus separate Blocked transition) | A |
+| 302 | Reject or bounce Card to a lower seat | A |
+| 303 | Emit agent dispatch instruction | A |
+| 304 | Write QA verdict with evidence | A |
+| 305 | Refuse illegal handoff or cap breach | A |
+
+The seat-aware class is defined by ADR-0030. Existing actions retain their
+identifiers and use `actor_seat` to distinguish the acting seat.
 
 ---
 
@@ -703,6 +720,44 @@ by the split — both shapes filter on `card_number` first.
 
 ---
 
+### Team ? `action_id = 300` (Handoff)
+
+```json
+{"card":"42","from_seat":"architect","to_seat":"rd","reason":"spec accepted","handoff_count":2}
+```
+
+### Team ? `action_id = 301` (Escalation)
+
+```json
+{"card":"42","from_seat":"rd","to_seat":"architect","reason":"unresolved interface decision","blocked_transition_action_id":6}
+```
+
+### Team ? `action_id = 302` (Reject / bounce)
+
+```json
+{"card":"42","from_seat":"qa","to_seat":"rd","reason":"reproducible visual regression","evidence":["screenshot.png"]}
+```
+
+### Team ? `action_id = 303` (Dispatch)
+
+```json
+{"card":"42","from_seat":"em","to_seat":"rd","carrier":"paste","reason":"oldest dependency-free Ready card","wip":2,"handoffs":1}
+```
+
+### Team ? `action_id = 304` (QA verdict)
+
+```json
+{"card":"42","verdict":"pass","evidence":["command output","browser artifact"],"pr":"57"}
+```
+
+### Team ? `action_id = 305` (Refusal)
+
+```json
+{"card":"42","from_seat":"rd","to_seat":"human","reason":"illegal_handoff"}
+```
+
+---
+
 ## AuditTrail scope — per-Project (TBD-5 finalized)
 
 **Decision:** AuditTrail is **per-Project**. The `project` column
@@ -803,6 +858,7 @@ configured RDBMS), each JSON line has the following top-level fields:
 | `ts` | string (ISO 8601 UTC) | Wall-clock time the entry was written |
 | `repo_root` | string | Absolute path of the repository root |
 | `session_id` | string | Session identifier from `bsp_resolve_session_id`; parallels the SQLite path's `session_id` column. Present from v0.4.x onward (chunk 15 fix). Legacy rows written before this fix lack the field — readers must handle its absence. |
+| `actor_seat` | string | Optional seat; omitted on legacy rows |
 | `action_id` | string | Matrix row id (same values as RDBMS `action_id`) |
 | `decision_class` | string | `A`, `R`, or `N` (per ADR-0006 D-AUTONOMY-1) |
 | `skill` | string | Originating skill name |

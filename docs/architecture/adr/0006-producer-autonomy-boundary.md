@@ -1,6 +1,6 @@
 # ADR 0006: Producer autonomy boundary — autonomous-with-transparency, with explicit permission matrix
 
-**Status:** accepted
+**Status:** superseded by ADR-0030
 **Date:** 2026-04-26
 **Deciders:** PanQiWei (maintainer)
 

@@ -24,10 +24,9 @@ bsp_log "audit-init.sh starting"
 
 # Step 1: ensure venv (self-healing).
 REPO_ROOT="$(bsp_primary_repo_root "${PWD}" 2>/dev/null || echo "${PWD}")"
-if ! bsp_ensure_venv "${REPO_ROOT}" >/dev/null 2>&1; then
-    bsp_die "venv unavailable at ${REPO_ROOT}/.board-superpowers/.venv — run bootstrap-host.sh first if uv missing"
+if ! VENV_PYTHON="$(bsp_ensure_venv "${REPO_ROOT}" 2>/dev/null)"; then
+    bsp_die "venv unavailable at ${REPO_ROOT}/.board-superpowers/.venv ? run bootstrap-host.sh first if uv missing"
 fi
-VENV_PYTHON="${REPO_ROOT}/.board-superpowers/.venv/bin/python3"
 
 # Step 2: resolve audit_db_url.
 AUDIT_DB_URL="$(bsp_resolve_audit_db_url)"
@@ -52,7 +51,7 @@ esac
 # been added by audit-v1-to-v2.sh. A pre-existing DB at the target
 # version is detected here and migration is skipped (no-op). Fresh
 # (non-existent) DBs report version 0 — fresh-init DDL handles those.
-TARGET_VERSION=2
+TARGET_VERSION=3
 
 # Compute SQLite db_path early so we can stat the file (presence = pre-existing DB).
 SCHEMA_DIR="${SCRIPT_DIR}/lib"

@@ -44,7 +44,7 @@ from stages_lib.m4_repo_acquire_dsn import (
 
 _AUDIT_LOG_COLUMNS = [
     "id", "timestamp", "project", "session_id", "actor_role",
-    "action_id", "payload", "outcome", "approval_stage",
+    "actor_seat", "action_id", "payload", "outcome", "approval_stage",
 ]
 _AUDIT_LOG_INDEXES = ["idx_audit_log_timestamp", "idx_audit_log_action_id"]
 
@@ -54,9 +54,9 @@ _AUDIT_OUTBOX_COLUMNS = [
     "status", "retry_count", "pending_since",
 ]
 
-_AUDIT_SCHEMA_META_COLUMNS = ["id", "version", "applied_at"]
+_AUDIT_SCHEMA_META_COLUMNS = ["id", "version", "migrated_at"]
 
-_SCHEMA_VERSION = 2  # current target schema version (audit-init.sh TARGET_VERSION)
+_SCHEMA_VERSION = 3  # current target schema version (audit-init.sh TARGET_VERSION)
 
 
 def _resolve_dsn(ctx: Any) -> str:
@@ -75,12 +75,16 @@ def _audit_init_sh_path() -> Path:
 
 
 def _check_sqlite_tables(dsn: str) -> dict:
-    """Query a SQLite DB for table + column presence. Returns current state dict."""
+    """Return whether SQLite is at the complete audit-v3 target shape."""
+    import os
+    import re
     import sqlite3
 
     scheme = _parse_scheme(dsn)
     db_path = dsn.replace(scheme + "://", "", 1)
-    if not db_path.startswith("/"):
+    if os.name == "nt" and re.match(r"^/+[A-Za-z]:[\\/]", db_path):
+        db_path = db_path.lstrip("/")
+    elif not db_path.startswith("/"):
         db_path = "/" + db_path.lstrip("/")
 
     if not Path(db_path).exists():
@@ -94,11 +98,25 @@ def _check_sqlite_tables(dsn: str) -> dict:
                 "SELECT name FROM sqlite_master WHERE type='table'"
             ).fetchall()
         }
-        result = {}
-        for table in ("audit_log", "audit_outbox", "audit_schema_meta"):
-            result[table] = table in tables
+        table_state = {
+            name: name in tables
+            for name in ("audit_log", "audit_outbox", "audit_schema_meta")
+        }
+        columns = []
+        version = 0
+        if table_state["audit_log"]:
+            columns = [row[1] for row in conn.execute("PRAGMA table_info(audit_log)").fetchall()]
+        if table_state["audit_schema_meta"]:
+            row = conn.execute("SELECT version FROM audit_schema_meta WHERE id=1").fetchone()
+            version = int(row[0]) if row else 0
         conn.close()
-        return {"present": all(result.values()), "tables": result}
+        present = all(table_state.values()) and version >= _SCHEMA_VERSION and "actor_seat" in columns
+        return {
+            "present": present,
+            "tables": table_state,
+            "schema_version": version,
+            "actor_seat_present": "actor_seat" in columns,
+        }
     except Exception as exc:
         return {"present": False, "error": str(exc)}
 
@@ -133,7 +151,8 @@ def compute_target_state(ctx: Any) -> dict:
 def target_state_predicate(state: Any) -> bool:
     """Pure: validate that the DDL state has the required tables and schema version.
 
-    Accepts state if audit_log.schema_version >= 1 and all three table
+    Accepts state only if audit_log.schema_version meets the current target,
+    actor_seat is required, and all three table
     entries are present.
     """
     if not isinstance(state, dict):
@@ -142,10 +161,10 @@ def target_state_predicate(state: Any) -> bool:
     if not isinstance(audit_log, dict):
         return False
     schema_version = audit_log.get("schema_version")
-    if not isinstance(schema_version, int) or schema_version < 1:
+    if not isinstance(schema_version, int) or schema_version < _SCHEMA_VERSION:
         return False
     columns_required = audit_log.get("columns_required")
-    if not isinstance(columns_required, list) or not columns_required:
+    if not isinstance(columns_required, list) or "actor_seat" not in columns_required:
         return False
     indexes_required = audit_log.get("indexes_required")
     if not isinstance(indexes_required, list):
@@ -182,6 +201,8 @@ def idempotency_check(ctx: Any) -> dict:
             "current_state": {
                 "dsn_scheme": scheme,
                 "tables": result.get("tables"),
+                "schema_version": result.get("schema_version", 0),
+                "actor_seat_present": result.get("actor_seat_present", False),
                 **({} if "error" not in result else {"error": result["error"]}),
             },
         }
