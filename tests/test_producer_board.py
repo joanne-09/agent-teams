@@ -185,7 +185,9 @@ class TransitionTests(unittest.TestCase):
         self.board = producer_board.Board(config(), self.gh)
 
     def test_legal_transition_sets_status_only(self):
-        result = self.board.transition_card(20, Status.READY, Role.ARCHITECT)
+        # Acts as `human`: reaching Ready is the readiness gate, so the
+        # destination rule now refuses the architect on this path too.
+        result = self.board.transition_card(20, Status.READY, Role.HUMAN)
         self.assertEqual(result["status_before"], "Backlog")
         self.assertEqual(result["status"], "Ready")
         edits = self.gh.calls_matching("project", "item-edit")
@@ -321,6 +323,20 @@ class CliTests(unittest.TestCase):
         )
         self.assertEqual(code, 1)
         self.assertEqual(json.loads(err)["refusal"], "ActionForbidden")
+
+    def test_create_card_cannot_route_around_the_transition_it_performs(self):
+        # `transition --to Ready --acting-role analyst` refuses, so the same
+        # destination reached by creation must refuse through the same envelope
+        # -- and must not leave an Issue behind on the way to the refusal.
+        gh = FakeGh()
+        code, _, err = self._run(
+            "create-card", "--title", "t", "--body", "b",
+            "--status", "Ready", "--role", "rd", "--acting-role", "analyst",
+            gh=gh,
+        )
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(err)["refusal"], "ActionForbidden")
+        self.assertEqual(gh.calls_matching("issue", "create"), [])
 
     def test_brief_renders_lanes_and_a_recommendation(self):
         code, out, _ = self._run("brief")

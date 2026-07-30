@@ -135,12 +135,14 @@ def _build_parser() -> argparse.ArgumentParser:
     create_body = create.add_mutually_exclusive_group(required=True)
     create_body.add_argument("--body")
     create_body.add_argument("--body-file")
-    create.add_argument("--status", default="Ready", choices=STATUSES)
-    create.add_argument("--role", default="rd", choices=ROLES)
+    create.add_argument("--status", default="Backlog", choices=STATUSES)
+    create.add_argument("--role", default="human", choices=ROLES)
     create.add_argument("--acting-role", default="architect", choices=ROLES)
 
     promote = sub.add_parser(
-        "promote", help="make a shaped Card Ready and hand it to development"
+        "promote",
+        help="human readiness gate: approve a shaped Card into Ready and hand "
+        "it to development",
     )
     promote.add_argument("issue", type=int)
     promote.add_argument(
@@ -148,7 +150,7 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help="specification Pull Request URL, #number, or durable path",
     )
-    promote.add_argument("--acting-role", default="architect", choices=ROLES)
+    promote.add_argument("--acting-role", default="human", choices=ROLES)
     promote.add_argument("--note", default="")
 
     decompose = sub.add_parser(

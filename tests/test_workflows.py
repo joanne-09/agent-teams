@@ -12,7 +12,7 @@ from agent_teams.board import Board  # noqa: E402
 from agent_teams.config import Config  # noqa: E402
 from agent_teams.model import Role, Status  # noqa: E402
 from agent_teams.workflows import Producer, WorkflowError  # noqa: E402
-from fake_gh import REPO, FakeGh  # noqa: E402
+from fake_gh import REPO, FakeGh, board_with  # noqa: E402
 
 SPEC_PR = "https://github.com/acme/widgets/pull/57"
 
@@ -74,9 +74,18 @@ class SpecGateTests(unittest.TestCase):
         self.assertIn("--spec", gate["explanation"])
 
 
+#: A Card the architect has already shaped and handed to the human for the
+#: readiness decision -- the state `promote` now expects to act on.
+AT_THE_GATE = board_with((20, "Shaped requirement", "Backlog", "human"))
+
+
 class PromoteTests(unittest.TestCase):
-    def test_promotes_and_hands_to_development(self):
-        team, gh = producer()
+    # Superseded throughout: `promote` used to default to the architect, who
+    # could declare its own work Ready. Readiness is now the human lifecycle
+    # gate (ARCHITECTURE.md 16.1 decision 6), so these act as `human` on a Card
+    # the architect handed over.
+    def test_the_human_promotes_and_hands_to_development(self):
+        team, gh = producer(FakeGh(items=AT_THE_GATE))
         result = team.promote(20, SPEC_PR)
         self.assertTrue(result["ok"])
         self.assertEqual(result["status"], "Ready")
@@ -88,17 +97,20 @@ class PromoteTests(unittest.TestCase):
         self.assertIn("ROLE_RD", edits[1])
 
     def test_refuses_when_the_specification_is_not_durable(self):
-        gh = FakeGh(pr_state={"state": "OPEN", "mergedAt": None})
+        gh = FakeGh(items=AT_THE_GATE, pr_state={"state": "OPEN", "mergedAt": None})
         team, _ = producer(gh)
         with self.assertRaises(WorkflowError):
             team.promote(20, SPEC_PR)
         self.assertEqual(gh.calls_matching("project", "item-edit"), [])
 
-    def test_rd_cannot_promote_its_own_work(self):
-        team, gh = producer()
-        with self.assertRaises(policy.ActionForbidden):
-            team.promote(20, SPEC_PR, Role.RD)
-        self.assertEqual(gh.calls_matching("project", "item-edit"), [])
+    def test_no_agent_seat_can_promote_even_its_own_work(self):
+        for seat in (Role.ANALYST, Role.ARCHITECT, Role.RD, Role.QA, Role.EM):
+            with self.subTest(seat=seat):
+                gh = FakeGh(items=AT_THE_GATE)
+                team, _ = producer(gh)
+                with self.assertRaises(policy.ActionForbidden):
+                    team.promote(20, SPEC_PR, seat)
+                self.assertEqual(gh.calls_matching("project", "item-edit"), [])
 
     def test_refuses_a_card_owned_by_another_seat(self):
         team, _ = producer()
@@ -106,10 +118,75 @@ class PromoteTests(unittest.TestCase):
             team.promote(21, SPEC_PR)  # #21 is (In Review, qa)
 
     def test_refuses_a_card_whose_status_cannot_reach_ready(self):
-        team, _ = producer()
-        # #8 is already Ready.
+        team, _ = producer(FakeGh(items=board_with((8, "Already Ready", "Ready", "human"))))
         with self.assertRaises(policy.IllegalTransition):
             team.promote(8, SPEC_PR)
+
+    def test_the_architect_cannot_reach_ready_by_any_other_door(self):
+        # The destination rule (16.1 decision 5) means closing `promote` closes
+        # `create-card` and `transition` too. Assert that, rather than trust it.
+        gh = FakeGh(items=AT_THE_GATE)
+        team, _ = producer(gh)
+        with self.assertRaises(policy.ActionForbidden):
+            team.create_card("t", "b", Status.READY, Role.RD, Role.ARCHITECT)
+        with self.assertRaises(policy.ActionForbidden):
+            team.transition(20, Status.READY, Role.ARCHITECT)
+        self.assertEqual(gh.calls_matching("issue", "create"), [])
+        self.assertEqual(gh.calls_matching("project", "item-edit"), [])
+
+
+class CreateCardTests(unittest.TestCase):
+    """Creating a Card writes a routing state, so policy governs both axes.
+
+    ARCHITECTURE.md 16.1 decision 4 settles that the *destination* decides which
+    authority governs a Status move. `transition_card` applied that rule but
+    `create_card` did not, which left the closed hole open through a second
+    door: any seat allowed to create a Card could place it in any state, in any
+    seat's lane, without the action or handoff row that governs getting there.
+    """
+
+    def test_the_analyst_cannot_create_a_card_already_ready(self):
+        # `promote_to_ready` refuses `analyst`; reaching Ready by creation is
+        # the same decision under another name.
+        team, gh = producer()
+        with self.assertRaisesRegex(policy.ActionForbidden, "promote to ready"):
+            team.create_card("t", "b", Status.READY, Role.ARCHITECT, Role.ANALYST)
+        self.assertEqual(gh.calls_matching("issue", "create"), [])
+
+    def test_no_seat_reaches_done_by_creating_a_card(self):
+        # Done means a human accepted a delivery. Nothing may start there.
+        team, gh = producer()
+        with self.assertRaisesRegex(policy.ActionForbidden, "reconcile done"):
+            team.create_card("t", "b", Status.DONE, Role.HUMAN, Role.ANALYST)
+        self.assertEqual(gh.calls_matching("issue", "create"), [])
+
+    def test_the_analyst_cannot_create_a_card_in_the_development_lane(self):
+        # Section 6.4: the System Analyst cannot hand directly to `rd`.
+        # Creating the Card already owned by `rd` is that handoff, pre-baked.
+        team, gh = producer()
+        with self.assertRaises(policy.IllegalHandoff):
+            team.create_card("t", "b", Status.BACKLOG, Role.RD, Role.ANALYST)
+        self.assertEqual(gh.calls_matching("issue", "create"), [])
+
+    def test_the_architect_creates_implementation_cards_at_the_gate(self):
+        # Superseded: this used to create the Card directly at Ready. The
+        # architect now creates it in Backlog owned by `human`, awaiting the
+        # readiness decision.
+        team, gh = producer()
+        result = team.create_card("t", "b", Status.BACKLOG, Role.HUMAN, Role.ARCHITECT)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"], "Backlog")
+        self.assertEqual(result["role"], "human")
+
+    def test_a_seat_may_keep_the_card_it_creates(self):
+        # Self-assignment is not a handoff, so it must not trip the matrix --
+        # an architect authoring its own documentation Card is the normal case.
+        team, _ = producer()
+        result = team.create_card(
+            "spec", "b", Status.BACKLOG, Role.ARCHITECT, Role.ARCHITECT
+        )
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["role"], "architect")
 
 
 class DecomposeTests(unittest.TestCase):
@@ -126,9 +203,13 @@ class DecomposeTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(len(result["created"]), 2)
         self.assertTrue(result["summary_comment_posted"])
+        # Superseded: children used to be created at (Ready, rd), which put
+        # them past the readiness gate the architect may not open. They now
+        # wait at (Backlog, human) for a per-Card approval, which is what the
+        # reference project's first gate always meant.
         for entry in result["created"]:
-            self.assertEqual(entry["status"], "Ready")
-            self.assertEqual(entry["role"], "rd")
+            self.assertEqual(entry["status"], "Backlog")
+            self.assertEqual(entry["role"], "human")
         # Each child body carries the spec pointer and its provenance.
         bodies = [call[-1] for call in gh.calls_matching("issue", "create")]
         for body in bodies:

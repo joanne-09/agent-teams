@@ -1,12 +1,25 @@
 ---
 name: briefing-board
-description: Read the whole GitHub Project by Role lane and report team flow, work in progress, blocked work, the human merge queue, and one recommended next action. Use for [role:em], "morning briefing", "board overview", "what is the team doing", "what should I look at", or "status of the board".
+description: Orient a session on the current project state. Reads the whole GitHub Project by Role lane and reports team flow, work in progress, blocked work, what is waiting on the human, and one recommended next action. This is the default opening move of any agent-teams session and the user may also ask for it directly at any time. Use for "brief me", "orientation", "where are we", "what is going on", "what should I do next", "morning briefing", "board overview", "status of the board", "what is the team doing", a session opening with no specific request, or [role:em].
 ---
 
 # Briefing the board
 
-The Engineering Manager's whole-team view. Read-only: this routine reports
-flow, it does not change it.
+Orientation for the whole team. Read-only: this routine reports flow, it does
+not change it.
+
+Two ways in, and they produce the same report:
+
+- **The user asks for it directly** — "brief me", "where are we", "what should
+  I work on next". This is a first-class request, not a fallback. Answer it
+  whenever it is asked, however far into a session.
+- **The session opens without a specific request** — orientation is the
+  default opening move. Give it unprompted rather than asking the user what
+  they want.
+
+Lead with anything waiting on the human: Cards at `(Backlog, human)` needing a
+readiness decision, and `(In Review, human)` needing a merge. Everything else
+on the board can move without them; those two queues cannot.
 
 ## Workflow
 

@@ -4,6 +4,7 @@ Status: normative architecture for the complete Phase 1 team
 Applies to: `agent-teams`
 Last updated: 2026-07-30
 Implementation progress: [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md)
+Operating guide: [`USAGE.md`](./USAGE.md) — how a human actually drives this
 
 ## 1. Purpose and scope
 
@@ -78,7 +79,7 @@ The relationship is:
 | Delivery unit | One Card, one authoring Consumer, one worktree, one Pull Request. | Preserved for implementation and documentation authoring. Independent verification is a second sequential Consumer stage bound to the same Card and existing Pull Request. |
 | Board model | GitHub Project lifecycle plus Issue and Pull Request links. | Extended with an orthogonal `Role` field and semantic `handoff_card`. |
 | Quality gate | Consumer verifies and the human reviews. | Expanded into an independent Quality Assurance engineer seat that can reject delivery before the human lane. |
-| Engineering disciplines | Composed from board-superpowers, superpowers, and gstack. | Composition remains the preferred boundary; agent-teams coordinates rather than reimplementing those disciplines. |
+| Engineering disciplines | Composed from board-superpowers, superpowers, and gstack. | **Not composed.** agent-teams carries its own skills and only *references* those disciplines; correctness never depends on another plugin being installed. See section 4.10. |
 | Merge | Consumer cannot self-merge. | No artificial intelligence seat can merge; the human gate remains a hard floor. |
 
 ## 3. Ubiquitous language
@@ -119,7 +120,7 @@ where the exact Project field or prompt representation matters.
 | System Architect | `architect` | Owns technical specification, architecture decisions, decomposition, dependencies, readiness, and technical escalation. |
 | Research and Development engineer | `rd` | Implements exactly one Ready Card with test-driven development and produces one Pull Request. |
 | Quality Assurance engineer | `qa` | Independently verifies one delivery, records evidence, rejects defects, or opens the human review lane. |
-| Human stakeholder / merge authority | `human` | Resolves business or authority questions, performs remaining human verification, and is the only actor allowed to merge. |
+| Human stakeholder / merge authority | `human` | Resolves business or authority questions, performs remaining human verification, and holds both lifecycle gates: the only actor allowed to declare work `Ready`, and the only actor allowed to merge. |
 
 ### 3.3 Seat and execution shape are independent axes
 
@@ -145,9 +146,27 @@ Consumer ScopeBinding => exactly one bound Card and one stage
 ```
 
 The Project `Role` field stores the seat token. It never stores `producer` or
-`consumer`. A prompt marker such as `[role:architect]` selects a seat, while
-`[board-card:#42]` binds a Card. Prompt text can request a route, but durable
-Project fields and policy checks grant authority.
+`consumer`.
+
+Seats are an **internal** organising device. A human user never names one. They
+state an intent in ordinary language — "what is going on", "we need a CSV
+export", "why is this stuck" — and the entry router selects the seat and
+routine from that intent plus live board state (section 11.1). Asking a person
+which seat they are is a design failure: it exposes an authority model as a
+menu.
+
+A prompt marker such as `[role:architect]` remains valid, but it is a
+**machine channel**: the deterministic form of a dispatch artifact, which a
+carrier pastes verbatim into a fresh session (section 12.1). It is honoured as
+an explicit override when a human writes one, and it is how a Producer hands
+work to a Consumer, but it is not the expected human interface.
+
+Selecting a seat grants nothing. Prompt text and router inference can request a
+route; only durable Project fields and policy checks grant authority, and they
+are evaluated identically however the seat was chosen.
+
+One seat is exempt from inference. **The router may never select `human`**
+(section 11.1).
 
 ### 3.4 Producer and Consumer comparison
 
@@ -166,8 +185,6 @@ launched Research and Development engineer Consumer session implements a
 resulting Card.
 
 ### 3.5 Board-anchored Producer, Card-anchored Consumer
-
-In this architecture, "lives with" names the session's durable scope anchor:
 
 - a Producer lives with the board. It starts from a board projection, Role
   lane, queue, requirement, or board-health routine and may read or mutate the
@@ -315,12 +332,20 @@ Every artificial intelligence seat may prepare evidence and recommend an
 outcome. Only the human merge authority can accept the repository change by
 merging. This is enforced policy, not merely a prompt instruction.
 
-### 4.10 Composition is preferred over reimplementation
+### 4.10 agent-teams owns its own skills and references the disciplines
+
+Every skill and script in this plugin is its own. agent-teams does not invoke
+`superpowers`, `gstack`, or any other plugin's skills, and correctness must
+never depend on one being installed.
 
 Test-driven development, planning, review, browser quality assurance, security
-review, and branch-finishing disciplines should be invoked through supported
-sibling skills when available. agent-teams owns coordination contracts, not
-copies of every engineering method.
+review, and branch-finishing remain the disciplines this design expects a
+Consumer to follow, and a skill may **reference** them — naming the practice,
+citing the sibling that implements it well, or telling the operator to run it.
+That is a documentation relationship, not a call. agent-teams owns coordination
+contracts, and it carries them in its own instructions rather than delegating
+to a plugin that may be absent.
+
 ## 5. System context and runtime topology
 
 ```mermaid
@@ -337,7 +362,6 @@ flowchart TB
     Issues[GitHub Issues and comments]
     PullRequests[GitHub Pull Requests and reviews]
     Git[Git branches and isolated worktrees]
-    Siblings[superpowers and gstack skills]
 
     Stakeholder -->|request or launch decision| Carrier
     Carrier --> Manager
@@ -356,7 +380,6 @@ flowchart TB
     AgentTeams <--> Issues
     AgentTeams <--> PullRequests
     AgentTeams <--> Git
-    AgentTeams --> Siblings
 
     PullRequests -->|human verification and merge| Stakeholder
 ```
@@ -378,27 +401,7 @@ The architecture is carrier-neutral:
 Every carrier consumes the same dispatch artifact. Changing carrier must not
 change board contracts or workflow correctness.
 
-### 5.2 Plugin source and demo boundary
-
-The plugin and its demo have separate repository responsibilities:
-
-| Repository | Responsibility |
-|---|---|
-| `agent-teams` | Plugin source, workflow skills, deterministic services, documentation, and plugin tests. |
-| `agent-teams-test` | Consuming demo repository: demo configuration and workload, plus the branches, worktrees, Pull Requests, and evidence created while exercising the plugin. Its linked GitHub Project, Issues, comments, and reviews remain the durable coordination plane. |
-
-A demo session loads or installs the plugin from `agent-teams`, but performs
-demo work against `agent-teams-test` and its configured GitHub Project. The
-plugin source repository is therefore not the target work repository for the
-demo. This boundary also prevents implementation changes to the plugin from
-being confused with evidence that the plugin completed a governed work item.
-
-The existence of the demo repository does not by itself prove the live
-end-to-end contract. Repeatable live Project, Issue, branch, Pull Request, and
-review evidence remains an implementation milestone until it is recorded in
-the implementation status ledger.
-
-### 5.3 Fresh-session context reconstruction
+### 5.2 Fresh-session context reconstruction
 
 A fresh session has no reliable conversational memory from a previous
 session, but it must not begin ignorant of the project. Context is rebuilt
@@ -478,7 +481,7 @@ The original human operating responsibility is distributed as follows:
 |---|---|---|
 | Engineering Manager / Team Lead | Briefing, prioritization, triage, work-in-progress control, dispatch, recovery, and escalation. | None in Phase 1. |
 | System Analyst | Requirement intake, clarification, acceptance-criteria shaping, and return-path refinement. | None in Phase 1. |
-| System Architect | Technical shaping, architecture review, dependency analysis, readiness, and decomposition. | Author one specification or Architecture Decision Record as one documentation Card and one documentation Pull Request. |
+| System Architect | Technical shaping, architecture review, dependency analysis, and decomposition. Proposes readiness; cannot grant it. | Author one specification or Architecture Decision Record as one documentation Card and one documentation Pull Request. |
 | Research and Development engineer | None in Phase 1. | Claim and implement exactly one Ready Card, verify it, and open one Pull Request. |
 | Quality Assurance engineer | Inspect and summarize the verification queue. | Verify exactly one delivery, write a verdict, reject to development, or hand to the human lane. |
 | Human stakeholder / merge authority | May originate or reprioritize demand through an explicit decision. | Manual review and merge are outside automated Consumer execution. |
@@ -535,8 +538,7 @@ Every Producer routine follows the same protocol:
 3. Bind the seat from the kickoff prompt and validate that the requested
    routine belongs to that seat.
 4. Run preflight for repository identity, GitHub authentication, Project
-   configuration, required fields, required field options, and sibling-skill
-   availability.
+   configuration, required fields, and required field options.
 5. Query a complete, paginated live board projection and normalize Cards before
    filtering.
 6. Build the seat-specific overview, then select only the bounded queue or
@@ -606,8 +608,9 @@ The System Architect turns shaped demand into technically Ready work:
 6. After the specification is durable on the target branch, create or update
    implementation Cards with specification pointers, dependencies, acceptance
    criteria, and verification needs.
-7. Transition eligible Cards to `Ready` and hand them to the Research and
-   Development engineer.
+7. Hand eligible Cards to the human stakeholder for the readiness decision.
+   The System Architect decides what the work *is* and that it is technically
+   sound; it may not declare it `Ready`. The human opens that gate.
 8. Record unresolved decisions and route them to the appropriate seat.
 
 A batch decomposition session is Producer-shaped even though it creates Cards.
@@ -709,7 +712,7 @@ Every Consumer session:
 3. refuses ambiguous or already-owned work;
 4. establishes exclusive claim and worktree isolation when it will author
    commits;
-5. follows the Card's acceptance criteria and applicable sibling disciplines;
+5. follows the Card's acceptance criteria and the disciplines its routine names;
 6. records concrete evidence, not an unsupported success assertion;
 7. performs the legal transition and handoff for its outcome;
 8. stops without merging or selecting another Card.
@@ -729,8 +732,8 @@ The implementation Consumer owns one `(Ready, rd)` Card:
 6. Produce an implementation plan bounded to this Card.
 7. Implement through test-driven development: demonstrate a failing test,
    make it pass, refactor, and run the required verification chain.
-8. Use sibling planning, review, browser, security, and branch-finishing skills
-   at their declared handoff points.
+8. Apply the planning, review, browser, security, and branch-finishing
+   disciplines the routine names, using whatever tooling is actually present.
 9. Open or update exactly one Pull Request linked to the Issue.
 10. Transition `In Progress -> In Review` and hand off `rd -> qa` with Pull
     Request URL, branch, tests, limitations, and required verification.
@@ -770,7 +773,7 @@ Request:
    Request body, commits, automated checks, and known limitations.
 3. Validate the Pull Request contract before evaluating behavior.
 4. Run applicable functional, regression, browser, data-correctness, security,
-   and review checks through supported tools and sibling skills.
+   and review checks through whatever tooling is actually available.
 5. Record a structured `pass`, `fail`, or `blocked` verdict with commands,
    URLs, screenshots, observations, and reproducible findings.
 6. On pass, preserve `In Review`, hand off `qa -> human`, and surface the exact
@@ -853,7 +856,8 @@ node means launching a new session that reconstructs context from GitHub.
 | 1 | System Analyst Producer | Human request, repository identity, intake policy. | GitHub Issue, Project item, `Status=Backlog`, `Role=architect`, handoff comment. | Card appears in the System Architect lane. |
 | 2 | System Architect Producer | Issue, acceptance criteria, repository architecture, dependencies. | Specification pointer, decisions, decomposition plan, or one documentation Card. | Either a System Architect documentation Consumer is dispatchable or implementation Cards can be made Ready. |
 | 3 | System Architect Consumer when needed | One documentation Card and repository context. | Documentation commits, one Pull Request, verification evidence. | Human reviews and merges the specification. |
-| 4 | System Architect Producer | Merged specification and intake Card. | Flat implementation Cards, dependencies, `Status=Ready`, `Role=rd`, handoff comments. | Ready Cards appear in the development lane. |
+| 4 | System Architect Producer | Merged specification and intake Card. | Flat implementation Cards, dependencies, `Status=Backlog`, `Role=human`, handoff comments. | Cards appear in the human readiness queue. |
+| 4b | Human stakeholder (readiness gate) | Each shaped Card, its specification, and acceptance criteria. | `Status=Ready`, `Role=rd` via `promote`. | Ready Cards appear in the development lane. |
 | 5 | Engineering Manager Producer | Complete board projection, priority, dependencies, work-in-progress counts. | Dispatch queue and optional legal rebalancing handoffs. | A carrier starts one Research and Development engineer Consumer per selected Card. |
 | 6 | Research and Development engineer Consumer | One Card, specification, claim state, worktree, tests. | Claim branch, commits, tests, one Pull Request, `Status=In Review`, `Role=qa`, handoff comment. | Card appears in the Quality Assurance lane. |
 | 7 | Quality Assurance engineer Consumer | One Card, Pull Request, checks, acceptance criteria, delivery evidence. | Verdict and evidence; either `Role=human` or `Status=In Progress, Role=rd`. | Human review or a new development correction session becomes dispatchable. |
@@ -872,6 +876,113 @@ node means launching a new session that reconstructs context from GitHub.
 | Claim race is lost | unchanged | unchanged | Losing Consumer exits; winner continues. |
 | Partial external mutation occurs | explicitly reported partial pair | responsible recovery seat | Fix-forward routine replays only missing semantic operations. |
 ## 10. GitHub artifact and data architecture
+
+### 10.0 The four durable artifacts and what each one is for
+
+agent-teams stores nothing of its own. There is no database, no state file, and
+no resident process. Everything the team knows lives in four GitHub and Git
+artifacts, and each answers exactly one question. Keeping those questions
+separate is what lets an independent session reconstruct the whole picture on a
+cold start.
+
+| Artifact | The one question it answers | Written by | Read by |
+|---|---|---|---|
+| **GitHub Project** | *Where is this work, and whose turn is it?* | `transition_card`, `handoff_card` | every session's bootstrap |
+| **GitHub Issue** (+ comments) | *What is the work, and what happened to it?* | intake, decomposition, handoff comments | the seat that picks the Card up next |
+| **Git** (branches, worktrees) | *Who holds this Card right now, and where is the work happening?* | claim push, worktree create | any Consumer about to claim |
+| **Pull Request** | *What was delivered, and is it acceptable?* | authoring Consumer, verifying Consumer | Quality Assurance, then the human |
+
+#### GitHub Project — the routing plane
+
+The Project carries exactly two governed single-select fields, `Status` and
+`Role`, and nothing else the system depends on. It is deliberately thin: it is
+an index, not a record. It holds no prose, no evidence, and no history beyond
+the current pair, because anything durable belongs on the Issue where it can be
+read without Project permissions.
+
+The Project is what makes *queues* possible. Every Producer routine is a query
+against it: dispatch reads `(Ready, <seat>)`, verification inspection reads
+`(In Review, qa)`, the readiness gate reads `(Backlog, human)`, triage reads
+`Blocked` grouped by `Role`. Because the pair is a Project field rather than a
+label or a body convention, those queries are exact and a Card cannot be in two
+lanes at once.
+
+The Project is also the only artifact this system *mutates for coordination*.
+That is why the semantic surface exposes `transition_card` and `handoff_card`
+and deliberately withholds `set_card_field` (section 4.8): a generic setter
+would let a session invent routing states that no policy rule governs.
+
+#### GitHub Issue — the record and the context channel
+
+The Issue is the Card's body of truth. It carries the goal, scope and
+non-goals, acceptance criteria, dependencies, and the specification pointer —
+written once at intake and refined in place rather than duplicated into new
+Issues.
+
+Its **comments are the inter-session message bus**. A structured handoff
+comment (section 10.4) is how one session tells the next what it did and what
+is needed, because the next session has no memory of the previous one and no
+process to ask. The comment is written for a stranger: if a fact is not in the
+Issue or reachable from a link in it, that fact is lost.
+
+Comments are also *counted*: the handoff marker lets the cap detect a Card
+ping-ponging between seats (section 13.4). This is why the marker is a machine
+grammar and not decoration, and why free text is neutralised before rendering
+(section 14.1) — an Issue body is untrusted input, and a Card that could forge
+a handoff line could forge a routing decision.
+
+#### Git — the lock and the isolation boundary
+
+Git plays two roles that no GitHub field can play.
+
+First, **the remote claim branch is the mutual-exclusion primitive**. Two
+Consumers may read the same `(Ready, rd)` Card simultaneously; exactly one
+compare-and-swap push of `claim/<n>-<slug>` succeeds, and the loser exits
+cleanly having written nothing. A Project field cannot do this — reading and
+writing it is not atomic, so two sessions could both observe "unclaimed" and
+both proceed. Distributed exclusion needs a remote arbitration surface, and a
+branch push is one that requires no server of our own.
+
+Second, **the worktree is the blast radius**. One Consumer, one worktree, one
+branch: N sessions can build concurrently with zero shared working state. A
+local worktree alone is *not* a claim, because another machine cannot observe
+it — the remote branch is what other sessions can see.
+
+#### Pull Request — the delivery contract and the acceptance surface
+
+The Pull Request is where work stops being a board state and becomes a
+reviewable proposal. It carries the fixed body contract of section 10.5:
+Summary, Test Plan, Automated Verification, Human Verification TODO, Retro
+Notes, and the closing trailer that links the Issue.
+
+It is the only artifact where **evidence** lives. A Card can claim a state; a
+Pull Request has to show commands, outputs, and diffs. That is what lets the
+Quality Assurance seat reject something on the record rather than on judgment
+alone, and what makes the human's merge decision cheap enough to be a real
+gate rather than a rubber stamp.
+
+It is also where the system's hardest floor sits: no artificial intelligence
+seat may merge (section 4.9). Every agent seat can prepare, argue for, and
+evidence a change. Only the human can accept it.
+
+#### How the four compose
+
+```text
+Issue        what & why, plus the running conversation
+  +
+Project      where it is, whose turn        <- queues and dispatch read this
+  +
+Git          who holds it, where they work  <- exclusive claim + isolation
+  +
+Pull Request what was delivered, evidence   <- review and the merge gate
+  =
+everything a fresh session needs to continue, with no memory of any previous one
+```
+
+A useful test of any proposed feature: *which of these four would it write to,
+and could a cold session still reconstruct the truth without it?* If a design
+needs a fifth store, it is usually a sign that one of these four is being used
+for the wrong question.
 
 ### 10.1 Issue, Project item, and Card identity
 
@@ -1050,7 +1161,7 @@ flowchart TB
     PullRequestService[Pull Request contract service]
     Audit[Audit and recovery log]
     Carrier[Dispatch and carrier adapters]
-    Sibling[Sibling-skill composition]
+    Sibling[Discipline references]
 
     Entry --> ProducerSkills
     Entry --> ConsumerSkills
@@ -1073,12 +1184,17 @@ Responsibilities:
 
 - run the common context bootstrap exactly once for every governed session;
 - load standing repository instructions and stable project-context pointers;
-- parse `[role:<seat>]` and optional `[board-card:#N]` markers;
+- **infer the seat and routine from the user's stated intent** plus live board
+  state, without requiring or requesting a seat token from a person;
+- parse `[role:<seat>]` and optional `[board-card:#N]` markers when present,
+  and treat them as an explicit override of that inference;
 - bind one seat and one execution shape;
 - discover repository and Project configuration;
 - query the current board or bound Card through deterministic read services;
 - build the role-appropriate orientation before any mutation;
-- refuse ambiguous or conflicting identity;
+- **default to orientation** when intent is unstated: report board state and
+  the recommended next action rather than asking the user to classify
+  themselves;
 - route only to routines legal for that seat and shape;
 - run common preflight before workflow-specific work.
 
@@ -1086,6 +1202,26 @@ The router does not grant authority. It passes claimed identity to the policy
 layer, which checks durable board state. A downstream skill selected directly
 may bypass the routing decision, but it must invoke or prove completion of the
 same bootstrap contract.
+
+#### The `human` exemption
+
+**The router may never select `human`.** Every other seat is inferable, because
+inferring one only chooses which refusals will apply. `human` is different: it
+is the seat that holds both lifecycle gates, so a router that could adopt it
+could approve its own readiness decision and defeat the gate by construction.
+
+When the next legal step is human-gated, the session stops and reports:
+what the decision is, what it recommends and why, and the exact command or
+Pull Request for the user to act on. It does not run `promote` and does not
+pass `--acting-role human` on its own initiative.
+
+This boundary is carried by instructions and by the user being the one who runs
+the gate commands. It is **not** enforced in code, and cannot be: the adapter
+receives a seat token and has no way to distinguish a token a person supplied
+from one a session supplied. Any agent with shell access could pass the flag.
+Recording that honestly is preferable to implying a check that does not exist —
+if this boundary is ever violated in practice, the answer is an out-of-band
+confirmation channel, not a stricter argument parser.
 
 ### 11.2 Producer workflow skills
 
@@ -1227,16 +1363,20 @@ Dispatch selects legal work and emits a stable artifact. Carrier adapters may
 turn that artifact into a human instruction, bounded subagent prompt, or
 scheduled invocation. They never own lifecycle truth.
 
-### 11.12 Sibling-skill composition
+### 11.12 Discipline references
 
-The composition layer:
+There is no sibling-skill composition layer, and none is planned. agent-teams
+skills carry their own instructions (section 4.10). What this layer does own is
+the *record* of engineering discipline:
 
-- detects supported sibling-plugin capabilities;
-- invokes them through documented namespaced surfaces;
-- records which checks ran;
-- degrades explicitly when a non-required sibling is unavailable;
-- refuses when a required discipline cannot be satisfied;
-- never assumes nested runtime behavior is safe merely because a skill exists.
+- names the discipline a routine expects — test-first development, review,
+  security, browser verification, branch finishing;
+- may point to a sibling plugin that implements it well, as a recommendation
+  the operator or the session may follow;
+- records which checks actually ran, in the Pull Request contract;
+- refuses when a required discipline cannot be evidenced, on the evidence
+  rather than on whether some other plugin is installed;
+- never assumes a skill exists, and never makes correctness depend on one.
 ## 12. Session protocol
 
 ### 12.1 Kickoff envelope
@@ -1385,7 +1525,7 @@ rules are:
 |---|---|---|---|---|---|---|
 | Create requirement Card | allow | allow when decomposing | refuse | refuse | allow | allow |
 | Split implementation work | refuse | allow | refuse | refuse | require justification | allow |
-| Promote `Backlog -> Ready` | refuse | allow | refuse | refuse | allow for recovery | allow |
+| Promote `Backlog -> Ready` | refuse | refuse | refuse | refuse | refuse | allow |
 | Claim implementation | refuse | documentation only | own Card only | governed verification/test Card only | refuse | allow |
 | Write Quality Assurance verdict | refuse | refuse | refuse | own Card only | refuse | allow |
 | Merge Pull Request | refuse | refuse | refuse | refuse | refuse | allow |
@@ -1438,7 +1578,7 @@ are different events and must not be reported as one another.
 | Quality Assurance | Independent verification session. | Self-verification by the implementation Consumer allows findings to be rationalized away. |
 | Merge | Human-only. | Agent self-merge removes the final independent acceptance boundary. |
 | Coordination | GitHub artifacts are authoritative. | In-memory messages disappear with sessions and cannot support resume or audit. |
-| Engineering methods | Compose supported sibling skills. | Reimplementing test-driven development, review, browser, and security methods creates drift and unnecessary maintenance. |
+| Engineering methods | agent-teams owns its skills and references the disciplines by name. | Invoking another plugin's skills makes correctness depend on that plugin being installed, and a missing sibling would silently downgrade governance rather than refuse. |
 | Backend abstraction | Semantic Kanban Protocol first. | Premature generic multi-backend abstractions weaken the GitHub contract before a second backend is real. |
 
 ### 16.1 Settled implementation decisions
@@ -1453,12 +1593,17 @@ Status operations were built. All three are now decided and enforced in
 | 2 | Does specification completion mean the Pull Request is opened or merged? | **Merged**, configurable per repository via `spec_completion`. | Implementation work becomes Ready only once the specification is durable on the target branch, so development never builds against a document review may still change. The cost is a human merge inside the analyst-to-development path, which is accepted: it is the same merge gate the architecture already requires, arriving earlier. A repository may set `spec_completion=opened` deliberately. |
 | 3 | Does the intake Card become the implementation Card, or does decomposition create new ones? | **Both, by shape.** A genuine single-Card change is promoted in place. A specification with several independently shippable slices creates flat implementation Cards, and the intake Card keeps a summary comment. | Reusing the intake Card for a multi-slice specification would force one Consumer session to deliver several Pull Requests, breaking the one-Card-one-delivery invariant. Creating a second Card for a genuinely single change adds a hop that carries no information. |
 
-A fourth decision emerged during implementation and is recorded here because
-it closes an authority hole rather than merely choosing between options:
+Four further decisions emerged during implementation and are recorded here
+because they close authority holes or settle the interaction model rather than
+merely choosing between options. Decision 6 supersedes the readiness half of
+decision 2:
 
 | # | Question | Decision | Rationale |
 |---|---|---|---|
 | 4 | Which seat authority governs a generic Status transition? | The **destination** decides. Moving to `Ready` is checked as `promote_to_ready`; moving to `Done` is checked as `reconcile_done`; every other move is checked as `transition_card`. | Without this, a generic `transition` operation is a hole through which any seat takes an action its own policy row forbids — an analyst could reach `Ready` despite `promote_to_ready` refusing that seat. Keying the check to the destination keeps one rule in one place. |
+| 5 | Does that destination rule apply to Card *creation* as well as movement? | **Yes, on both axes.** Creating a Card writes a whole `(Status, Role)` routing state, so `create_card` asks the destination Status's action question, and — when the new Card is owned by a seat other than the creator — the destination Role's handoff question. Keeping a Card one creates is not a handoff. | Decision 4 was enforced only where a Card *moved*. Creation reached the same states by a different door: an analyst refused `promote_to_ready` could create a Card already `Ready`, and refused the `analyst -> rd` edge of section 6.4 could create one already sitting in the development lane. A rule that governs only one of the two ways to reach a state is not a rule. |
+| 6 | Who opens `Backlog -> Ready`? | **Only the human.** `promote_to_ready` refuses every artificial intelligence seat, including `em`. An agent seat shapes the Card and hands it to `human`; the human approves it into `Ready`, which also hands it to `rd`. Decomposition therefore creates children at `(Backlog, human)`, not `(Ready, rd)`. | This reverses the readiness half of decision 2. The architecture claimed two human gates and had one: the only hard floor was merge, and every path to `Ready` — `promote`, `transition`, `create-card`, `decompose` — was open to the architect. `spec_completion=merged` was an indirect gate at best, and it lapses entirely when the specification reference is a path rather than a Pull Request, because a path is accepted as durable without checking that it exists. A gate a routine argument steps around is not a gate. A `review`-class entry would not have worked either: `Decision.permitted` is true for `REVIEW`, so only `refuse` gates. Because decision 4 keys authority to the destination, closing `promote` closed `transition` and `create-card` on the same rule. |
+| 7 | Does the user name the seat, or does the plugin choose it? | **The plugin chooses.** A person states intent in ordinary language; the entry router infers seat and routine from that intent plus live board state, and defaults to orientation when intent is unstated. `[role:<seat>]` remains the dispatch-artifact format and an explicit override, not the human interface. The router may never infer `human`. | Seats are an authority model, and asking a user to classify themselves exposes internal machinery as a menu. Inference is safe because selecting a seat grants nothing — `policy.py` evaluates the same rules however the seat was chosen — with one exception: `human` holds both gates, so a router able to adopt it could approve its own readiness decision. This matches the reference project, whose entry skill routes "what should I work on" / "new requirement" / "what's blocked" straight to a routine; it never asks the user to name a role, because it has none to name. |
 
 ## 17. Architectural completion criteria
 

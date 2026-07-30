@@ -174,15 +174,21 @@ class ActionPolicyTests(unittest.TestCase):
     def test_merge_is_a_hard_floor(self):
         self.assertIn("merge_pull_request", policy.HARD_FLOORS)
 
-    def test_rd_cannot_declare_its_own_work_ready(self):
-        with self.assertRaises(policy.ActionForbidden):
-            policy.check_action("promote_to_ready", Role.RD)
-        self.assertTrue(policy.check_action("promote_to_ready", Role.ARCHITECT).permitted)
+    # Superseded: this used to assert `architect` was permitted to promote and
+    # `em` had a review-class "recovery only" pass. Readiness is now the human
+    # lifecycle gate, so every artificial intelligence seat is refused -- see
+    # ARCHITECTURE.md 16.1 decision 6. A review-class pass would have been
+    # decorative, because Decision.permitted is True for REVIEW.
+    def test_only_the_human_may_declare_work_ready(self):
+        for seat in (Role.ANALYST, Role.ARCHITECT, Role.RD, Role.QA, Role.EM):
+            with self.subTest(seat=seat):
+                with self.assertRaises(policy.ActionForbidden):
+                    policy.check_action("promote_to_ready", seat)
+        self.assertTrue(policy.check_action("promote_to_ready", Role.HUMAN).permitted)
 
-    def test_em_promotion_is_review_class_not_free(self):
-        decision = policy.classify_action("promote_to_ready", Role.EM)
-        self.assertEqual(decision.klass, policy.ActionClass.REVIEW)
-        self.assertIn("recovery", decision.note)
+    def test_the_readiness_refusal_names_the_gate(self):
+        with self.assertRaisesRegex(policy.ActionForbidden, "human"):
+            policy.check_action("promote_to_ready", Role.ARCHITECT)
 
     def test_only_qa_writes_verdicts(self):
         for role in (Role.ANALYST, Role.ARCHITECT, Role.RD, Role.EM):

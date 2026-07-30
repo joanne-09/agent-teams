@@ -19,7 +19,11 @@ from agent_teams.board import Board  # noqa: E402
 from agent_teams.config import Config  # noqa: E402
 from agent_teams.model import Role, Status  # noqa: E402
 from agent_teams.workflows import Producer  # noqa: E402
-from fake_gh import REPO, FakeGh  # noqa: E402
+from fake_gh import REPO, FakeGh, board_with  # noqa: E402
+
+#: A shaped Card sitting at the human readiness gate -- the state `promote`
+#: acts on now that no agent seat may open it.
+AT_THE_GATE = board_with((20, "Shaped requirement", "Backlog", "human"))
 
 
 def producer(gh):
@@ -128,7 +132,10 @@ class HandoffFailureTests(unittest.TestCase):
 class PromoteFailureTests(unittest.TestCase):
     def test_handoff_failure_leaves_a_ready_card_and_says_so(self):
         # Status write succeeds; the Role write inside the handoff fails.
-        gh = FakeGh(fail_on={"project item-edit": ("field write refused", 2)})
+        gh = FakeGh(
+            items=AT_THE_GATE,
+            fail_on={"project item-edit": ("field write refused", 2)},
+        )
         result, _ = producer(gh)
         outcome = result.promote(20, "https://github.com/acme/widgets/pull/57")
         self.assertFalse(outcome["ok"])
@@ -140,7 +147,10 @@ class PromoteFailureTests(unittest.TestCase):
         self.assertIn("producer_board.py handoff 20", recovery)
 
     def test_status_failure_changes_nothing(self):
-        gh = FakeGh(fail_on={"project item-edit": ("field write refused", 1)})
+        gh = FakeGh(
+            items=AT_THE_GATE,
+            fail_on={"project item-edit": ("field write refused", 1)},
+        )
         result, _ = producer(gh)
         outcome = result.promote(20, "https://github.com/acme/widgets/pull/57")
         self.assertEqual(outcome["completed"], [])

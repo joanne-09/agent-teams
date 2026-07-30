@@ -72,6 +72,22 @@ ITEMS = {
 }
 
 
+def board_with(*specs):
+    """An item list of exactly the Cards a test needs.
+
+    Pass ``(number, title, status, role)`` tuples. Use this instead of adding
+    to ``ITEMS`` when a test needs one particular routing state -- the shared
+    fixture is asserted on by the briefing and lane tests, so growing it to
+    suit one test breaks several others.
+    """
+    return {
+        "items": [
+            _item(f"ITEM_{number}", number, title, status, role)
+            for number, title, status, role in specs
+        ]
+    }
+
+
 class FakeGh:
     """Injectable stand-in for :class:`agent_teams.github.Gh`."""
 

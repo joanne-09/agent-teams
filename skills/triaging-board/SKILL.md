@@ -69,5 +69,6 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" transition <number> \
 ## Boundaries
 
 - Triage does not implement, specify, or verify anything.
-- Triage does not merge, and does not promote work to Ready — readiness is
-  the architect's decision.
+- Triage does not merge, and does not promote work to Ready — readiness is the
+  human's gate, and `promote_to_ready` refuses `em` like every other agent
+  seat. Route a Card that looks ready to `human`, do not open the gate for it.

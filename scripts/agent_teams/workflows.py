@@ -149,7 +149,12 @@ class Producer:
                 "blocked": pick(status=Status.BLOCKED),
             }
         return {
-            "focus": "decision and merge authority",
+            # The human now owns two gates, so the orientation names both
+            # queues separately -- "awaiting you" alone hid which decision
+            # each Card actually needs.
+            "focus": "the two human gates: readiness, then merge",
+            "awaiting_readiness": pick(status=Status.BACKLOG, role=Role.HUMAN),
+            "awaiting_merge": pick(status=Status.IN_REVIEW, role=Role.HUMAN),
             "awaiting_you": [
                 card.to_dict() for card in cards if card.role is Role.HUMAN
             ],
@@ -501,8 +506,21 @@ class Producer:
 
         Distinct from intake: this is the architect's decomposition primitive,
         so it takes the destination (Status, Role) rather than assuming one.
+
+        Because the caller names the destination, all three authority questions
+        are asked here -- may this seat create work, may it put work *into* that
+        Status, and may it place work in that seat's lane. Checking only the
+        first would reopen the hole ARCHITECTURE.md 16.1 decision 4 closed for
+        ``transition_card``: an analyst refused ``promote_to_ready`` could still
+        reach Ready by creating a Card there, and refused the `analyst -> rd`
+        edge could still deposit one straight into the development lane.
         """
         policy.check_action("create_requirement_card", acting_role)
+        policy.check_action(policy.action_for_transition(status), acting_role)
+        # Creating a Card another seat owns *is* a handoff, decided before the
+        # Card exists. Keeping it is not, so it must not trip the matrix.
+        if role is not acting_role:
+            policy.check_handoff(acting_role, role)
         title = title.strip()
         if not title:
             raise WorkflowError("card title must not be empty")
@@ -577,10 +595,15 @@ class Producer:
         self,
         number: int,
         spec_reference: str,
-        acting_role: Role = Role.ARCHITECT,
+        acting_role: Role = Role.HUMAN,
         reason: str = "",
     ) -> dict[str, Any]:
-        """Make one shaped Card Ready and hand it to development.
+        """Open the readiness gate on one shaped Card and send it to development.
+
+        This is the human's routine. An agent seat shapes the Card and hands it
+        to `human`; approving it into Ready is the first of the two human gates
+        (ARCHITECTURE.md 16.1 decision 6), so `promote_to_ready` refuses every
+        artificial intelligence seat before anything here runs.
 
         Two independent semantic operations run in order: the Status
         transition, then the Role handoff. If the handoff fails, the Card is
@@ -733,6 +756,11 @@ class Producer:
         Deliberately flat: no parent/child protocol semantics are invented. The
         parent Card gets a summary comment linking what was created, which is
         the only relationship the board models.
+
+        Children are created at ``(Backlog, human)``, not ``(Ready, rd)``. The
+        architect decides what the slices *are*; the human decides whether each
+        one is ready to build. Creating them past that gate would let
+        decomposition do what `promote` is refused.
         """
         policy.check_action("split_implementation_work", acting_role)
         if not children:
@@ -757,13 +785,14 @@ class Producer:
                 f"Decomposed from #{parent}."
             )
             result = self.create_card(
-                title, body, Status.READY, Role.RD, acting_role
+                title, body, Status.BACKLOG, Role.HUMAN, acting_role
             )
             (created if result.get("ok") else failures).append(result)
 
         summary_lines = [
             f"Decomposed into {len(created)} implementation Card(s) against "
-            f"{gate['reference']}:",
+            f"{gate['reference']}. Each waits at (Backlog, human) for the "
+            f"readiness decision:",
             "",
         ]
         summary_lines += [
@@ -824,10 +853,10 @@ class Producer:
 #: Which routines each seat may run in a Producer session.
 _ROUTINES: dict[Role, list[str]] = {
     Role.ANALYST: ["intake"],
-    Role.ARCHITECT: ["promote", "decompose", "create-card", "handoff"],
+    Role.ARCHITECT: ["decompose", "create-card", "handoff"],
     Role.EM: ["brief", "triage", "dispatch", "handoff"],
     Role.QA: ["queue"],
-    Role.HUMAN: ["brief", "list"],
+    Role.HUMAN: ["brief", "list", "promote", "handoff"],
     Role.RD: [],
 }
 

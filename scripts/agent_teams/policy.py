@@ -221,12 +221,16 @@ ACTION_POLICY: Mapping[str, Mapping[Role, object]] = {
         Role.EM: (_R, "requires a written justification"),
         Role.HUMAN: _A,
     },
+    # Readiness is a human lifecycle gate (ARCHITECTURE.md 16.1 decision 6).
+    # Every artificial intelligence seat is refused, including `em`: a
+    # review-class pass would have been decorative, because REVIEW is
+    # permitted. An agent seat prepares the Card and hands it to `human`.
     "promote_to_ready": {
         Role.ANALYST: _N,
-        Role.ARCHITECT: _A,
+        Role.ARCHITECT: _N,
         Role.RD: _N,
         Role.QA: _N,
-        Role.EM: (_R, "recovery only"),
+        Role.EM: _N,
         Role.HUMAN: _A,
     },
     "claim_card": {
@@ -302,6 +306,15 @@ def action_for_transition(target: Status) -> str:
     """The action name that governs moving a Card into ``target``."""
     return _TRANSITION_ACTIONS.get(target, "transition_card")
 
+#: Why an action is closed to agent seats, so a refusal teaches the caller the
+#: route that does exist instead of only saying no.
+ACTION_REFUSAL_REASONS: Mapping[str, str] = {
+    "promote_to_ready": (
+        "readiness is the human lifecycle gate. Hand the Card to `human` with "
+        "the specification and let them approve it into Ready"
+    ),
+}
+
 #: Actions no override may ever widen for an artificial intelligence seat.
 #: Human merge is the floor the whole governance layer rests on -- if an agent
 #: could merge, every other refusal becomes advisory.
@@ -334,8 +347,11 @@ def check_action(action: str, seat: Role) -> Decision:
                 f"merge authority can accept a repository change. This floor is "
                 f"not overridable by any agent session."
             )
+        reason = ACTION_REFUSAL_REASONS.get(action)
+        detail = f". {reason}" if reason else ""
         raise ActionForbidden(
-            f"`{seat}` ({seat.full_name}) may not {action.replace('_', ' ')}"
+            f"`{seat}` ({seat.full_name}) may not "
+            f"{action.replace('_', ' ')}{detail}"
         )
     return decision
 
