@@ -229,9 +229,6 @@ class: dense
 | 5 | em | `[role:em] dispatch work` | renders `[role:rd] [board-card:#1] …` kickoff |
 | 6 | rd | paste the kickoff | <span class="muted">no rd skill — edge of the MVP</span> |
 
-- Every mutation announced before it ran; every claim backed by CLI JSON
-- Handoff = Role flip + comment; Status untouched — <span class="accent">ownership ⊥ lifecycle</span>
-
 <!--
 Step 1 and the pre-Ready dispatch are negative tests: dispatch keys on Status, not Role.
 Step 6 finding: the model admits no procedure exists, then freelances — why rd must be a skill.
