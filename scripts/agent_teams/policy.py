@@ -12,7 +12,7 @@ Four independent questions live here:
 * may this seat take this action at all?      -- ACTION_POLICY
 * how much work is in flight?                 -- wip_count
 
-Status and Role are orthogonal (ARCHITECTURE.md 4.4), so a transition check
+Status and Role are orthogonal (ARCHITECTURE.md 9.2), so a transition check
 never consults Role and a handoff check never consults Status.
 """
 
@@ -54,7 +54,7 @@ class ActionForbidden(PolicyError):
 #: returning to any of them, because the recovering seat restores the Card to
 #: whatever state it actually left. In Review -> In Progress is the rejection
 #: edge; In Review -> Backlog is the "specification defect" route
-#: (ARCHITECTURE.md 9.3 governs which of the two Quality Assurance uses).
+#: (ARCHITECTURE.md 8.3 governs which of the two Quality Assurance uses).
 LEGAL_TRANSITIONS: Mapping[Status, frozenset[Status]] = {
     Status.BACKLOG: frozenset({Status.READY, Status.BLOCKED}),
     Status.READY: frozenset({Status.IN_PROGRESS, Status.BACKLOG, Status.BLOCKED}),
@@ -97,7 +97,7 @@ def check_transition(current: Status | None, target: Status) -> None:
 
 # ---------------------------------------------------------------- authority
 
-#: The enforceable organisation chart (ARCHITECTURE.md 6.4). Read the rows and
+#: The enforceable organisation chart (ARCHITECTURE.md 4.3). Read the rows and
 #: the reporting lines fall out: rd never reaches human because only Quality
 #: Assurance opens the merge gate; analyst never reaches rd because nothing is
 #: built without passing through the architect.
@@ -201,7 +201,7 @@ class Decision:
 
 _A, _R, _N = ActionClass.ALLOW, ActionClass.REVIEW, ActionClass.REFUSE
 
-#: The seat-aware action policy (ARCHITECTURE.md 14.3). Values are either a
+#: The seat-aware action policy (ARCHITECTURE.md 4.4). Values are either a
 #: bare class or a (class, constraint-note) pair. A note records a condition
 #: this pure layer cannot verify on its own -- Card binding enforces those.
 ACTION_POLICY: Mapping[str, Mapping[Role, object]] = {
@@ -221,7 +221,7 @@ ACTION_POLICY: Mapping[str, Mapping[Role, object]] = {
         Role.EM: (_R, "requires a written justification"),
         Role.HUMAN: _A,
     },
-    # Readiness is a human lifecycle gate (ARCHITECTURE.md 16.1 decision 6).
+    # Readiness is a human lifecycle gate (ARCHITECTURE.md Appendix A.2 decision 6).
     # Every artificial intelligence seat is refused, including `em`: a
     # review-class pass would have been decorative, because REVIEW is
     # permitted. An agent seat prepares the Card and hands it to `human`.

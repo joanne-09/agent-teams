@@ -16,12 +16,19 @@ not technical design — resist solving it.
 3. Ask only what would otherwise make the Card materially wrong. One or two
    questions, not an interview — an unclear Card can be returned to you later,
    and that path exists precisely so intake does not have to be perfect.
-4. Shape the body:
+4. Shape the body. It carries what *this Card* is — never project context,
+   which is repository-side and reloaded by every session anyway:
    - the user or business outcome, not an implementation;
    - context and the problem being solved;
    - acceptance criteria a different person could check;
    - explicit non-goals, when a reader would otherwise assume them;
+   - known dependencies, including other Cards this one waits on;
    - open questions and who must decide each.
+
+   Do **not** invent a specification pointer here. There is no durable
+   specification yet — the architect creates one, and `promote` or `decompose`
+   writes the reference into the Card. A Card that points at a document nobody
+   wrote is worse than one that admits it has none.
 5. Announce the mutation: create a Backlog Issue, add it to the Project, set
    Role `architect`, and record the handoff.
 6. Write the body to a temporary UTF-8 file and run:

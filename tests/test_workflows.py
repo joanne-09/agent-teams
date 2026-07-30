@@ -1,4 +1,4 @@
-"""Producer routine behaviour: the four flows from ARCHITECTURE.md section 7."""
+"""Producer routine behaviour: the four flows from ARCHITECTURE.md section 6."""
 
 import sys
 import unittest
@@ -82,7 +82,7 @@ AT_THE_GATE = board_with((20, "Shaped requirement", "Backlog", "human"))
 class PromoteTests(unittest.TestCase):
     # Superseded throughout: `promote` used to default to the architect, who
     # could declare its own work Ready. Readiness is now the human lifecycle
-    # gate (ARCHITECTURE.md 16.1 decision 6), so these act as `human` on a Card
+    # gate (ARCHITECTURE.md Appendix A.2 decision 6), so these act as `human` on a Card
     # the architect handed over.
     def test_the_human_promotes_and_hands_to_development(self):
         team, gh = producer(FakeGh(items=AT_THE_GATE))
@@ -138,7 +138,7 @@ class PromoteTests(unittest.TestCase):
 class CreateCardTests(unittest.TestCase):
     """Creating a Card writes a routing state, so policy governs both axes.
 
-    ARCHITECTURE.md 16.1 decision 4 settles that the *destination* decides which
+    ARCHITECTURE.md Appendix A.2 decision 4 settles that the *destination* decides which
     authority governs a Status move. `transition_card` applied that rule but
     `create_card` did not, which left the closed hole open through a second
     door: any seat allowed to create a Card could place it in any state, in any

@@ -64,7 +64,7 @@ class Producer:
         Loads standing repository pointers, queries the live board, and builds
         the seat-specific orientation the selected routine consumes. Mutates
         nothing: a session that cannot establish where it is has no business
-        changing anything (ARCHITECTURE.md 5.3).
+        changing anything (ARCHITECTURE.md 3.5).
         """
         root = repo_root or Path.cwd()
         standing = [
@@ -510,7 +510,7 @@ class Producer:
         Because the caller names the destination, all three authority questions
         are asked here -- may this seat create work, may it put work *into* that
         Status, and may it place work in that seat's lane. Checking only the
-        first would reopen the hole ARCHITECTURE.md 16.1 decision 4 closed for
+        first would reopen the hole ARCHITECTURE.md Appendix A.2 decision 4 closed for
         ``transition_card``: an analyst refused ``promote_to_ready`` could still
         reach Ready by creating a Card there, and refused the `analyst -> rd`
         edge could still deposit one straight into the development lane.
@@ -602,7 +602,7 @@ class Producer:
 
         This is the human's routine. An agent seat shapes the Card and hands it
         to `human`; approving it into Ready is the first of the two human gates
-        (ARCHITECTURE.md 16.1 decision 6), so `promote_to_ready` refuses every
+        (ARCHITECTURE.md Appendix A.2 decision 6), so `promote_to_ready` refuses every
         artificial intelligence seat before anything here runs.
 
         Two independent semantic operations run in order: the Status

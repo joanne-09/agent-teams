@@ -112,7 +112,7 @@ class HandoffAuthorityTests(unittest.TestCase):
             )
 
     def test_architect_may_send_an_under_specified_card_back_to_analyst(self):
-        # ARCHITECTURE.md 6.4 and the adaptation dossier 5.2 both grant this
+        # ARCHITECTURE.md 4.3 and the adaptation dossier 5.2 both grant this
         # edge. The pre-package implementation omitted it.
         policy.check_handoff(Role.ARCHITECT, Role.ANALYST)
 
@@ -177,7 +177,7 @@ class ActionPolicyTests(unittest.TestCase):
     # Superseded: this used to assert `architect` was permitted to promote and
     # `em` had a review-class "recovery only" pass. Readiness is now the human
     # lifecycle gate, so every artificial intelligence seat is refused -- see
-    # ARCHITECTURE.md 16.1 decision 6. A review-class pass would have been
+    # ARCHITECTURE.md Appendix A.2 decision 6. A review-class pass would have been
     # decorative, because Decision.permitted is True for REVIEW.
     def test_only_the_human_may_declare_work_ready(self):
         for seat in (Role.ANALYST, Role.ARCHITECT, Role.RD, Role.QA, Role.EM):

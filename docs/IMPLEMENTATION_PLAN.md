@@ -29,7 +29,7 @@ package. It does not assume the larger `board-superpowers` implementation is
 present.
 
 The plan follows the design relationship defined in
-[`ARCHITECTURE.md` section 2.3](./ARCHITECTURE.md#23-what-is-inherited-and-what-is-adapted):
+[`ARCHITECTURE.md` Appendix B](./ARCHITECTURE.md#appendix-b--lineage):
 Producer and Consumer are per-session execution shapes, while the named team
 seats carry capability and authority. Milestones M1 through M3 complete the
 minimum viable Producer path from intake through readiness and dispatch.
@@ -232,7 +232,7 @@ M1 through M6 produce Functional Phase 1. M7 and M8 produce the governed
 target.
 
 **The Producer surface is complete.** Every Producer-shaped routine in
-`ARCHITECTURE.md` section 7 — analyst intake, architect shaping and
+`ARCHITECTURE.md` section 6 — analyst intake, architect shaping and
 readiness, Engineering Manager briefing, triage and dispatch, and Quality
 Assurance queue inspection — is implemented and hermetically tested. What
 remains in M4, M5, and M8 is Consumer-shaped work plus the live-GitHub proof
@@ -391,7 +391,7 @@ Do not make production code more permissive until the real shapes are known.
 Status: **Done**
 
 All three decision gates are settled and recorded in `ARCHITECTURE.md`
-section 16.1. Policy is pure and exhaustively tested: every Status pair and
+Appendix A.2. Policy is pure and exhaustively tested: every Status pair and
 every Role pair is asserted individually.
 
 Purpose: create the deterministic contract required by the System Architect,

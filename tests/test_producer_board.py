@@ -138,7 +138,7 @@ class HandoffTests(unittest.TestCase):
 
     def test_rejects_unauthorised_handoff(self):
         # SUPERSEDED: the original suite asserted architect -> analyst was
-        # refused. Both ARCHITECTURE.md 6.4 and the adaptation dossier 5.2
+        # refused. Both ARCHITECTURE.md 4.3 and the adaptation dossier 5.2
         # grant that edge, so the refusal was the bug. rd -> human is the
         # genuinely illegal edge and is asserted instead.
         with self.assertRaises(policy.IllegalHandoff):
@@ -153,7 +153,7 @@ class HandoffTests(unittest.TestCase):
     def test_handoff_updates_role_and_comments(self):
         # SUPERSEDED: the original asserted a Unicode arrow in
         # "`architect` -> `rd`". The canonical comment shape in
-        # ARCHITECTURE.md 10.4 uses ASCII "->" so the comment stays parseable.
+        # ARCHITECTURE.md 9.4 uses ASCII "->" so the comment stays parseable.
         result = self.board.handoff_card(8, Role.ARCHITECT, Role.RD, "Spec merged.")
         self.assertEqual(result["role"], "rd")
         edit = self.gh.calls_matching("project", "item-edit")[0]

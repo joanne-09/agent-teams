@@ -3,7 +3,7 @@
 The surface here is deliberately semantic rather than a generic field setter.
 ``transition_card`` and ``handoff_card`` exist; ``set_card_field`` does not.
 That is what keeps lifecycle rules enforceable in one place instead of spread
-across skill prose (ARCHITECTURE.md 4.8).
+across skill prose (ARCHITECTURE.md 9.8).
 
 Every mutating method checks policy *before* it calls GitHub, so a refusal
 costs nothing and leaves no partial state.

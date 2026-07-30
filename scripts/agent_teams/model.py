@@ -2,7 +2,7 @@
 
 Role and Status are the two orthogonal axes of a Card's routing state. Status
 answers where the Card sits in its lifecycle; Role answers whose turn it is.
-Changing one never implicitly changes the other -- see ARCHITECTURE.md 4.4.
+Changing one never implicitly changes the other -- see ARCHITECTURE.md 9.2.
 
 Both are string enums so they survive ``json.dumps`` unchanged and keep the
 CLI's existing JSON envelopes byte-compatible.
@@ -114,7 +114,7 @@ def _one_line(value: Any, limit: int = 500) -> str:
     """Constrain a free-text field so generated Markdown stays unambiguous.
 
     Handoff comments are parsed as well as read, and Issue bodies are
-    untrusted input (ARCHITECTURE.md 14.1). A reason is therefore flattened to
+    untrusted input (ARCHITECTURE.md 12.1). A reason is therefore flattened to
     one line and stripped of every character that carries structure in the
     comment grammar: the bold markers that begin a field, the backticks that
     delimit a seat token, and the HTML comment fences that carry the marker.
@@ -173,7 +173,7 @@ class Handoff:
     artifacts: str = ""
 
     def render(self) -> str:
-        """Render the canonical comment shape from ARCHITECTURE.md 10.4."""
+        """Render the canonical comment shape from ARCHITECTURE.md 9.4."""
         lines = [
             HANDOFF_MARKER,
             f"**Handoff**: `{self.from_role}` -> `{self.to_role}`",
