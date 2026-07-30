@@ -193,6 +193,55 @@ layout: ppt
 class: dense
 ---
 
+# Our Seats
+
+| Seat | Token | Skill | Does |
+|---|---|---|---|
+| <span class="accent">analyst</span> | `[role:analyst]` | `intaking-requirement` | requirement → Backlog card → hand to architect |
+| <span class="accent">architect</span> | `[role:architect]` | `authoring-spec` | docs-only spec PR → hand to rd |
+| <span class="accent">em</span> | `[role:em]` | `dispatching-work` | find Ready cards → render kickoff prompts |
+| rd | `[role:rd]` | <span class="muted">not yet</span> | claim → TDD → code PR → hand to qa |
+| qa | `[role:qa]` | <span class="muted">not yet</span> | verify vs acceptance criteria; only seat that reaches human |
+| human | — | — | <span class="accent">merge gate</span> — the one thing agents never do |
+
+- Routing is a leading token: skill descriptions name their triggers, the model matches
+- Handoff authority lives in `producer_board.py` — <span class="accent">illegal handoffs are refused in code</span>
+
+<!--
+A seat = which skill the session loads, nothing more. Sessions are peers, not a call stack.
+Two layers: routing is soft (prompt matching), authority is hard (Python raises on illegal handoff).
+Producer slice implemented (analyst/architect/em); consumer slice (rd/qa) is the next milestone.
+-->
+
+---
+layout: ppt
+class: dense
+---
+
+# One Card, End to End — Live Run
+
+| # | Who | What we typed / did | Result |
+|---|---|---|---|
+| 1 | em | `[role:em] dispatch work` | empty queue reported — <span class="accent">no invented work</span> |
+| 2 | analyst | `[role:analyst] New requirement: … Tetris …` | Issue #1 · Backlog · handed to architect |
+| 3 | architect | `[role:architect] author the spec for card #1` | PR #2, docs-only spec · handed to rd |
+| 4 | human | board UI: Status → <span class="accent">Ready</span> | the human lifecycle gate |
+| 5 | em | `[role:em] dispatch work` | renders `[role:rd] [board-card:#1] …` kickoff |
+| 6 | rd | paste the kickoff | <span class="muted">no rd skill — edge of the MVP</span> |
+
+- Every mutation announced before it ran; every claim backed by CLI JSON
+- Handoff = Role flip + comment; Status untouched — <span class="accent">ownership ⊥ lifecycle</span>
+
+<!--
+Step 1 and the pre-Ready dispatch are negative tests: dispatch keys on Status, not Role.
+Step 6 finding: the model admits no procedure exists, then freelances — why rd must be a skill.
+-->
+
+---
+layout: ppt
+class: dense
+---
+
 # The Board in Action
 
 <!-- Drop screenshots into slides/images/ and swap the src below.
