@@ -198,19 +198,20 @@ class: dense
 | Seat | Token | Skill | Does |
 |---|---|---|---|
 | <span class="accent">analyst</span> | `[role:analyst]` | `intaking-requirement` | requirement → Backlog card → hand to architect |
-| <span class="accent">architect</span> | `[role:architect]` | `authoring-spec` | docs-only spec PR → hand to rd |
-| <span class="accent">em</span> | `[role:em]` | `dispatching-work` | find Ready cards → render kickoff prompts |
+| <span class="accent">architect</span> | `[role:architect]` | `authoring-spec` | spec → **promote** to Ready, or **decompose** into cards |
+| <span class="accent">em</span> | `[role:em]` | `briefing-board` · `triaging-board` · `dispatching-work` | flow + WIP · blocked work · kickoff prompts |
+| <span class="accent">qa</span> | `[role:qa]` | `inspecting-queue` | order the verification queue — <span class="muted">verdicts are Consumer work</span> |
 | rd | `[role:rd]` | <span class="muted">not yet</span> | claim → TDD → code PR → hand to qa |
-| qa | `[role:qa]` | <span class="muted">not yet</span> | verify vs acceptance criteria; only seat that reaches human |
 | human | — | — | <span class="accent">merge gate</span> — the one thing agents never do |
 
 - Routing is a leading token: skill descriptions name their triggers, the model matches
-- Handoff authority lives in `producer_board.py` — <span class="accent">illegal handoffs are refused in code</span>
+- Authority lives in `policy.py` — <span class="accent">illegal handoffs and out-of-seat actions refuse before any GitHub call</span>
 
 <!--
 A seat = which skill the session loads, nothing more. Sessions are peers, not a call stack.
-Two layers: routing is soft (prompt matching), authority is hard (Python raises on illegal handoff).
-Producer slice implemented (analyst/architect/em); consumer slice (rd/qa) is the next milestone.
+Two layers: routing is soft (prompt matching), authority is hard (Python raises before mutating).
+Producer surface now complete across all four Producer seats; the rd Consumer slice is next.
+qa appears twice in the architecture: queue inspection is Producer-shaped, a verdict is Consumer-shaped.
 -->
 
 ---
@@ -231,11 +232,14 @@ class: dense
 
 - Every mutation announced before it ran; every reported result backed by CLI JSON
 - Handoff = Role flip + comment; Status untouched — <span class="accent">ownership ⊥ lifecycle</span>
+- <span class="muted">Since this run:</span> step 4's manual board edit is now `promote`, which gates on a <span class="accent">merged spec</span> and hands to rd in one governed operation
 
 <!--
-This trace illustrates the Producer MVP; repeatable live GitHub contract proof remains pending.
+This trace is the record of an actual run against the earlier MVP; it is left unedited on purpose.
+Repeatable live GitHub contract proof still remains pending.
 Step 1 and the pre-Ready dispatch are negative tests: dispatch keys on Status, not Role.
 Step 6 finding: the model admits no procedure exists, then freelances — why rd must be a skill.
+What changed since: step 4 no longer needs a human at the board UI, though the human still merges the spec PR that unlocks it.
 -->
 
 ---
@@ -350,8 +354,9 @@ class: dense
 <p class="principle-line"><strong>Design rule:</strong> judgment lives in skills; external mutation lives in code; truth lives on GitHub.</p>
 
 <!--
-The current MVP collapses most of layer 2 into one standard-library file, producer_board.py.
-The target splits components only as new behavior creates real seams.
+Layer 2 is now six modules, split where real seams appeared: model, policy, config, github, board, workflows.
+The split was earned, not planned: policy separated from the adapter the moment transitions and caps needed testing without GitHub.
+producer_board.py remains the stable public entry point every skill invokes.
 -->
 
 ---
@@ -459,25 +464,25 @@ class: dense
 
 # A Prompt Becomes a Governed GitHub Operation
 
-<div class="eyebrow">SHIPPED PRODUCER MVP · v0.1.0</div>
+<div class="eyebrow">SHIPPED PRODUCER SURFACE · v0.2.0</div>
 
 <div class="plugin-flow">
   <div class="plugin-node"><span class="node-label">1 · INPUT</span><strong>Role-marked request</strong><code>[role:analyst] Intake …</code></div><div class="plugin-arrow">→</div>
-  <div class="plugin-node"><span class="node-label">2 · DISCOVERY</span><strong>Claude plugin + router</strong><code>using-agent-teams</code></div><div class="plugin-arrow">→</div>
-  <div class="plugin-node"><span class="node-label">3 · ORCHESTRATION</span><strong>Workflow skill</strong><code>intake | spec | dispatch</code></div><div class="plugin-arrow">→</div>
-  <div class="plugin-node"><span class="node-label">4 · ENFORCEMENT</span><strong>Python board CLI</strong><code>producer_board.py</code></div><div class="plugin-arrow">→</div>
+  <div class="plugin-node"><span class="node-label">2 · BOOTSTRAP</span><strong>Read-only orientation</strong><code>bootstrap --role</code></div><div class="plugin-arrow">→</div>
+  <div class="plugin-node"><span class="node-label">3 · ORCHESTRATION</span><strong>Workflow skill</strong><code>intake | promote | brief</code></div><div class="plugin-arrow">→</div>
+  <div class="plugin-node"><span class="node-label">4 · ENFORCEMENT</span><strong>Policy, then adapter</strong><code>policy.py → board.py</code></div><div class="plugin-arrow">→</div>
   <div class="plugin-node"><span class="node-label">5 · DURABLE EFFECT</span><strong><code>gh</code> → GitHub</strong><code>Project + Issue + comment</code></div>
 </div>
 
 <div class="mechanics-grid">
-  <div><strong>Plugin checkout</strong><span><code>.claude-plugin/plugin.json</code> exposes the namespace; four <code>SKILL.md</code> files supply routing and procedure.</span></div>
-  <div><strong>Consuming repository</strong><span><code>.agent-teams/config.json</code> stores board coordinates only; credentials remain in the GitHub CLI store.</span></div>
+  <div><strong>Bootstrap is mandatory</strong><span>No mutation before it completes. Live board state overrides a stale kickoff prompt — the session refuses rather than acting on it.</span></div>
+  <div><strong>Refusals cost nothing</strong><span>Authority is checked <em>before</em> the first GitHub call, so an illegal handoff leaves no partial state to clean up.</span></div>
   <div><strong>Result channel</strong><span>Mutations succeed only on structured JSON; errors return non-zero and the skill must not invent success.</span></div>
 </div>
 
 <!--
-The model chooses and follows a skill, but it does not directly set arbitrary Project fields.
-producer_board.py resolves IDs/options, filters Cards, validates handoff authority, invokes gh, and reports JSON.
+The model chooses and follows a skill, but it never sets arbitrary Project fields: there is no set_card_field operation.
+Step 4 is two things in order — policy decides legality with no network access, then board.py performs the mutation.
 Dispatch is read-only: a human or another carrier must start the rendered prompt.
 -->
 
@@ -500,37 +505,69 @@ layout: ppt
 class: dense
 ---
 
-# We Built the Producer Half from an Empty Tree
+# The Producer Surface Is Complete
 
-<div class="eyebrow">DELIVERED IN THIS CHECKOUT</div>
+<div class="eyebrow">DELIVERED IN THIS CHECKOUT · v0.2.0</div>
 
 <div class="delivered-map">
   <div class="delivered-core">
-    <span class="node-label">CLAUDE PLUGIN · v0.1.0</span><h3>Four focused skills</h3>
+    <span class="node-label">CLAUDE PLUGIN</span><h3>Seven Producer skills</h3>
     <div class="skill-list">
-      <div><code>using-agent-teams</code><span>route by seat and intent</span></div>
+      <div><code>using-agent-teams</code><span>bootstrap, then route by seat</span></div>
       <div><code>intaking-requirement</code><span>Issue → Backlog → architect</span></div>
-      <div><code>authoring-spec</code><span>docs-only spec PR → rd handoff</span></div>
-      <div><code>dispatching-work</code><span>Ready queue → deterministic prompts</span></div>
+      <div><code>authoring-spec</code><span>specify · promote · decompose</span></div>
+      <div><code>briefing-board</code><span>lanes · WIP · merge queue</span></div>
+      <div><code>triaging-board</code><span>blocked work → responsible seat</span></div>
+      <div><code>dispatching-work</code><span>Ready queue → kickoff prompts</span></div>
+      <div><code>inspecting-queue</code><span>order QA work, issue no verdicts</span></div>
     </div>
   </div>
   <div class="delivered-plus">+</div>
   <div class="delivered-core">
-    <span class="node-label">PYTHON STANDARD LIBRARY</span><h3>One deterministic adapter</h3>
-    <div class="command-list"><code>init</code><code>doctor</code><code>list</code><code>dispatch</code><code>intake</code><code>handoff</code></div>
-    <p>Resolves Project fields and options, normalizes Cards, validates handoff authority, calls <code>gh</code>, and returns JSON.</p>
+    <span class="node-label">PYTHON STANDARD LIBRARY · SIX MODULES</span><h3>A layered adapter</h3>
+    <div class="command-list"><code>model</code><code>policy</code><code>config</code><code>github</code><code>board</code><code>workflows</code></div>
+    <p><code>policy</code> imports nothing that touches the network — which is why <strong>every</strong> transition edge and seat pair is asserted, not sampled.</p>
+    <div class="command-list"><code>bootstrap</code><code>doctor</code><code>brief</code><code>triage</code><code>queue</code><code>dispatch</code><code>intake</code><code>promote</code><code>decompose</code><code>transition</code><code>handoff</code></div>
   </div>
 </div>
 
 <div class="delivered-foundation">
-  <span><strong>Packaging</strong> Claude manifest + local marketplace</span>
-  <span><strong>Configuration</strong> repository-local, non-secret board coordinates</span>
-  <span><strong>Board contract</strong> GitHub Issue + Project <code>Status</code> and <code>Role</code></span>
+  <span><strong>Governance</strong> six-state machine · handoff cap · WIP · seat action policy</span>
+  <span><strong>Recovery</strong> every partial mutation names its completed prefix</span>
+  <span><strong>Hard floor</strong> no agent seat can merge — not overridable</span>
 </div>
 
 <!--
 The branch deliberately excludes the earlier full framework: no service, database, virtualenv, hooks, setup engine, or dual backend.
-This small surface proves the Producer coordination seam before Consumer complexity is added.
+Growth is 4 skills to 7 and 1 file to 6 modules; the CLI entry point producer_board.py stayed the stable public surface.
+Layer discipline: model and policy are pure, github and board talk to gh, workflows composes transactions.
+-->
+
+---
+layout: ppt
+class: dense
+---
+
+# Writing the Rules Down Found Five Bugs
+
+<div class="eyebrow">WHAT THE POLICY LAYER CAUGHT</div>
+
+| Found | Why it mattered |
+|---|---|
+| `architect → analyst` was <span class="accent">missing</span> from the authority matrix | An architect could not return an under-specified card — only guess, or block |
+| Board read capped at <code>--limit 100</code>, <span class="accent">no truncation check</span> | A card past page one was invisible to dispatch. <strong>Reported success while skipping real work</strong> |
+| `doctor` validated <span class="accent">2 of 6</span> Statuses, stopped at the first defect | Six re-runs to learn six things |
+| Generic `transition` could reach `Ready` | Bypassed the `promote_to_ready` refusal — <span class="accent">a hole around the seat policy</span> |
+| Handoff free text could forge a second `**Handoff**` line | A parser would read the forged one |
+
+- The first three contradicted documents we had already written; the last two <span class="accent">only appeared once the rules were executable</span>
+- Both authority holes were caught by tests written expecting them to *pass*
+
+<!--
+This is the argument for extracting policy as a pure module, made concretely.
+Prose can hold a contradiction indefinitely. A table with 36 asserted pairs cannot.
+The pagination one is the serious bug: silent truncation is worse than a crash, because dispatch keeps reporting success.
+Both authority holes were found by writing the test first and being surprised — not by review.
 -->
 
 ---
@@ -544,29 +581,30 @@ class: dense
   <div class="scope-column current">
     <div class="axis-label">VERIFIED</div><h3>What already passes</h3>
     <ul>
-      <li><strong>9 / 9</strong> focused unit tests with an injected fake <code>gh</code></li>
-      <li>Python syntax and standard-library execution</li>
-      <li>Warning-free Claude plugin manifest validation</li>
-      <li>Real non-mutating Claude namespace load and downstream skill discovery</li>
-      <li>Config round trip, Card normalization, dispatch order, intake invariants, and handoff refusal</li>
+      <li><strong>123 / 123</strong> tests with an injected fake <code>gh</code> — up from 9</li>
+      <li>All <strong>36</strong> Status pairs and all <strong>36</strong> Role pairs asserted individually</li>
+      <li>Every partial-mutation boundary in intake, handoff, promote, and decompose</li>
+      <li>Pagination: a 250-card board reads whole; a 10,000-card board <em>refuses</em> rather than truncating</li>
+      <li>Six-state policy, handoff cap, WIP formula, and the non-overridable merge floor</li>
     </ul>
   </div>
   <div class="scope-divider">→</div>
   <div class="scope-column target">
     <div class="axis-label">NOT YET PROVEN / BUILT</div><h3>What closes Phase 1</h3>
     <ul>
-      <li>Live disposable GitHub Project contracts and mutation recovery</li>
-      <li>Six-state transition policy and architect promotion to <code>(Ready, rd)</code></li>
+      <li><strong>Live disposable GitHub Project contracts</strong> — the largest open risk</li>
       <li>Remote claim, isolated worktree, RD TDD, and governed Pull Request</li>
-      <li>Independent QA verdict, rejection loop, human lane, WIP, and recovery</li>
+      <li>Independent QA verdict and the rejection loop</li>
       <li>Seat-aware audit and a reconstructable end-to-end trace</li>
+      <li>Plugin manifest re-validation against the seven-skill layout</li>
     </ul>
   </div>
 </div>
 
-<div class="status-note"><strong>Honest status</strong><span>RD and QA are Role values, not delivered skills. The MVP proves routing and durable Producer operations; the implementation plan defines the remaining path to a complete team.</span></div>
+<div class="status-note"><strong>Honest status</strong><span>Every green test is hermetic: it proves the adapter behaves correctly <em>given response shapes that have never met a real</em> <code>gh</code>. That gap is M1.1–M1.3 and it is the next thing to close — not more features.</span></div>
 
 <!--
-M1 through M6 produce Functional Phase 1. M7 adds governed policy and audit; M8 proves the positive and negative golden paths.
-The project already has a working coordination core, with explicit evidence and explicit limits.
+The Producer half is done; M4/M5 are Consumer-shaped and M8 is the golden-path proof.
+Say the quiet part out loud: 123 passing tests is a statement about internal consistency, not about GitHub.
+If the installed gh caps --limit, the pagination escalation must become a documented ceiling instead. That is an assumption, not a fact.
 -->
