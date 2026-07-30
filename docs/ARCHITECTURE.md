@@ -24,9 +24,9 @@ deferred work is maintained in the implementation plan.
 
 The design in one sentence is:
 
-> A team seat defines capability and authority, Producer or Consumer defines
-> the session's relationship to the kanban, and GitHub carries every durable
-> handoff between independent sessions.
+> A team seat defines capability and authority, a Producer session lives with
+> the board, a Consumer session lives with exactly one Card, and GitHub carries
+> every durable handoff between those independent sessions.
 
 ## 2. Design lineage
 
@@ -95,8 +95,8 @@ The relationship is:
 | Role | The GitHub Project single-select field that records whose turn it is. Its values are seat tokens. |
 | Status | The GitHub Project single-select field that records where the Card is in the delivery lifecycle. |
 | Session | One independently launched Claude Code execution with one master agent, one bound seat, and one execution shape. |
-| Producer | A session whose purpose is to add or reshape work or keep the kanban healthy and ready for more work. |
-| Consumer | A session whose purpose is to complete, block, or reject exactly one bound Card. |
+| Producer | A board-anchored session whose purpose is to add or reshape work or keep the kanban healthy and ready for more work. |
+| Consumer | A Card-anchored session whose purpose is to complete, block, or reject exactly one bound Card. |
 | Routine | A bounded workflow performed by a Producer or Consumer session. |
 | Claim | An exclusive reservation of one Card, represented by a remote claim branch and an isolated worktree. |
 | Transition | A semantic change to `Status`; it does not imply a Role handoff. |
@@ -104,6 +104,8 @@ The relationship is:
 | Dispatch artifact | A deterministic kickoff prompt containing seat, Card identity, required action, and resume context. |
 | Verdict | The Quality Assurance engineer's evidence-backed `pass`, `fail`, or `blocked` result for one delivery. |
 | Carrier | The mechanism that starts a session, such as a human-opened terminal, a bounded subagent, or a scheduled command. |
+| Standing repository context | Durable project instructions and overview pointers that every session can reload, such as repository rules, product overview, architecture index, active decisions, and team configuration. |
+| Context bootstrap | The mandatory, read-only startup sequence that loads standing repository context, binds session identity, queries current board state, and builds the seat-specific orientation used by the selected routine. |
 
 ### 3.2 Team seats and durable tokens
 
@@ -136,10 +138,10 @@ What relationship does this session have to the kanban for this run?
 The session identity model is:
 
 ```text
-SessionIdentity = Seat + ExecutionShape + OptionalBoundCard
+SessionIdentity = Seat + ExecutionShape + ScopeBinding
 
-Producer => no single-Card implementation binding is required
-Consumer => exactly one bound Card is required
+Producer ScopeBinding => the board or one bounded board projection/routine
+Consumer ScopeBinding => exactly one bound Card and one stage
 ```
 
 The Project `Role` field stores the seat token. It never stores `producer` or
@@ -162,6 +164,54 @@ One session cannot silently change shape. A System Architect Producer session
 that decomposes a feature must stop after its board mutations. A separately
 launched Research and Development engineer Consumer session implements a
 resulting Card.
+
+### 3.5 Board-anchored Producer, Card-anchored Consumer
+
+In this architecture, "lives with" names the session's durable scope anchor:
+
+- a Producer lives with the board. It starts from a board projection, Role
+  lane, queue, requirement, or board-health routine and may read or mutate the
+  set of Cards permitted by that routine. Even when it focuses on one intake
+  Card, its outcome is board shaping rather than implementation delivery;
+- a Consumer lives with exactly one Card. Its kickoff binds the Card identity,
+  expected `Status` and `Role`, stage objective, claim or Pull Request, and
+  stop conditions. It may read other Cards for context but may mutate only the
+  bound Card and that Card's artifacts.
+
+The operational hierarchy is therefore a hierarchy of scope and work flow:
+
+```text
+GitHub Project / board
+`- Producer session: board-level coordination
+   `- durable dispatch artifact for Card #42
+      `- Consumer session: Card #42 and one bounded stage
+         `- claim/worktree/Pull Request or verdict/handoff
+            `- durable result returns to the board
+```
+
+The indentation does not require runtime process ancestry. A Producer may
+render the dispatch artifact, but a human or any supported carrier can start
+the Consumer after the Producer session has ended. The Card, not the parent
+process, carries the assignment. Multiple Consumers may run concurrently on
+different Cards, while exclusive claim prevents two authoring Consumers from
+owning the same Card.
+
+The normal flow is:
+
+1. a Producer reads the board and creates, reshapes, prioritizes, routes, or
+   selects a Card;
+2. the Producer writes the required board state and a carrier-neutral dispatch
+   artifact;
+3. a carrier launches a new Consumer session bound to that Card;
+4. the Consumer resolves exactly one stage and writes a Pull Request, verdict,
+   blocker, transition, or handoff;
+5. the result is visible on the board, where a later Producer, Consumer, or
+   human session continues the flow.
+
+A seat may operate at either level only through separate sessions. For example,
+the System Architect is Producer-shaped while decomposing and routing work, but
+Consumer-shaped while delivering one specification Card and one documentation
+Pull Request. It must stop before changing back to board-level Producer work.
 
 ## 4. Architectural principles and invariants
 
@@ -210,33 +260,62 @@ claim, worktree, and Pull Request instead of creating a second delivery chain.
 is. Changing one never implicitly changes the other. When both must change,
 two semantic operations run and partial completion is explicitly recoverable.
 
-### 4.5 The org chart is authority, not runtime nesting
+### 4.5 Scope hierarchy and authority do not require runtime nesting
 
-All seat sessions are horizontal peers. Reporting lines are enforced through
-legal handoffs, permitted actions, escalation routes, and Project Role lanes.
-The design does not require a parent session to remain alive while another
-seat works.
+Producer and Consumer form an operational scope hierarchy from board-level
+coordination to Card-level delivery and back to the board. All seat sessions
+remain runtime peers. Reporting lines are enforced through legal handoffs,
+permitted actions, escalation routes, and Project Role lanes. The design does
+not require a Producer or other parent session to remain alive while a Consumer
+works.
 
-### 4.6 Skills orchestrate; deterministic components mutate
+### 4.6 Sessions are ephemeral; their scope anchors are durable
+
+Neither a Producer nor a Consumer process survives the end of its session.
+"Lives with the board" and "lives with a Card" describe where the next fresh
+session reconstructs authority and context; they do not describe a resident
+agent process.
+
+```text
+Producer process: start -> orient from repository + live board -> coordinate -> persist -> stop
+Durable survivor: GitHub Project, Cards, comments, priorities, and dispatch artifacts
+
+Consumer process: start -> orient from repository + bound Card -> resolve one stage -> persist -> stop
+Durable survivor: Card, claim branch, worktree metadata, Pull Request, verdict, and handoff
+```
+
+A bounded subagent may carry either shape when explicitly supported, but that
+is only one launch mechanism. It does not make every Consumer an agent team or
+a semantic child of a Producer. A normal Consumer can be launched after the
+Producer has stopped. Helper agents spawned inside a Consumer inherit the
+same Card boundary and remain implementation details of that one Consumer;
+they are not additional seats, Card owners, or handoff destinations.
+
+Broad read access is compatible with bounded ownership. Every seat may read
+the repository and related Cards needed to reason correctly. The scope anchor
+limits what the session owns and may mutate, not what relevant context it may
+inspect.
+
+### 4.7 Skills orchestrate; deterministic components mutate
 
 Skills interpret intent, gather context, choose a bounded routine, and explain
 refusal. Deterministic code performs validation, GitHub queries, field
 resolution, transitions, handoffs, claims, comments, Pull Request operations,
 and structured output.
 
-### 4.7 Semantic operations precede backend abstractions
+### 4.8 Semantic operations precede backend abstractions
 
 The system exposes operations such as `transition_card`, `handoff_card`, and
 `claim_card`, not unrestricted Project field mutation. A backend-neutral port
 is introduced only when a real second backend exists.
 
-### 4.8 Human merge is a hard boundary
+### 4.9 Human merge is a hard boundary
 
 Every artificial intelligence seat may prepare evidence and recommend an
 outcome. Only the human merge authority can accept the repository change by
 merging. This is enforced policy, not merely a prompt instruction.
 
-### 4.9 Composition is preferred over reimplementation
+### 4.10 Composition is preferred over reimplementation
 
 Test-driven development, planning, review, browser quality assurance, security
 review, and branch-finishing disciplines should be invoked through supported
@@ -298,6 +377,64 @@ The architecture is carrier-neutral:
 
 Every carrier consumes the same dispatch artifact. Changing carrier must not
 change board contracts or workflow correctness.
+
+### 5.2 Plugin source and demo boundary
+
+The plugin and its demo have separate repository responsibilities:
+
+| Repository | Responsibility |
+|---|---|
+| `agent-teams` | Plugin source, workflow skills, deterministic services, documentation, and plugin tests. |
+| `agent-teams-test` | Consuming demo repository: demo configuration and workload, plus the branches, worktrees, Pull Requests, and evidence created while exercising the plugin. Its linked GitHub Project, Issues, comments, and reviews remain the durable coordination plane. |
+
+A demo session loads or installs the plugin from `agent-teams`, but performs
+demo work against `agent-teams-test` and its configured GitHub Project. The
+plugin source repository is therefore not the target work repository for the
+demo. This boundary also prevents implementation changes to the plugin from
+being confused with evidence that the plugin completed a governed work item.
+
+The existence of the demo repository does not by itself prove the live
+end-to-end contract. Repeatable live Project, Issue, branch, Pull Request, and
+review evidence remains an implementation milestone until it is recorded in
+the implementation status ledger.
+
+### 5.3 Fresh-session context reconstruction
+
+A fresh session has no reliable conversational memory from a previous
+session, but it must not begin ignorant of the project. Context is rebuilt
+from two durable layers:
+
+1. **Standing repository context** supplies stable knowledge: platform-loaded
+   `AGENTS.md` or `CLAUDE.md` instructions when present, repository and product
+   overview, architecture index and active decisions, team configuration, and
+   explicit context pointers carried by the kickoff or handoff.
+2. **Live coordination context** supplies current knowledge: the configured
+   Project projection, Role and Status lanes, Card bodies and comments,
+   dependencies, claims, linked Pull Requests, reviews, and merge state.
+
+The entry skill owns this bootstrap contract. A direct downstream-skill match
+may skip the entry skill's routing decision, but it must not skip the common
+bootstrap. Startup is read-only: no seat may mutate state until context has
+been loaded, live board state has been queried, and expected identity has been
+validated.
+
+Standing context is progressively disclosed rather than copied wholesale into
+every prompt. The bootstrap loads a compact overview and stable pointers; the
+selected routine then opens the relevant source documents and repository
+areas on demand. Live board state always overrides a stale dispatch snapshot.
+
+Producer seats receive role-appropriate broad context:
+
+| Producer seat | Required startup view |
+|---|---|
+| System Analyst | Product purpose, stakeholder request, terminology, existing requirements, Backlog, and related Cards or specifications. |
+| System Architect | Product purpose, repository map, architecture and active decisions, dependencies, relevant Backlog/Blocked Cards, and existing specifications. |
+| Engineering Manager / Team Lead | Complete paginated board projection, Role and Status lanes, priorities, dependencies, work-in-progress, claims, aging, blocked work, verification queue, and human lane. |
+| Quality Assurance queue Producer | Complete `(In Review, qa)` projection plus linked Pull Request contract state, aging, and required verification capabilities. |
+
+A Consumer receives the same stable repository rules and project overview,
+then expands the context for exactly one bound Card and stage. Card anchoring
+therefore limits ownership; it does not remove project awareness.
 
 ## 6. Organization and authority model
 
@@ -391,22 +528,27 @@ state, not implementation code.
 
 Every Producer routine follows the same protocol:
 
-1. Bind the seat from the kickoff prompt and validate that the requested
+1. Enter through the common bootstrap owned by `using-agent-teams`, even when
+   intent routing already selected a downstream Producer skill.
+2. Load standing repository context and its explicit overview, architecture,
+   decision, and team-configuration pointers.
+3. Bind the seat from the kickoff prompt and validate that the requested
    routine belongs to that seat.
-2. Run preflight for repository identity, GitHub authentication, Project
+4. Run preflight for repository identity, GitHub authentication, Project
    configuration, required fields, required field options, and sibling-skill
    availability.
-3. Read a complete, paginated board projection and normalize Cards before
+5. Query a complete, paginated live board projection and normalize Cards before
    filtering.
-4. Select only the bounded queue or demand item required by the routine.
-5. Read Issue content, comments, dependencies, linked Pull Requests, and
+6. Build the seat-specific overview, then select only the bounded queue or
+   demand item required by the routine.
+7. Read Issue content, comments, dependencies, linked Pull Requests, and
    applicable repository context.
-6. Produce a proposed board mutation plan and refuse actions outside the seat's
+8. Produce a proposed board mutation plan and refuse actions outside the seat's
    authority.
-7. Execute semantic mutations through deterministic services.
-8. Re-read affected Cards and verify the resulting `Status`, `Role`, comment,
+9. Execute semantic mutations through deterministic services.
+10. Re-read affected Cards and verify the resulting `Status`, `Role`, comment,
    and artifact links.
-9. Emit a structured result or dispatch queue and terminate.
+11. Emit a structured result or dispatch queue and terminate.
 
 A Producer may span multiple Cards only when its active routine explicitly
 permits queue-wide work. It must not opportunistically implement a Card it
@@ -929,14 +1071,21 @@ flowchart TB
 
 Responsibilities:
 
+- run the common context bootstrap exactly once for every governed session;
+- load standing repository instructions and stable project-context pointers;
 - parse `[role:<seat>]` and optional `[board-card:#N]` markers;
 - bind one seat and one execution shape;
+- discover repository and Project configuration;
+- query the current board or bound Card through deterministic read services;
+- build the role-appropriate orientation before any mutation;
 - refuse ambiguous or conflicting identity;
 - route only to routines legal for that seat and shape;
 - run common preflight before workflow-specific work.
 
 The router does not grant authority. It passes claimed identity to the policy
-layer, which checks durable board state.
+layer, which checks durable board state. A downstream skill selected directly
+may bypass the routing decision, but it must invoke or prove completion of the
+same bootstrap contract.
 
 ### 11.2 Producer workflow skills
 
@@ -1101,6 +1250,7 @@ execution_shape: producer | consumer
 routine: canonical routine name
 repository: owner/name
 project: stable Project identity
+context_sources: stable repository-relative overview and decision pointers
 expected_status: exact Status or permitted set
 expected_role: exact Role
 objective: one bounded outcome
@@ -1115,13 +1265,22 @@ the bounded projection. Consumer sessions never omit it.
 
 On every launch:
 
-1. parse and bind identity;
-2. discover repository and Project configuration;
-3. verify credentials and required capabilities;
-4. fetch durable Card or queue state;
-5. compare expected and actual Role and Status;
-6. refuse stale dispatch rather than acting on outdated assumptions;
-7. write a session-start audit event when governed audit is enabled.
+1. load platform-provided standing repository instructions;
+2. enter the common bootstrap owned by the entry skill;
+3. parse and bind seat, execution shape, scope binding, and routine;
+4. discover repository and Project configuration;
+5. load the compact project overview and stable context pointers;
+6. verify credentials and required capabilities;
+7. query the live paginated board projection and fetch the bound Card or queue;
+8. compare expected and actual Role, Status, claim, and artifact state;
+9. build the role-specific orientation and open deeper repository context on
+   demand;
+10. refuse stale dispatch rather than acting on outdated assumptions;
+11. write a session-start audit event when governed audit is enabled.
+
+No mutation is legal before steps 1 through 10 complete. Closing the session
+ends the process; a later session repeats this protocol against the durable
+repository and GitHub state.
 
 ### 12.3 Session completion
 

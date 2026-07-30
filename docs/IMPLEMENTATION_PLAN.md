@@ -20,7 +20,8 @@ The desired outcome is a small but complete Claude Code agent team in which:
 6. the Quality Assurance engineer either returns the Card to the Research and
    Development engineer or hands it to the human merge gate;
 7. the human verifies and merges;
-8. durable board state is sufficient for every next session to resume.
+8. standing repository context plus live board state is sufficient for every
+   next session to reconstruct its role-appropriate project view and resume.
 
 This plan starts from the current four-skill, one-script minimum viable
 product. It does not assume the larger `board-superpowers` implementation is
@@ -107,6 +108,7 @@ team-of-teams are not required for either completion level.
 | Work item | Status | Evidence |
 |---|---|---|
 | Entry routing skill | Done | `skills/using-agent-teams/SKILL.md` |
+| Producer context bootstrap | Pending | The entry skill routes and runs `doctor`, but does not yet load a standing project overview and query the live board before every Producer routine. |
 | Analyst intake skill | Done | `skills/intaking-requirement/SKILL.md` |
 | Architect docs-only specification skill | Partial | Skill exists; live Git/Pull Request flow unverified |
 | Engineering Manager dispatch skill | Done | `skills/dispatching-work/SKILL.md` |
@@ -147,6 +149,8 @@ team-of-teams are not required for either completion level.
 
 ### P0: prove and close the current slice
 
+- expand the entry skill into a common, read-only context bootstrap;
+- load standing repository context and query the live board before Producer work;
 - validate actual `gh project` response shapes;
 - close the Backlog-to-Ready hole;
 - validate all six Status options;
@@ -316,6 +320,26 @@ Do not make production code more permissive until the real shapes are known.
 - [ ] Add tests for comment failure after Role mutation in handoff.
 - [ ] Do not claim rollback unless a real compensation succeeded.
 
+#### M1.7 Producer context bootstrap
+
+- [ ] Make `using-agent-teams` own one common startup contract in addition to
+      intent routing.
+- [ ] Load repository instructions plus compact product, architecture,
+      decision, and team-configuration pointers before selecting work.
+- [ ] Query the complete live board through the deterministic `list` path
+      before every Producer routine; never treat the kickoff snapshot as
+      authoritative.
+- [ ] Build seat-specific views for System Analyst, System Architect,
+      Engineering Manager / Team Lead, and Quality Assurance queue work.
+- [ ] Ensure a direct downstream-skill match runs the bootstrap exactly once
+      rather than skipping it or running it twice.
+- [ ] Keep bootstrap read-only and refuse mutation when configuration,
+      pagination, identity, or live board state is uncertain.
+- [ ] Add repository-context fixtures and fake-`gh` tests proving that a fresh
+      Producer session can reconstruct its view without prior conversation.
+- [ ] Treat bounded subagent, human terminal, and scheduled execution as
+      equivalent carriers of the same startup contract.
+
 ### Exit criteria
 
 - `doctor` passes against a disposable Project.
@@ -323,6 +347,8 @@ Do not make production code more permissive until the real shapes are known.
 - one disposable intake completes and its exact durable result is verified.
 - failures identify the last completed mutation and a safe fix-forward.
 - fixtures reflect observed GitHub CLI output.
+- fresh `analyst`, `architect`, and `em` Producer launches report which
+  standing sources and live board projection formed their startup context.
 
 ## 9. M2 - Domain policy and Status operations
 
