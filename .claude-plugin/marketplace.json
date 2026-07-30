@@ -1,6 +1,6 @@
 {
   "name": "agent-teams-local",
-  "description": "Local development marketplace for the agent-teams Producer MVP.",
+  "description": "Local development marketplace for the agent-teams Producer plugin.",
   "owner": {
     "name": "agent-teams contributors"
   },
@@ -8,8 +8,8 @@
     {
       "name": "agent-teams",
       "source": "./",
-      "description": "Minimal Producer workflow for Claude Code over GitHub Projects.",
-      "version": "0.1.0"
+      "description": "Producer workflows for Claude Code over GitHub Projects.",
+      "version": "0.2.0"
     }
   ]
 }

@@ -1,45 +1,53 @@
-# agent-teams Producer MVP
+# agent-teams
 
-This repository is the `agent-teams` Claude Code plugin.
+This repository is the `agent-teams` Claude Code plugin: the Producer side of
+an artificial intelligence engineering board, running over a GitHub Project.
 
-A deliberately small Claude Code plugin for running the Producer side of an
-AI engineering board.
+A **Producer** session shapes work — it creates, refines, routes, prioritises,
+and unblocks Cards. A **Consumer** session resolves exactly one Card. This
+plugin implements the Producer half completely; Consumer execution
+(implementation and independent verification) is a separate, later milestone.
 
-It keeps only four workflows:
+The durable board is a GitHub Project. Cards are GitHub Issues carrying two
+orthogonal single-select fields: `Status` (where the work is) and `Role`
+(whose turn it is).
 
-- route a session by seat and intent;
-- intake a requirement and hand it from analyst to architect;
-- deliver an architect-owned specification;
-- let an EM dispatch Ready work by Role.
+## The seven Producer workflows
 
-The durable board is a GitHub Project. Cards are GitHub Issues with `Status`
-and `Role` single-select fields.
+| Skill | Seat | What it does |
+|---|---|---|
+| `using-agent-teams` | any | Read-only session bootstrap, then route by seat |
+| `intaking-requirement` | analyst | Shape a requirement into one Backlog Card |
+| `authoring-spec` | architect | Specify, then promote to Ready or decompose |
+| `briefing-board` | em | Whole-team flow, work in progress, merge queue |
+| `triaging-board` | em | Blocked work, grouped by who owes a decision |
+| `dispatching-work` | em | Render deterministic kickoff prompts |
+| `inspecting-queue` | qa | Order the verification queue (no verdicts) |
 
 ## What is intentionally absent
 
-This MVP has no audit database, schema migrations, lifecycle hook, automatic
-field provisioning, Codex package, multi-backend adapter, WIP policy engine,
-or autonomous agent spawning. It renders kickoff prompts; a human or external
-carrier starts the sessions.
+No audit database, no schema migrations, no lifecycle hook, no automatic field
+provisioning, no Codex package, no multi-backend adapter, and no autonomous
+agent spawning. The plugin renders kickoff prompts; a human or an external
+carrier starts sessions.
+
+No seat can merge. That floor is enforced in policy and is not overridable.
 
 ## Requirements
 
 - Claude Code 2.1+
-- Python 3.9+
+- Python 3.9+ (standard library only — no third-party dependencies)
 - GitHub CLI (`gh`), authenticated with repository and Project access
-- an existing GitHub Project containing single-select `Status` and `Role`
-  fields
+- a GitHub Project with single-select `Status` and `Role` fields
 
-Required options:
+Required options — all six of each, validated by `doctor`:
 
 ```text
-Status: Backlog, Ready, In Progress, In Review, Done, Blocked
-Role: analyst, architect, rd, qa, em, human
+Status: Backlog, Ready, In Progress, Blocked, In Review, Done
+Role:   analyst, architect, rd, qa, em, human
 ```
 
 ## Configure a consuming repository
-
-From the consuming repository:
 
 ```powershell
 python "C:\path\to\this-plugin\scripts\producer_board.py" init `
@@ -48,18 +56,30 @@ python "C:\path\to\this-plugin\scripts\producer_board.py" init `
   --project-number 1
 ```
 
-This creates `.agent-teams/config.json` in the consuming repository.
-The file contains board coordinates, not credentials.
-
-Validate access and field names:
+This writes `.agent-teams/config.json` in the consuming repository. It holds
+board coordinates and a few tuning knobs, never credentials.
 
 ```powershell
 python "C:\path\to\this-plugin\scripts\producer_board.py" doctor
 ```
 
-## Test as a development plugin
+`doctor` validates authentication, Project access, both fields, and all twelve
+options — and reports every defect it finds in one response rather than the
+first.
 
-From the consuming repository:
+## Tuning
+
+| Key | Default | Meaning |
+|---|---|---|
+| `wip_limit` | 5 | Cards in `In Progress` + `In Review` before the briefing warns |
+| `handoff_cap` | 6 | Handoffs before a Card is routed to `(Blocked, em)` |
+| `spec_completion` | `merged` | Whether Ready requires a merged or merely opened specification |
+
+`spec_completion=merged` means implementation becomes Ready only after the
+specification is durable on the target branch. Set it to `opened` only if this
+repository genuinely accepts building against an unmerged specification.
+
+## Test as a development plugin
 
 ```powershell
 claude --plugin-dir "C:\path\to\this-plugin"
@@ -68,10 +88,10 @@ claude --plugin-dir "C:\path\to\this-plugin"
 Inside Claude:
 
 ```text
-/agent-teams:using-agent-teams
-[role:em] Show the dispatch queue.
+[role:em] morning briefing
 [role:analyst] Intake this requirement: improve the setup documentation.
-[role:architect] Author the specification for issue #12.
+[role:architect] Make issue #12 ready against docs/architecture/0007-parser.md
+[role:qa] show the verification queue
 ```
 
 Use a disposable repository and Project for the first mutation test.
@@ -79,12 +99,50 @@ Use a disposable repository and Project for the first mutation test.
 ## Board CLI
 
 ```text
-producer_board.py init
+producer_board.py init        --repo OWNER/REPO --project-owner OWNER --project-number N
+                              [--wip-limit N] [--handoff-cap N]
+                              [--spec-completion merged|opened]
 producer_board.py doctor
-producer_board.py list [--role ROLE] [--status STATUS]
-producer_board.py dispatch [--role ROLE] [--format text|json]
-producer_board.py intake --title TITLE (--body BODY | --body-file PATH)
-producer_board.py handoff ISSUE --from-role ROLE --to-role ROLE --note TEXT
+producer_board.py bootstrap   --role ROLE
+producer_board.py list        [--role ROLE] [--status STATUS]
+producer_board.py brief       [--with-handoffs] [--format text|json]
+producer_board.py triage
+producer_board.py queue
+producer_board.py dispatch    [--role ROLE] [--format text|json]
+producer_board.py intake      --title TITLE (--body BODY | --body-file PATH)
+producer_board.py create-card --title TITLE (--body BODY | --body-file PATH)
+                              [--status STATUS] [--role ROLE] [--acting-role ROLE]
+producer_board.py promote     ISSUE --spec REF [--acting-role ROLE] [--note TEXT]
+producer_board.py decompose   PARENT --spec REF --children FILE.json
+producer_board.py transition  ISSUE --to STATUS --acting-role ROLE
+producer_board.py handoff     ISSUE --from-role ROLE --to-role ROLE --note TEXT
+                              [--needs TEXT] [--artifacts TEXT]
 ```
 
-All mutating commands print JSON describing the durable result.
+Every command prints one JSON envelope and exits 0, or prints
+`{"ok": false, "error": ...}` on stderr and exits 1. A multi-step mutation that
+fails part-way returns `partial: true` with the exact `completed` prefix and a
+`recovery` recipe — nothing ever claims a rollback that did not run.
+
+## Layout
+
+```text
+scripts/producer_board.py   stable CLI entry point
+scripts/agent_teams/
+  model.py                  validated Role, Status, Card, Handoff, Verdict
+  policy.py                 pure legality: transitions, authority, caps, seats
+  config.py                 configuration and its validation
+  github.py                 gh invocation, pagination, error classification
+  board.py                  semantic board operations
+  workflows.py              transactions with partial-failure recovery
+tests/                      123 tests, no network
+```
+
+`policy.py` imports nothing that touches the network, which is why every
+transition edge and every seat pair is asserted rather than sampled.
+
+## Tests
+
+```powershell
+python -m unittest discover -s tests -p "test_*.py"
+```
