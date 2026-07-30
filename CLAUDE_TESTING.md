@@ -1,0 +1,511 @@
+# Testing the Producer MVP in Claude Code
+
+Last updated: 2026-07-30
+
+## Current plugin
+
+- Source directory:
+  `C:\Users\User\Documents\intern\ITRI\agent-teams`
+- Branch: `mvp/producer-from-scratch`
+- Plugin: `board-superpowers-producer`
+- Version: `0.1.0`
+- Skills: 4
+
+Before testing, verify that the source directory is still on the MVP branch:
+
+```powershell
+cd C:\Users\User\Documents\intern\ITRI\agent-teams
+git branch --show-current
+```
+
+Expected:
+
+```text
+mvp/producer-from-scratch
+```
+
+If this directory is on `main`, Claude will load the older, larger plugin
+instead of this MVP.
+
+## 1. Validate the plugin
+
+From the plugin directory:
+
+```powershell
+claude plugin validate .
+```
+
+Expected:
+
+```text
+Validation passed
+```
+
+The current MVP manifest validates without warnings.
+
+## 2. Recommended test: load directly from another repository
+
+Open a new PowerShell window and enter the repository where you want to test
+the plugin:
+
+```powershell
+cd C:\path\to\another-repository
+```
+
+Start Claude Code with the current plugin source:
+
+```powershell
+claude --plugin-dir "C:\Users\User\Documents\intern\ITRI\agent-teams"
+```
+
+`--plugin-dir` is the recommended development mode:
+
+- Claude reads the files from the current branch directly;
+- installation is not required;
+- an older cached plugin cannot replace the development copy;
+- source edits are available after restarting Claude or running
+  `/reload-plugins`.
+
+A plugin loaded through `--plugin-dir` may not appear in the `/plugin`
+Installed tab. Verify it through `/help` and the namespaced skill commands.
+
+Do not use:
+
+```text
+--safe-mode
+--disable-slash-commands
+```
+
+Those options disable the relevant plugin or skill behavior.
+
+## 3. Verify skill discovery
+
+Inside Claude:
+
+```text
+/help
+```
+
+Search for `board-superpowers-producer`.
+
+You should find exactly these four MVP skills:
+
+```text
+/board-superpowers-producer:using-board-superpowers
+/board-superpowers-producer:intaking-requirement
+/board-superpowers-producer:authoring-spec
+/board-superpowers-producer:dispatching-work
+```
+
+You can also type:
+
+```text
+/board-superpowers-producer:
+```
+
+and use Claude Code's completion menu.
+
+If these four commands appear, the plugin has loaded.
+
+## 4. Test the router without tools or mutations
+
+Invoke the entry skill:
+
+```text
+/board-superpowers-producer:using-board-superpowers
+```
+
+Then ask:
+
+```text
+Without running tools or changing anything, explain the three Producer routes
+and their role tokens.
+```
+
+Expected routes:
+
+```text
+[role:analyst]   → intaking-requirement
+[role:architect] → authoring-spec
+[role:em]        → dispatching-work
+```
+
+The router should also explain that RD and QA are dispatch targets, not
+implemented workflows in this MVP.
+
+## 5. Test analyst routing
+
+Inside the same Claude session:
+
+```text
+[role:analyst] Explain how you would intake a requirement.
+Do not run tools, create an Issue, or mutate a board.
+```
+
+Expected:
+
+- Claude selects `intaking-requirement`;
+- it shapes an outcome-oriented Issue;
+- initial Status remains `Backlog`;
+- ownership moves from analyst to architect;
+- it does not make the Card Ready.
+
+## 6. Test architect routing
+
+```text
+[role:architect] Explain how you would author the specification for issue #12.
+Do not run tools, create a branch, or change files.
+```
+
+Expected:
+
+- Claude selects `authoring-spec`;
+- it describes a docs-only specification PR;
+- it refuses to implement production code in this routine;
+- it hands the Card to RD only after a specification PR exists.
+
+## 7. Test EM routing
+
+```text
+[role:em] Explain how you would dispatch the Ready queue.
+Do not run tools or mutate the board.
+```
+
+Expected:
+
+- Claude selects `dispatching-work`;
+- it filters by configured `ready_status`;
+- it requires a durable Role;
+- it sorts by configured role order and Issue number;
+- it renders kickoff prompts;
+- it does not spawn agents or modify Status/Role.
+
+## 8. One-command non-interactive smoke test
+
+This command tests Claude discovery and routing, prints one response, and exits:
+
+```powershell
+cd C:\path\to\another-repository
+
+claude `
+  --plugin-dir "C:\Users\User\Documents\intern\ITRI\agent-teams" `
+  --permission-mode dontAsk `
+  --no-session-persistence `
+  -p "/board-superpowers-producer:using-board-superpowers Without using tools or changing anything, confirm this MVP loaded and name its three downstream Producer routines in one line."
+```
+
+Expected output contains:
+
+```text
+Loaded
+intaking-requirement
+authoring-spec
+dispatching-work
+```
+
+This runtime smoke test passed during MVP implementation.
+
+## 9. Persistent installation
+
+Direct `--plugin-dir` loading is sufficient for development. Use the following
+only when you want the MVP available in every repository without passing the
+flag.
+
+Add the current directory as a local marketplace:
+
+```powershell
+claude plugin marketplace add `
+  "C:\Users\User\Documents\intern\ITRI\agent-teams" `
+  --scope user
+```
+
+Install the plugin:
+
+```powershell
+claude plugin install `
+  board-superpowers-producer@board-superpowers-producer-local `
+  --scope user
+```
+
+Inspect the result:
+
+```powershell
+claude plugin marketplace list --json
+claude plugin list --json
+```
+
+Expected:
+
+```text
+plugin: board-superpowers-producer@board-superpowers-producer-local
+version: 0.1.0
+enabled: true
+errors: none
+```
+
+Start Claude normally in another repository:
+
+```powershell
+cd C:\path\to\another-repository
+claude
+```
+
+Inside Claude:
+
+```text
+/reload-plugins
+/help
+```
+
+During active development, continue to prefer `--plugin-dir`. Persistent
+installation copies the plugin into Claude's cache and can become stale after
+source edits.
+
+## 10. Prepare for a live GitHub Project test
+
+The loading and routing tests above do not require GitHub CLI or a board.
+
+Live intake, handoff, and dispatch require:
+
+- `gh` installed;
+- GitHub authentication;
+- repository access;
+- GitHub Project access;
+- an existing Project with the required fields and options.
+
+Install and authenticate:
+
+```powershell
+winget install --id GitHub.cli
+gh auth login
+gh auth refresh -s project
+gh auth status
+```
+
+Use a disposable repository and Project for the first live test.
+
+Required fields:
+
+```text
+Status: Backlog, Ready, In Progress, In Review, Done, Blocked
+Role: analyst, architect, rd, qa, em, human
+```
+
+The MVP validates these fields but does not create them.
+
+## 11. Configure the consuming repository
+
+From the disposable consuming repository:
+
+```powershell
+cd C:\path\to\disposable-repository
+
+python "C:\Users\User\Documents\intern\ITRI\agent-teams\scripts\producer_board.py" init `
+  --repo OWNER/REPO `
+  --project-owner OWNER `
+  --project-number 1
+```
+
+This creates:
+
+```text
+.board-superpowers/producer.json
+```
+
+The configuration contains board coordinates, not credentials.
+
+Validate GitHub access and Project shape:
+
+```powershell
+python "C:\Users\User\Documents\intern\ITRI\agent-teams\scripts\producer_board.py" doctor
+```
+
+Expected JSON includes:
+
+```json
+{
+  "ok": true,
+  "repo": "OWNER/REPO",
+  "project_number": 1,
+  "role_field": "Role",
+  "status_field": "Status"
+}
+```
+
+If `doctor` fails, fix the reported field, option, authentication, or access
+problem before asking Claude to mutate the Project.
+
+## 12. Read-only live dispatch test
+
+This command accesses GitHub but does not mutate the Project:
+
+```powershell
+python "C:\Users\User\Documents\intern\ITRI\agent-teams\scripts\producer_board.py" dispatch `
+  --format json
+```
+
+Expected:
+
+- only Cards from the configured repository;
+- only Cards whose Status is Ready;
+- only configured dispatch roles;
+- deterministic role/Issue ordering;
+- a prompt containing `[role:<role>] [board-card:#<number>]`.
+
+An empty JSON array is valid when there is no Ready work.
+
+Then test through Claude:
+
+```powershell
+claude --plugin-dir "C:\Users\User\Documents\intern\ITRI\agent-teams"
+```
+
+Inside Claude:
+
+```text
+[role:em] Show the dispatch queue.
+```
+
+Claude should use the same CLI and present the returned prompts without
+changing Role or Status.
+
+## 13. Live intake test
+
+Only continue with a disposable Project.
+
+Inside Claude:
+
+```text
+[role:analyst] Intake this disposable requirement:
+
+Add a short page explaining the repository's development setup.
+```
+
+Before mutation, Claude should describe the intended result:
+
+```text
+create Issue
+→ add to Project
+→ Status Backlog
+→ Role analyst
+→ handoff to architect
+→ structured Issue comment
+```
+
+After completion, verify manually:
+
+- the Issue exists;
+- it belongs to the configured Project;
+- Status is `Backlog`;
+- final Role is `architect`;
+- the analyst-to-architect handoff comment exists;
+- the Card was not marked Ready.
+
+## 14. Live architect handoff test
+
+Choose an architect-owned disposable Card:
+
+```text
+[role:architect] Author a small specification for issue #<number>.
+```
+
+Expected workflow:
+
+1. verify Role is architect;
+2. create `spec/issue-<number>-<slug>`;
+3. write only specification or documentation files;
+4. create one docs PR;
+5. hand the Card from architect to RD;
+6. post a handoff comment containing the PR URL.
+
+Verify:
+
+- the PR is docs-only;
+- Role remains architect until the PR exists;
+- final Role is RD;
+- the handoff comment contains the PR URL.
+
+Do not use an important repository for this first test.
+
+## 15. Troubleshooting
+
+### Skills do not appear
+
+Confirm:
+
+```powershell
+git -C "C:\Users\User\Documents\intern\ITRI\agent-teams" branch --show-current
+claude plugin validate "C:\Users\User\Documents\intern\ITRI\agent-teams"
+```
+
+Exit Claude completely, then restart with the quoted `--plugin-dir` path.
+
+Verify that neither `--safe-mode` nor `--disable-slash-commands` was used.
+
+### Plugin does not appear in `/plugin`
+
+This is expected for a session-only `--plugin-dir` load. Check `/help` for the
+four namespaced commands.
+
+Use persistent installation only if it must appear in the Installed tab.
+
+### Claude reports missing configuration
+
+Run `producer_board.py init` from the consuming repository. Configuration is
+repository-local.
+
+### `doctor` reports that `gh` is missing
+
+Install GitHub CLI and open a new terminal:
+
+```powershell
+winget install --id GitHub.cli
+```
+
+### `doctor` reports missing fields or options
+
+Create the required single-select Status and Role fields on the disposable
+Project. This MVP does not provision them automatically.
+
+### Persistent installation loads an old version
+
+Use direct development loading:
+
+```powershell
+claude --plugin-dir "C:\Users\User\Documents\intern\ITRI\agent-teams"
+```
+
+or remove and reinstall only
+`board-superpowers-producer@board-superpowers-producer-local`.
+
+## 16. Acceptance checklist
+
+### Safe plugin verification
+
+- [ ] source directory is on `mvp/producer-from-scratch`;
+- [ ] `claude plugin validate .` passes;
+- [ ] `/help` shows exactly four MVP skills;
+- [ ] analyst routes to `intaking-requirement`;
+- [ ] architect routes to `authoring-spec`;
+- [ ] EM routes to `dispatching-work`;
+- [ ] no-tool prompts cause no mutations.
+
+### Optional persistent installation
+
+- [ ] installed plugin version is `0.1.0`;
+- [ ] plugin is enabled;
+- [ ] `claude plugin list --json` contains no errors;
+- [ ] commands remain available without `--plugin-dir`.
+
+### Optional live board verification
+
+- [ ] `doctor` passes;
+- [ ] dispatch is read-only and deterministic;
+- [ ] intake creates a Backlog Card;
+- [ ] intake ends with architect ownership;
+- [ ] architect handoff requires a specification PR;
+- [ ] final architect handoff assigns RD;
+- [ ] structured handoff comments exist.
+
+For basic proof that the current agent-teams MVP works in Claude, only the
+Safe plugin verification section is required.
