@@ -44,7 +44,7 @@ class Config:
     status_field: str = "Status"
     backlog_status: str = "Backlog"
     ready_status: str = "Ready"
-    dispatch_roles: tuple[str, ...] = ("architect", "rd", "qa")
+    dispatch_roles: tuple[str, ...] = ("architect", "dev", "qa")
     wip_limit: int = 5
     handoff_cap: int = 6
     spec_completion: str = "merged"
@@ -134,7 +134,7 @@ class Config:
         backlog = _non_empty(raw, "backlog_status", "Backlog", problems)
         ready = _non_empty(raw, "ready_status", "Ready", problems)
 
-        roles_raw = raw.get("dispatch_roles", ("architect", "rd", "qa"))
+        roles_raw = raw.get("dispatch_roles", ("architect", "dev", "qa"))
         if isinstance(roles_raw, str) or not isinstance(roles_raw, (list, tuple)):
             problems.append("dispatch_roles must be a list of seat tokens")
             roles: tuple[str, ...] = ()

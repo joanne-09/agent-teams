@@ -42,7 +42,7 @@ Three rules:
 - **No mutation before bootstrap completes.** A session that cannot establish
   where it is has no business changing anything.
 - **Live board state beats the prompt.** If a kickoff says a Card is
-  `(Ready, rd)` and the board says otherwise, the board is right and the
+  `(Ready, dev)` and the board says otherwise, the board is right and the
   kickoff is stale. Say so and stop.
 - **Run it once.** If intent is obvious and you route straight to a downstream
   skill, that skill still needs the bootstrap to have happened. Do not run it
@@ -63,7 +63,7 @@ for at any point in a session:
 - **They open with nothing specific** — a greeting, or a vague opener. Orient
   them unprompted rather than asking what they want.
 
-Either way: bootstrap as `em`, run `agent-teams:briefing-board`, and give them a
+Either way: bootstrap as `lead`, run `agent-teams:briefing-board`, and give them a
 short readable summary:
 
 - what is in flight and whose turn each Card is on;
@@ -81,11 +81,11 @@ Match what the user wants to do, then bootstrap as that seat:
 
 | The user is asking to… | Seat | Skill |
 |---|---|---|
-| see the state of things, get oriented, decide what is next | `em` | `agent-teams:briefing-board` |
+| see the state of things, get oriented, decide what is next | `lead` | `agent-teams:briefing-board` |
 | bring in a new idea, need, or requirement | `analyst` | `agent-teams:intaking-requirement` |
 | work out *how* to build something; specify, or split it up | `architect` | `agent-teams:authoring-spec` |
-| understand or clear blocked work | `em` | `agent-teams:triaging-board` |
-| find out what is ready and hand it out | `em` | `agent-teams:dispatching-work` |
+| understand or clear blocked work | `lead` | `agent-teams:triaging-board` |
+| find out what is ready and hand it out | `lead` | `agent-teams:dispatching-work` |
 | look at what is waiting to be verified | `qa` | `agent-teams:inspecting-queue` |
 
 When a request is genuinely ambiguous, **do not interrogate the user about

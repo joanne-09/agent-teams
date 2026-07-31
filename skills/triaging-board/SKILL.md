@@ -1,16 +1,16 @@
 ---
 name: triaging-board
-description: Scan Blocked GitHub Project Cards, group them by the seat that owes a decision, and route each to a legal recovery destination. Use for [role:em], "what is blocked", "triage the board", "unblock", "recovery", or "this card has been stuck".
+description: Scan Blocked GitHub Project Cards, group them by the seat that owes a decision, and route each to a legal recovery destination. Use for [role:lead], "what is blocked", "triage the board", "unblock", "recovery", or "this card has been stuck".
 ---
 
 # Triaging the board
 
-Blocked work is the Engineering Manager's problem regardless of which seat
+Blocked work is the Tech Lead's problem regardless of which seat
 blocked it. This routine finds it, names who owes a decision, and routes it.
 
 ## Workflow
 
-1. Bootstrap as `em`.
+1. Bootstrap as `lead`.
 2. Read the blocked set:
 
 ```bash
@@ -31,14 +31,14 @@ gh issue view <number> --repo <configured-repo> --comments
 | A technical question or a specification gap | `architect` |
 | The requirement itself is unclear or untestable | `analyst`, via `architect` |
 | A business or authority decision | `human` |
-| Priority, ownership, or a handoff-cap breach | stays with `em` |
+| Priority, ownership, or a handoff-cap breach | stays with `lead` |
 | The blocker is already resolved | unblock and return it to its prior Status |
 
 5. Announce each intended change, then route it:
 
 ```bash
 python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" handoff <number> \
-  --from-role em --to-role <seat> \
+  --from-role lead --to-role <seat> \
   --note "<what is blocked>" \
   --needs "<the specific decision you need>"
 ```
@@ -47,7 +47,7 @@ Unblocking is a separate operation, because Status and Role are independent:
 
 ```bash
 python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" transition <number> \
-  --to "In Progress" --acting-role em
+  --to "In Progress" --acting-role lead
 ```
 
 6. Report what moved and what is still stuck, with the reason.
@@ -70,5 +70,5 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" transition <number> \
 
 - Triage does not implement, specify, or verify anything.
 - Triage does not merge, and does not promote work to Ready — readiness is the
-  human's gate, and `promote_to_ready` refuses `em` like every other agent
+  human's gate, and `promote_to_ready` refuses `lead` like every other agent
   seat. Route a Card that looks ready to `human`, do not open the gate for it.

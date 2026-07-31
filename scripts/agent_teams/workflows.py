@@ -141,7 +141,7 @@ class Producer:
                 "focus": "independent verification queue",
                 "verification_queue": pick(status=Status.IN_REVIEW, role=Role.QA),
             }
-        if seat is Role.EM:
+        if seat is Role.LEAD:
             return {
                 "focus": "whole-team flow, priority, and recovery",
                 "lanes": self.lanes(cards),
@@ -161,7 +161,7 @@ class Producer:
         }
 
     def lanes(self, cards: Sequence[Card] | None = None) -> dict[str, Any]:
-        """Cards grouped by Role lane, then Status -- the EM's primary view."""
+        """Cards grouped by Role lane, then Status -- the LEAD's primary view."""
         cards = self.board.cards() if cards is None else cards
         lanes: dict[str, Any] = {}
         for role in Role:
@@ -185,7 +185,7 @@ class Producer:
         return lanes
 
     def brief(self, with_handoffs: bool = False) -> dict[str, Any]:
-        """The Engineering Manager's whole-team briefing.
+        """The Tech Lead's whole-team briefing.
 
         Handoff counts cost one API call per Card, so they are opt-in. The
         default briefing is a single board read; ``with_handoffs`` trades
@@ -512,7 +512,7 @@ class Producer:
         Status, and may it place work in that seat's lane. Checking only the
         first would reopen the hole ARCHITECTURE.md Appendix A.2 decision 4 closed for
         ``transition_card``: an analyst refused ``promote_to_ready`` could still
-        reach Ready by creating a Card there, and refused the `analyst -> rd`
+        reach Ready by creating a Card there, and refused the `analyst -> dev`
         edge could still deposit one straight into the development lane.
         """
         policy.check_action("create_requirement_card", acting_role)
@@ -635,7 +635,7 @@ class Producer:
             handoff = self.board.handoff_card(
                 number,
                 acting_role,
-                Role.RD,
+                Role.DEV,
                 reason=reason or "Specification is durable; implementation is Ready.",
                 needs="Implement against the documented acceptance criteria.",
                 artifacts=gate["reference"],
@@ -651,17 +651,17 @@ class Producer:
                     f"Issue #{number} is Ready but still owned by "
                     f"`{acting_role}`. Nothing will pick it up.",
                     f"  producer_board.py handoff {number} --from-role "
-                    f"{acting_role} --to-role rd --note '<why>'",
+                    f"{acting_role} --to-role dev --note '<why>'",
                 ],
             )
-        log.record("role_set", role=Role.RD.value)
+        log.record("role_set", role=Role.DEV.value)
 
         return {
             "ok": True,
             "issue": number,
             "url": card.url,
             "status": self.config.status_name(Status.READY),
-            "role": Role.RD.value,
+            "role": Role.DEV.value,
             "spec": gate["reference"],
             "spec_state": gate["state"],
             "completed": log.completed,
@@ -757,7 +757,7 @@ class Producer:
         parent Card gets a summary comment linking what was created, which is
         the only relationship the board models.
 
-        Children are created at ``(Backlog, human)``, not ``(Ready, rd)``. The
+        Children are created at ``(Backlog, human)``, not ``(Ready, dev)``. The
         architect decides what the slices *are*; the human decides whether each
         one is ready to build. Creating them past that gate would let
         decomposition do what `promote` is refused.
@@ -854,10 +854,10 @@ class Producer:
 _ROUTINES: dict[Role, list[str]] = {
     Role.ANALYST: ["intake"],
     Role.ARCHITECT: ["decompose", "create-card", "handoff"],
-    Role.EM: ["brief", "triage", "dispatch", "handoff"],
+    Role.LEAD: ["brief", "triage", "dispatch", "handoff"],
     Role.QA: ["queue"],
     Role.HUMAN: ["brief", "list", "promote", "handoff"],
-    Role.RD: [],
+    Role.DEV: [],
 }
 
 

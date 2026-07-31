@@ -109,7 +109,7 @@ def _build_parser() -> argparse.ArgumentParser:
     listing.add_argument("--role", choices=ROLES)
     listing.add_argument("--status")
 
-    brief = sub.add_parser("brief", help="Engineering Manager whole-team briefing")
+    brief = sub.add_parser("brief", help="Tech Lead whole-team briefing")
     brief.add_argument(
         "--with-handoffs",
         action="store_true",

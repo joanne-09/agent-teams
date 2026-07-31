@@ -1,6 +1,6 @@
 ---
 name: dispatching-work
-description: Read Ready GitHub Project Cards and render deterministic kickoff prompts by Role for an EM. Use for [role:em], "dispatch work", "assign the queue", "who should work next", or "start the team".
+description: Read Ready GitHub Project Cards and render deterministic kickoff prompts by Role for an Lead. Use for [role:lead], "dispatch work", "assign the queue", "who should work next", or "start the team".
 ---
 
 # Dispatching work
@@ -10,7 +10,7 @@ terminal, a scheduled job, or a bounded subagent consumes the rendered prompts.
 
 ## Workflow
 
-1. Bootstrap as `em`.
+1. Bootstrap as `lead`.
 2. Check capacity before selecting work:
 
 ```bash
@@ -33,7 +33,7 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" dispatch --format json
    - the Issue URL;
    - a kickoff prompt containing `[role:<seat>]` and `[board-card:#<number>]`.
 
-5. Explain a skipped Card only when it helps the Engineering Manager act — a
+5. Explain a skipped Card only when it helps the Tech Lead act — a
    Ready Card with no Role, for instance, is a defect worth naming.
 
 ## Rules
@@ -52,7 +52,7 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" dispatch --format json
 
 ## Ordering
 
-Deterministic, so two Engineering Managers reading the same board get the same
+Deterministic, so two Tech Leads reading the same board get the same
 queue: configured seat order first, then ascending Card number. Do not
 re-sort by your own judgement of importance — if the priority is wrong, fix it
 on the board where the next session can see it.

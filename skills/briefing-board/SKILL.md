@@ -1,6 +1,6 @@
 ---
 name: briefing-board
-description: Orient a session on the current project state. Reads the whole GitHub Project by Role lane and reports team flow, work in progress, blocked work, what is waiting on the human, and one recommended next action. This is the default opening move of any agent-teams session and the user may also ask for it directly at any time. Use for "brief me", "orientation", "where are we", "what is going on", "what should I do next", "morning briefing", "board overview", "status of the board", "what is the team doing", a session opening with no specific request, or [role:em].
+description: Orient a session on the current project state. Reads the whole GitHub Project by Role lane and reports team flow, work in progress, blocked work, what is waiting on the human, and one recommended next action. This is the default opening move of any agent-teams session and the user may also ask for it directly at any time. Use for "brief me", "orientation", "where are we", "what is going on", "what should I do next", "morning briefing", "board overview", "status of the board", "what is the team doing", a session opening with no specific request, or [role:lead].
 ---
 
 # Briefing the board
@@ -23,7 +23,7 @@ on the board can move without them; those two queues cannot.
 
 ## Workflow
 
-1. Bootstrap as `em` (see `agent-teams:using-agent-teams`).
+1. Bootstrap as `lead` (see `agent-teams:using-agent-teams`).
 2. Read the board:
 
 ```bash

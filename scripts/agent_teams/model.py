@@ -30,7 +30,7 @@ def _normalise(value: Any) -> str:
 class _ParsedEnum(str, Enum):
     """String enum whose ``str()`` is the wire value, not ``Class.MEMBER``."""
 
-    # Without this, f-strings render 'Role.RD' instead of 'rd' on Python 3.11+.
+    # Without this, f-strings render 'Role.DEV' instead of 'dev' on Python 3.11+.
     __str__ = str.__str__
 
     @classmethod
@@ -64,9 +64,9 @@ class Role(_ParsedEnum):
 
     ANALYST = "analyst"
     ARCHITECT = "architect"
-    RD = "rd"
+    DEV = "dev"
     QA = "qa"
-    EM = "em"
+    LEAD = "lead"
     HUMAN = "human"
 
     @property
@@ -77,9 +77,9 @@ class Role(_ParsedEnum):
 _FULL_NAMES = {
     Role.ANALYST: "System Analyst",
     Role.ARCHITECT: "System Architect",
-    Role.RD: "Research and Development engineer",
+    Role.DEV: "Developer",
     Role.QA: "Quality Assurance engineer",
-    Role.EM: "Engineering Manager / Team Lead",
+    Role.LEAD: "Tech Lead",
     Role.HUMAN: "Human stakeholder / merge authority",
 }
 

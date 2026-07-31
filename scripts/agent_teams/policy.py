@@ -98,32 +98,32 @@ def check_transition(current: Status | None, target: Status) -> None:
 # ---------------------------------------------------------------- authority
 
 #: The enforceable organisation chart (ARCHITECTURE.md 4.3). Read the rows and
-#: the reporting lines fall out: rd never reaches human because only Quality
-#: Assurance opens the merge gate; analyst never reaches rd because nothing is
+#: the reporting lines fall out: dev never reaches human because only Quality
+#: Assurance opens the merge gate; analyst never reaches dev because nothing is
 #: built without passing through the architect.
 HANDOFF_AUTHORITY: Mapping[Role, frozenset[Role]] = {
-    Role.ANALYST: frozenset({Role.ARCHITECT, Role.EM, Role.HUMAN}),
-    Role.ARCHITECT: frozenset({Role.ANALYST, Role.RD, Role.QA, Role.EM, Role.HUMAN}),
-    Role.RD: frozenset({Role.ARCHITECT, Role.QA, Role.EM}),
-    Role.QA: frozenset({Role.ARCHITECT, Role.RD, Role.EM, Role.HUMAN}),
-    Role.EM: frozenset({Role.ANALYST, Role.ARCHITECT, Role.RD, Role.QA, Role.HUMAN}),
-    Role.HUMAN: frozenset({Role.ANALYST, Role.ARCHITECT, Role.RD, Role.QA, Role.EM}),
+    Role.ANALYST: frozenset({Role.ARCHITECT, Role.LEAD, Role.HUMAN}),
+    Role.ARCHITECT: frozenset({Role.ANALYST, Role.DEV, Role.QA, Role.LEAD, Role.HUMAN}),
+    Role.DEV: frozenset({Role.ARCHITECT, Role.QA, Role.LEAD}),
+    Role.QA: frozenset({Role.ARCHITECT, Role.DEV, Role.LEAD, Role.HUMAN}),
+    Role.LEAD: frozenset({Role.ANALYST, Role.ARCHITECT, Role.DEV, Role.QA, Role.HUMAN}),
+    Role.HUMAN: frozenset({Role.ANALYST, Role.ARCHITECT, Role.DEV, Role.QA, Role.LEAD}),
 }
 
 #: Why a specific edge is missing, so a refusal can teach instead of just deny.
 REFUSAL_REASONS: Mapping[tuple[Role, Role], str] = {
-    (Role.ANALYST, Role.RD): (
+    (Role.ANALYST, Role.DEV): (
         "nothing reaches implementation without passing through the architect; "
         "hand to `architect` instead"
     ),
     (Role.ANALYST, Role.QA): (
         "there is no delivery to verify yet; hand to `architect` instead"
     ),
-    (Role.RD, Role.HUMAN): (
+    (Role.DEV, Role.HUMAN): (
         "only the Quality Assurance engineer opens the merge gate; "
         "hand to `qa` instead"
     ),
-    (Role.RD, Role.ANALYST): (
+    (Role.DEV, Role.ANALYST): (
         "route requirement problems through the architect, which is this "
         "seat's technical lead"
     ),
@@ -135,7 +135,7 @@ REFUSAL_REASONS: Mapping[tuple[Role, Role], str] = {
 DEFAULT_HANDOFF_CAP = 6
 
 #: Where a Card goes when it has exceeded its handoff budget.
-CAP_BREACH_TARGET: tuple[Status, Role] = (Status.BLOCKED, Role.EM)
+CAP_BREACH_TARGET: tuple[Status, Role] = (Status.BLOCKED, Role.LEAD)
 
 
 def handoff_is_legal(from_role: Role, to_role: Role) -> bool:
@@ -208,85 +208,85 @@ ACTION_POLICY: Mapping[str, Mapping[Role, object]] = {
     "create_requirement_card": {
         Role.ANALYST: _A,
         Role.ARCHITECT: (_A, "when decomposing a durable specification"),
-        Role.RD: _N,
+        Role.DEV: _N,
         Role.QA: _N,
-        Role.EM: _A,
+        Role.LEAD: _A,
         Role.HUMAN: _A,
     },
     "split_implementation_work": {
         Role.ANALYST: _N,
         Role.ARCHITECT: _A,
-        Role.RD: _N,
+        Role.DEV: _N,
         Role.QA: _N,
-        Role.EM: (_R, "requires a written justification"),
+        Role.LEAD: (_R, "requires a written justification"),
         Role.HUMAN: _A,
     },
     # Readiness is a human lifecycle gate (ARCHITECTURE.md Appendix A.2 decision 6).
-    # Every artificial intelligence seat is refused, including `em`: a
+    # Every artificial intelligence seat is refused, including `lead`: a
     # review-class pass would have been decorative, because REVIEW is
     # permitted. An agent seat prepares the Card and hands it to `human`.
     "promote_to_ready": {
         Role.ANALYST: _N,
         Role.ARCHITECT: _N,
-        Role.RD: _N,
+        Role.DEV: _N,
         Role.QA: _N,
-        Role.EM: _N,
+        Role.LEAD: _N,
         Role.HUMAN: _A,
     },
     "claim_card": {
         Role.ANALYST: _N,
         Role.ARCHITECT: (_A, "documentation Cards only"),
-        Role.RD: (_A, "own bound Card only"),
+        Role.DEV: (_A, "own bound Card only"),
         Role.QA: (_A, "governed verification or test Card only"),
-        Role.EM: _N,
+        Role.LEAD: _N,
         Role.HUMAN: _A,
     },
     "write_verdict": {
         Role.ANALYST: _N,
         Role.ARCHITECT: _N,
-        Role.RD: _N,
+        Role.DEV: _N,
         Role.QA: (_A, "own bound Card only"),
-        Role.EM: _N,
+        Role.LEAD: _N,
         Role.HUMAN: _A,
     },
     "merge_pull_request": {
         Role.ANALYST: _N,
         Role.ARCHITECT: _N,
-        Role.RD: _N,
+        Role.DEV: _N,
         Role.QA: _N,
-        Role.EM: _N,
+        Role.LEAD: _N,
         Role.HUMAN: _A,
     },
     "transition_card": {
         Role.ANALYST: _A,
         Role.ARCHITECT: _A,
-        Role.RD: (_A, "own bound Card only"),
+        Role.DEV: (_A, "own bound Card only"),
         Role.QA: (_A, "own bound Card only"),
-        Role.EM: _A,
+        Role.LEAD: _A,
         Role.HUMAN: _A,
     },
     "handoff_card": {
         Role.ANALYST: _A,
         Role.ARCHITECT: _A,
-        Role.RD: _A,
+        Role.DEV: _A,
         Role.QA: _A,
-        Role.EM: _A,
+        Role.LEAD: _A,
         Role.HUMAN: _A,
     },
     "dispatch_session": {
         Role.ANALYST: _N,
         Role.ARCHITECT: _N,
-        Role.RD: _N,
+        Role.DEV: _N,
         Role.QA: _N,
-        Role.EM: _A,
+        Role.LEAD: _A,
         Role.HUMAN: _A,
     },
     "reconcile_done": {
         Role.ANALYST: _N,
         Role.ARCHITECT: _N,
-        Role.RD: _N,
+        Role.DEV: _N,
         Role.QA: _N,
-        Role.EM: (_R, "reconciliation only, after a confirmed human merge"),
+        Role.LEAD: (_R, "reconciliation only, after a confirmed human merge"),
         Role.HUMAN: _A,
     },
 }

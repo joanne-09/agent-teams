@@ -45,7 +45,7 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" intake \
 
 - **Initial Status is `Backlog`, never `Ready`.** Readiness is the architect's
   decision, and the action policy refuses it from this seat.
-- **The Card ends owned by `architect`.** The analyst cannot hand to `rd`
+- **The Card ends owned by `architect`.** The analyst cannot hand to `dev`
   directly; nothing reaches implementation without passing through technical
   shaping.
 - **Do not decompose during intake.** One requirement, one Card. Decomposition

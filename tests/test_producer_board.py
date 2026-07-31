@@ -44,7 +44,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_rejects_duplicate_dispatch_roles(self):
         with self.assertRaisesRegex(ConfigError, "duplicates"):
-            config(dispatch_roles=["rd", "rd"])
+            config(dispatch_roles=["dev", "dev"])
 
     def test_rejects_malformed_repo(self):
         with self.assertRaisesRegex(ConfigError, "OWNER/REPO"):
@@ -81,7 +81,7 @@ class BoardReadTests(unittest.TestCase):
         numbers = [card.number for card in cards]
         self.assertEqual(numbers, [12, 8, 9, 10, 20, 21, 22, 23])
         self.assertNotIn(99, numbers)  # belongs to acme/other
-        self.assertIs(cards[0].role, Role.RD)
+        self.assertIs(cards[0].role, Role.DEV)
         self.assertIs(cards[0].status, Status.READY)
 
     def test_missing_role_reads_as_unset_rather_than_a_guess(self):
@@ -99,7 +99,7 @@ class BoardReadTests(unittest.TestCase):
                 "title": "Implement parser",
                 "url": f"https://github.com/{REPO}/issues/12",
                 "status": "Ready",
-                "role": "rd",
+                "role": "dev",
             },
         )
 
@@ -139,10 +139,10 @@ class HandoffTests(unittest.TestCase):
     def test_rejects_unauthorised_handoff(self):
         # SUPERSEDED: the original suite asserted architect -> analyst was
         # refused. Both ARCHITECTURE.md 4.3 and the adaptation dossier 5.2
-        # grant that edge, so the refusal was the bug. rd -> human is the
+        # grant that edge, so the refusal was the bug. dev -> human is the
         # genuinely illegal edge and is asserted instead.
         with self.assertRaises(policy.IllegalHandoff):
-            self.board.handoff_card(12, Role.RD, Role.HUMAN, "ready to merge")
+            self.board.handoff_card(12, Role.DEV, Role.HUMAN, "ready to merge")
 
     def test_architect_may_return_an_under_specified_card(self):
         result = self.board.handoff_card(
@@ -152,26 +152,26 @@ class HandoffTests(unittest.TestCase):
 
     def test_handoff_updates_role_and_comments(self):
         # SUPERSEDED: the original asserted a Unicode arrow in
-        # "`architect` -> `rd`". The canonical comment shape in
+        # "`architect` -> `dev`". The canonical comment shape in
         # ARCHITECTURE.md 9.4 uses ASCII "->" so the comment stays parseable.
-        result = self.board.handoff_card(8, Role.ARCHITECT, Role.RD, "Spec merged.")
-        self.assertEqual(result["role"], "rd")
+        result = self.board.handoff_card(8, Role.ARCHITECT, Role.DEV, "Spec merged.")
+        self.assertEqual(result["role"], "dev")
         edit = self.gh.calls_matching("project", "item-edit")[0]
-        self.assertIn("ROLE_RD", edit)
+        self.assertIn("ROLE_DEV", edit)
         comment = self.gh.calls_matching("issue", "comment")[0][-1]
         self.assertIn("<!-- agent-teams:handoff -->", comment)
-        self.assertIn("**Handoff**: `architect` -> `rd`", comment)
+        self.assertIn("**Handoff**: `architect` -> `dev`", comment)
 
     def test_refuses_when_the_board_disagrees_about_ownership(self):
         with self.assertRaisesRegex(producer_board.BoardError, "owned by"):
-            self.board.handoff_card(8, Role.RD, Role.QA, "not my card")
+            self.board.handoff_card(8, Role.DEV, Role.QA, "not my card")
 
     def test_counts_existing_handoffs_against_the_cap(self):
-        marker = "<!-- agent-teams:handoff -->\n**Handoff**: `qa` -> `rd`"
+        marker = "<!-- agent-teams:handoff -->\n**Handoff**: `qa` -> `dev`"
         gh = FakeGh(comments=[marker] * 6)
         board = producer_board.Board(config(), gh)
         with self.assertRaises(policy.HandoffCapExceeded):
-            board.handoff_card(8, Role.ARCHITECT, Role.RD, "again")
+            board.handoff_card(8, Role.ARCHITECT, Role.DEV, "again")
 
     def test_unrelated_comments_do_not_count_toward_the_cap(self):
         gh = FakeGh(comments=["just a normal review note"] * 20)
@@ -221,7 +221,7 @@ class DoctorTests(unittest.TestCase):
         thin = {
             "fields": [
                 {"id": "ROLE_FIELD", "name": "Role",
-                 "options": [{"id": "ROLE_RD", "name": "rd"}]},
+                 "options": [{"id": "ROLE_DEV", "name": "dev"}]},
                 {"id": "STATUS_FIELD", "name": "Status",
                  "options": [{"id": "S_B", "name": "Backlog"}]},
             ]
@@ -294,7 +294,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("[board-card:#12]", queue[1]["prompt"])
 
     def test_dispatch_by_role(self):
-        code, out, _ = self._run("dispatch", "--role", "rd", "--format", "json")
+        code, out, _ = self._run("dispatch", "--role", "dev", "--format", "json")
         self.assertEqual(code, 0)
         self.assertEqual([entry["number"] for entry in json.loads(out)], [12])
 
@@ -309,7 +309,7 @@ class CliTests(unittest.TestCase):
 
     def test_refusal_exits_non_zero_with_a_json_error(self):
         code, _, err = self._run(
-            "handoff", "12", "--from-role", "rd", "--to-role", "human",
+            "handoff", "12", "--from-role", "dev", "--to-role", "human",
             "--note", "please merge",
         )
         self.assertEqual(code, 1)
@@ -319,7 +319,7 @@ class CliTests(unittest.TestCase):
 
     def test_transition_requires_an_acting_seat(self):
         code, _, err = self._run(
-            "transition", "20", "--to", "Ready", "--acting-role", "rd"
+            "transition", "20", "--to", "Ready", "--acting-role", "dev"
         )
         self.assertEqual(code, 1)
         self.assertEqual(json.loads(err)["refusal"], "ActionForbidden")
@@ -331,7 +331,7 @@ class CliTests(unittest.TestCase):
         gh = FakeGh()
         code, _, err = self._run(
             "create-card", "--title", "t", "--body", "b",
-            "--status", "Ready", "--role", "rd", "--acting-role", "analyst",
+            "--status", "Ready", "--role", "dev", "--acting-role", "analyst",
             gh=gh,
         )
         self.assertEqual(code, 1)
@@ -353,10 +353,10 @@ class CliTests(unittest.TestCase):
 
     def test_bootstrap_is_read_only(self):
         gh = FakeGh()
-        code, out, _ = self._run("bootstrap", "--role", "em", gh=gh)
+        code, out, _ = self._run("bootstrap", "--role", "lead", gh=gh)
         self.assertEqual(code, 0)
         payload = json.loads(out)
-        self.assertEqual(payload["seat"], "em")
+        self.assertEqual(payload["seat"], "lead")
         self.assertEqual(payload["mutations_performed"], [])
         self.assertEqual(gh.calls_matching("project", "item-edit"), [])
         self.assertEqual(gh.calls_matching("issue", "comment"), [])

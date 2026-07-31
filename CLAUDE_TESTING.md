@@ -127,10 +127,10 @@ Expected routes:
 ```text
 [role:analyst]   → intaking-requirement
 [role:architect] → authoring-spec
-[role:em]        → dispatching-work
+[role:lead]        → dispatching-work
 ```
 
-The router should also explain that RD and QA are dispatch targets, not
+The router should also explain that Dev and QA are dispatch targets, not
 implemented workflows in this MVP.
 
 ## 5. Test analyst routing
@@ -162,12 +162,12 @@ Expected:
 - Claude selects `authoring-spec`;
 - it describes a docs-only specification PR;
 - it refuses to implement production code in this routine;
-- it hands the Card to RD only after a specification PR exists.
+- it hands the Card to Dev only after a specification PR exists.
 
-## 7. Test EM routing
+## 7. Test Lead routing
 
 ```text
-[role:em] Explain how you would dispatch the Ready queue.
+[role:lead] Explain how you would dispatch the Ready queue.
 Do not run tools or mutate the board.
 ```
 
@@ -288,7 +288,7 @@ Required fields:
 
 ```text
 Status: Backlog, Ready, In Progress, In Review, Done, Blocked
-Role: analyst, architect, rd, qa, em, human
+Role: analyst, architect, dev, qa, lead, human
 ```
 
 The MVP validates these fields but does not create them.
@@ -363,7 +363,7 @@ claude --plugin-dir "C:\Users\User\Documents\intern\ITRI\agent-teams"
 Inside Claude:
 
 ```text
-[role:em] Show the dispatch queue.
+[role:lead] Show the dispatch queue.
 ```
 
 Claude should use the same CLI and present the returned prompts without
@@ -415,14 +415,14 @@ Expected workflow:
 2. create `spec/issue-<number>-<slug>`;
 3. write only specification or documentation files;
 4. create one docs PR;
-5. hand the Card from architect to RD;
+5. hand the Card from architect to Dev;
 6. post a handoff comment containing the PR URL.
 
 Verify:
 
 - the PR is docs-only;
 - Role remains architect until the PR exists;
-- final Role is RD;
+- final Role is Dev;
 - the handoff comment contains the PR URL.
 
 Do not use an important repository for this first test.
@@ -487,7 +487,7 @@ or remove and reinstall only
 - [ ] `/help` shows exactly four MVP skills;
 - [ ] analyst routes to `intaking-requirement`;
 - [ ] architect routes to `authoring-spec`;
-- [ ] EM routes to `dispatching-work`;
+- [ ] Lead routes to `dispatching-work`;
 - [ ] no-tool prompts cause no mutations.
 
 ### Optional persistent installation
@@ -504,7 +504,7 @@ or remove and reinstall only
 - [ ] intake creates a Backlog Card;
 - [ ] intake ends with architect ownership;
 - [ ] architect handoff requires a specification PR;
-- [ ] final architect handoff assigns RD;
+- [ ] final architect handoff assigns Dev;
 - [ ] structured handoff comments exist.
 
 For basic proof that the current agent-teams MVP works in Claude, only the

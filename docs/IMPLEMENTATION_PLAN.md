@@ -12,13 +12,12 @@ The desired outcome is a small but complete Claude Code agent team in which:
 1. a System Analyst creates and shapes a requirement;
 2. a System Architect produces the durable specification and makes
    implementation work Ready;
-3. an Engineering Manager dispatches the next legal seat;
-4. a Research and Development engineer claims one Card, works through
+3. a Tech Lead dispatches the next legal seat;
+4. a Developer claims one Card, works through
    test-driven development, and opens one Pull Request;
 5. a separate Quality Assurance engineer session writes an evidence-backed
    verdict;
-6. the Quality Assurance engineer either returns the Card to the Research and
-   Development engineer or hands it to the human merge gate;
+6. the Quality Assurance engineer either returns the Card to the Developer or hands it to the human merge gate;
 7. the human verifies and merges;
 8. standing repository context plus live board state is sufficient for every
    next session to reconstruct its role-appropriate project view and resume.
@@ -33,7 +32,7 @@ The plan follows the design relationship defined in
 Producer and Consumer are per-session execution shapes, while the named team
 seats carry capability and authority. Milestones M1 through M3 complete the
 minimum viable Producer path from intake through readiness and dispatch.
-Milestone M4 introduces the one-Card Research and Development engineer
+Milestone M4 introduces the one-Card Developer
 Consumer. Milestone M5 introduces the independent Quality Assurance engineer
 queue inspection and one-Card verification. Every milestone communicates
 through durable GitHub Issues, GitHub Project Cards and fields, comments,
@@ -50,8 +49,8 @@ Functional Phase 1 is complete when one disposable Card can traverse:
 
 ```text
 (Backlog, architect)
-  -> (Ready, rd)
-  -> (In Progress, rd)
+  -> (Ready, dev)
+  -> (In Progress, dev)
   -> (In Review, qa)
   -> (In Review, human)
   -> Done after human merge
@@ -60,11 +59,10 @@ Functional Phase 1 is complete when one disposable Card can traverse:
 It must also prove the Quality Assurance rejection path:
 
 ```text
-(In Review, qa) -> (In Progress, rd)
+(In Review, qa) -> (In Progress, dev)
 ```
 
-and refuse an illegal direct handoff from the Research and Development
-engineer to the human.
+and refuse an illegal direct handoff from the Developer to the human.
 
 ### 2.2 Governed target
 
@@ -112,11 +110,11 @@ team-of-teams are not required for either completion level.
 | Producer context bootstrap | Done | `bootstrap --role <seat>` in `workflows.Producer.bootstrap`; owned by the entry skill; `BootstrapTests` proves per-seat views and read-only behaviour |
 | Analyst intake skill | Done | `skills/intaking-requirement/SKILL.md` |
 | Architect specification skill | Done | `skills/authoring-spec/SKILL.md`; covers the three architect jobs and the readiness gate. Live Git/Pull Request flow still unverified |
-| Engineering Manager dispatch skill | Done | `skills/dispatching-work/SKILL.md` |
-| Engineering Manager briefing skill | Done | `skills/briefing-board/SKILL.md` |
-| Engineering Manager triage skill | Done | `skills/triaging-board/SKILL.md` |
+| Tech Lead dispatch skill | Done | `skills/dispatching-work/SKILL.md` |
+| Tech Lead briefing skill | Done | `skills/briefing-board/SKILL.md` |
+| Tech Lead triage skill | Done | `skills/triaging-board/SKILL.md` |
 | Quality Assurance queue inspection skill | Done | `skills/inspecting-queue/SKILL.md`; Producer-shaped, issues no verdicts |
-| Research and Development engineer execution skill | Pending | Consumer-shaped; outside the Producer scope |
+| Developer execution skill | Pending | Consumer-shaped; outside the Producer scope |
 | Quality Assurance engineer verification skill | Pending | Consumer-shaped; outside the Producer scope |
 
 ### 4.3 Board adapter
@@ -149,7 +147,7 @@ team-of-teams are not required for either completion level.
 | Check | Status | Latest evidence |
 |---|---|---|
 | Python syntax | Done | Passed 2026-07-31 |
-| Unit suite | Done | 123/123 passed on 2026-07-31 (`python -m unittest discover -s tests -p "test_*.py"`) |
+| Unit suite | Done | 130/130 passed on 2026-07-31, after the seat rename (`python -m unittest discover -s tests -p "test_*.py"`) |
 | Policy edge coverage | Done | All 36 Status pairs and all 36 Role pairs asserted individually, not sampled (`test_policy.py`) |
 | Partial-failure coverage | Done | Every mutation boundary in intake, handoff, promote, and decompose (`test_partial_failures.py`) |
 | Claude plugin validation | Pending | Manifests bumped to 0.2.0; not re-validated since the seven-skill layout landed |
@@ -186,7 +184,7 @@ Producer-side items are done: Status transition policy, the human merge gate
 as a non-overridable floor, and work-in-progress plus handoff-loop safety.
 Remaining items are Consumer-shaped:
 
-- add Research and Development engineer claim/test-driven development/Pull Request workflow;
+- add Developer claim/test-driven development/Pull Request workflow;
 - add independent Quality Assurance engineer verdict workflow.
 
 ### P2: complete proposed governance
@@ -215,12 +213,14 @@ M2  Domain policy + Status operations                Done
  |
 M3  Architect -> Ready vertical slice                Done except live proof
  |
-M4  Research and Development engineer execution      Pending (Consumer)
+M4  Developer execution      Pending (Consumer)
  |
 M5  Quality Assurance verification + human lane      Queue inspection done;
  |                                                   verdicts pending (Consumer)
-M6  Engineering Manager operations, WIP, recovery    Done except stale-claim
+M6  Tech Lead operations, WIP, recovery    Done except stale-claim
  |                                                   detection (needs claims)
+M6.5 Blocker resolution (`resolving-issues`)         Pending (needs M4 claims)
+ |
 M7  Seat-aware governance and audit                  Policy done; audit pending
  |
 M8  Golden-path proof and release                    Pending (needs gh)
@@ -233,7 +233,7 @@ target.
 
 **The Producer surface is complete.** Every Producer-shaped routine in
 `ARCHITECTURE.md` section 6 — analyst intake, architect shaping and
-readiness, Engineering Manager briefing, triage and dispatch, and Quality
+readiness, Tech Lead briefing, triage and dispatch, and Quality
 Assurance queue inspection — is implemented and hermetically tested. What
 remains in M4, M5, and M8 is Consumer-shaped work plus the live-GitHub proof
 that no amount of local testing can substitute for.
@@ -270,7 +270,7 @@ Status: **Done when this documentation change lands**
   is the sole status ledger for implemented and remaining work.
 - Every claim about shipped behavior points to current code or current test
   evidence.
-- No Research and Development engineer, Quality Assurance engineer, audit, setup-stage, Codex, or live GitHub behavior is called
+- No Developer, Quality Assurance engineer, audit, setup-stage, Codex, or live GitHub behavior is called
   implemented.
 
 ## 8. M1 - Live GitHub contract proof and adapter hardening
@@ -366,7 +366,7 @@ Do not make production code more permissive until the real shapes are known.
       before every Producer routine; never treat the kickoff snapshot as
       authoritative.
 - [x] Build seat-specific views for System Analyst, System Architect,
-      Engineering Manager / Team Lead, and Quality Assurance queue work.
+      Tech Lead, and Quality Assurance queue work.
 - [x] Ensure a direct downstream-skill match runs the bootstrap exactly once
       rather than skipping it or running it twice.
 - [x] Keep bootstrap read-only and refuse mutation when configuration,
@@ -383,7 +383,7 @@ Do not make production code more permissive until the real shapes are known.
 - one disposable intake completes and its exact durable result is verified.
 - failures identify the last completed mutation and a safe fix-forward.
 - fixtures reflect observed GitHub CLI output.
-- fresh `analyst`, `architect`, and `em` Producer launches report which
+- fresh `analyst`, `architect`, and `lead` Producer launches report which
   standing sources and live board projection formed their startup context.
 
 ## 9. M2 - Domain policy and Status operations
@@ -395,7 +395,7 @@ Appendix A.2. Policy is pure and exhaustively tested: every Status pair and
 every Role pair is asserted individually.
 
 Purpose: create the deterministic contract required by the System Architect,
-Research and Development engineer, and Quality Assurance engineer instead of
+Developer, and Quality Assurance engineer instead of
 scattering lifecycle rules through skill prose.
 
 ### Decision gates
@@ -440,7 +440,7 @@ Recommended defaults:
 - [ ] Reconcile the current and proposed authority matrices.
 - [ ] Add a default handoff cap of six.
 - [ ] Count structured handoff comments for the Card.
-- [ ] On cap breach, refuse normal handoff and route recovery to Engineering Manager.
+- [ ] On cap breach, refuse normal handoff and route recovery to Tech Lead.
 - [ ] Keep Role mutation independent from Status transition.
 
 #### M2.4 Structured handoff comments
@@ -449,7 +449,7 @@ Adopt a parseable contract:
 
 ```markdown
 <!-- agent-teams:handoff -->
-**Handoff**: `rd` -> `qa`
+**Handoff**: `dev` -> `qa`
 **Reason**: Pull Request #57 is ready
 **Needs from you**: Verify UI behavior and data correctness
 **Artifacts**: Pull Request #57; branch `claim/42-revenue-chart`
@@ -484,7 +484,7 @@ dispatch. The exit criteria requiring a *live* intake-to-Ready run stay open
 until `gh` is available.
 
 Purpose: close the current golden-path break between specification completion
-and Engineering Manager dispatch.
+and Tech Lead dispatch.
 
 ### Work items
 
@@ -501,9 +501,9 @@ and Engineering Manager dispatch.
 For a genuinely single-Card implementation:
 
 - [ ] transition `Backlog -> Ready`;
-- [ ] handoff `architect -> rd`;
+- [ ] handoff `architect -> dev`;
 - [ ] include the specification artifact in the handoff;
-- [ ] ensure `dispatch --role rd` returns the Card.
+- [ ] ensure `dispatch --role dev` returns the Card.
 
 Role and Status remain separate mutations. If the second mutation fails, the
 result must identify the partial state and fix-forward.
@@ -515,7 +515,7 @@ For a larger specification:
 - [ ] expose a generic semantic `create-card` operation, distinct from
       analyst intake;
 - [ ] require outcome, acceptance criteria, dependencies, and spec pointer;
-- [ ] create flat implementation Cards in `(Ready, rd)`;
+- [ ] create flat implementation Cards in `(Ready, dev)`;
 - [ ] avoid fake parent/child protocol semantics;
 - [ ] leave a summary on the original intake Card.
 
@@ -532,16 +532,16 @@ owns creation and field assignment.
 
 ### Exit criteria
 
-- one live analyst intake becomes at least one live `(Ready, rd)` Card;
-- Engineering Manager dispatch returns its Research and Development engineer kickoff prompt;
-- no manual Project field edit is needed between architect and Engineering Manager;
+- one live analyst intake becomes at least one live `(Ready, dev)` Card;
+- Tech Lead dispatch returns its Developer kickoff prompt;
+- no manual Project field edit is needed between architect and Tech Lead;
 - a too-thin requirement can return to analyst if that authority is adopted.
 
-## 11. M4 - Research and Development engineer execution and exclusive claim
+## 11. M4 - Developer execution and exclusive claim
 
 Status: **Pending**
 
-Purpose: turn `rd` from a dispatch value into a real Consumer-shaped seat.
+Purpose: turn `dev` from a dispatch value into a real Consumer-shaped seat.
 
 ### Decision gate
 
@@ -555,7 +555,7 @@ cross-platform Python/Git rather than importing the earlier shell framework.
 
 #### M4.1 Claim operation
 
-- [ ] require `(Ready, rd)`;
+- [ ] require `(Ready, dev)`;
 - [ ] create a deterministic claim branch;
 - [ ] create an isolated worktree;
 - [ ] make remote branch acquisition the exclusivity signal;
@@ -572,11 +572,11 @@ cross-platform Python/Git rather than importing the earlier shell framework.
 - [ ] ensure sibling skills are invoked by namespace and procedurally when
       runtime nesting would be unsafe.
 
-#### M4.3 Add Research and Development engineer skill
+#### M4.3 Add Developer skill
 
 Create `skills/consuming-card/SKILL.md` with:
 
-- [ ] `[role:rd] [board-card:#N]` routing;
+- [ ] `[role:dev] [board-card:#N]` routing;
 - [ ] one Card, one worktree, one Pull Request;
 - [ ] test-driven development through `superpowers`;
 - [ ] verification before completion;
@@ -590,13 +590,13 @@ Create `skills/consuming-card/SKILL.md` with:
 - [ ] validate acceptance criteria are terminal or explicitly waived;
 - [ ] create/link one Pull Request;
 - [ ] transition `In Progress -> In Review`;
-- [ ] handoff `rd -> qa`;
+- [ ] handoff `dev -> qa`;
 - [ ] preserve Pull Request URL, branch, test evidence, and known limitations in the
       handoff comment.
 
 #### M4.5 Cleanup and resume
 
-- [ ] define behavior for interrupted Research and Development engineer sessions;
+- [ ] define behavior for interrupted Developer sessions;
 - [ ] define Blocked state without deleting work;
 - [ ] remove worktree/branch only after verified merge or explicit
       cancellation;
@@ -606,16 +606,16 @@ Create `skills/consuming-card/SKILL.md` with:
 
 - two simultaneous attempts to claim one Card produce one winner;
 - the winner can resume from durable state;
-- one Research and Development engineer Card is implemented with tests and a Pull Request;
+- one Developer Card is implemented with tests and a Pull Request;
 - resulting board state is `(In Review, qa)`;
-- Research and Development engineer -> human is deterministically refused.
+- Developer -> human is deterministically refused.
 
 ## 12. M5 - Quality Assurance engineer verification and the human lane
 
 Status: **Pending**
 
 Purpose: make the Quality Assurance engineer an independent seat rather than
-a self-review step inside the Research and Development engineer session.
+a self-review step inside the Developer session.
 
 ### Work items
 
@@ -660,8 +660,8 @@ Create `skills/verifying-delivery/SKILL.md` with:
 
 - [ ] write FAIL verdict with reproducible findings;
 - [ ] transition `In Review -> In Progress`;
-- [ ] handoff `qa -> rd`;
-- [ ] ensure Engineering Manager dispatch can return the same Card to Research and Development engineer;
+- [ ] handoff `qa -> dev`;
+- [ ] ensure Tech Lead dispatch can return the same Card to Developer;
 - [ ] retain the same Pull Request/branch when appropriate.
 
 #### M5.5 Post-merge reconciliation
@@ -674,11 +674,11 @@ Create `skills/verifying-delivery/SKILL.md` with:
 ### Exit criteria
 
 - Quality Assurance engineer pass creates `(In Review, human)` without merging;
-- Quality Assurance engineer fail creates `(In Progress, rd)` with actionable findings;
-- the entry router recognizes Quality Assurance engineer and Research and Development engineer;
+- Quality Assurance engineer fail creates `(In Progress, dev)` with actionable findings;
+- the entry router recognizes Quality Assurance engineer and Developer;
 - one live failure/fix/pass cycle completes.
 
-## 13. M6 - Engineering Manager operations, work-in-progress, and recovery
+## 13. M6 - Tech Lead operations, work-in-progress, and recovery
 
 Status: **Done except stale-claim detection**
 
@@ -720,19 +720,99 @@ correctness to autonomous spawning.
 
 - [ ] surface partial intake/handoff operations;
 - [ ] surface stale claims;
-- [ ] route Research and Development engineer blockers to architect and unresolved architect blockers to
-      Engineering Manager;
-- [ ] route handoff-cap breaches to Engineering Manager;
+- [ ] route Developer blockers to architect and unresolved architect blockers to
+      Tech Lead;
+- [ ] route handoff-cap breaches to Tech Lead;
 - [ ] document safe fix-forward commands.
 
 ### Exit criteria
 
-- Engineering Manager sees an accurate team view;
+- Tech Lead sees an accurate team view;
 - work-in-progress and handoff loops are visible;
 - dispatch never claims it started an agent;
 - recovery does not require inspecting raw Project node IDs.
 
 Functional Phase 1 is complete at the end of M6.
+
+## 13a. M6.5 - Blocker resolution and the escalation ladder
+
+Status: **Pending** — depends on M4, because half of what a resolver must
+observe (claims, worktrees, Pull Request state) does not exist until the
+Consumer seat does.
+
+Purpose: make [`ARCHITECTURE.md` §11.6-11.7](./ARCHITECTURE.md#116-failure-classes)
+executable. `triage` today *lists* Blocked Cards grouped by responsible seat;
+it does not classify a blocker, does not check whether a proposed recovery is
+actually applicable, and does not emit the commands. That gap is currently
+closed by a human reading an envelope and reconstructing the fix by hand.
+
+### Decision gate
+
+- [ ] Decide whether the resolver may **apply** a stale-block transition, or
+      may only propose it. Recommended: **propose only**, matching every other
+      recovery surface in this design — a resolver that mutates on inference
+      re-opens the authority hole decisions 4-6 closed.
+
+### Work items
+
+#### M6.5.1 Failure classification in code
+
+- [ ] Represent the four classes of §11.6 as a validated domain value.
+- [ ] Tag every existing structured refusal and partial envelope with its class.
+- [ ] Classify a Blocked Card's blocker as external-dependency,
+      decision-pending, or stale-block from its structured comments.
+- [ ] Refuse to classify when no blocker was named, rather than guessing —
+      an unnamed blocker is a data-quality defect, and `brief` already reports
+      those.
+
+#### M6.5.2 Deterministic precondition checks
+
+The point of the skill is that it *verifies* rather than *asserts*. Each
+recovery names preconditions; a script establishes which actually hold:
+
+- [ ] Does the referenced specification, Pull Request, or branch still exist?
+- [ ] Is the claim branch still present on the remote, and how old is it?
+- [ ] Does the Card's `(Status, Role)` still match what the blocker assumed?
+- [ ] Did the handoff comment the partial envelope expected ever land?
+- [ ] Report each check as pass/fail/unknown; **never report unknown as pass**.
+
+#### M6.5.3 `resolving-issues` skill
+
+Create `skills/resolving-issues/SKILL.md`:
+
+- [ ] Producer-shaped, `lead`-seated, read-only by default.
+- [ ] Input: one Blocked Card, or the Blocked queue.
+- [ ] Output: classification, the checks that ran with their results, and the
+      exact fix-forward commands — never a claim that it fixed anything.
+- [ ] Refuse to touch production code, merge, or promote.
+- [ ] Route a decision-pending blocker whose question is really a new
+      requirement to intake instead of proposing a transition.
+
+#### M6.5.4 Stale claim and worktree recovery
+
+- [ ] Detect claim branches with no progress; adopt an explicit age threshold
+      and record it in config rather than hard-coding it.
+- [ ] Propose release as one atomic unit (branch delete **plus** the Status
+      move), never as two independently approvable steps.
+- [ ] Never delete an unresolved worktree path (§11.5).
+
+#### M6.5.5 Ladder instrumentation
+
+- [ ] Record which rung a Card is on, derived from durable state rather than
+      from a counter no session can see.
+- [ ] Surface Cards that have sat on one rung longer than a configured age.
+- [ ] Document explicitly that the rung-1 "two attempts" bound remains skill
+      prose, not an enforced counter — do not imply otherwise in output.
+
+### Exit criteria
+
+- every Blocked Card in a disposable board is classified, or explicitly
+  reported as unclassifiable with the reason;
+- each proposed recovery names the checks that were run and their results;
+- no proposed command depends on a precondition that was reported `unknown`;
+- one partial-mutation envelope and one stale claim are both recovered by
+  following the emitted commands without hand-reconstruction;
+- the skill never reports a mutation it did not perform.
 
 ## 14. M7 - Seat-aware governance and audit
 
@@ -812,20 +892,20 @@ Show revenue by region for the last 30 days.
 ```
 
 - [ ] analyst intake -> `(Backlog, architect)`;
-- [ ] architect spec/decomposition -> `(Ready, rd)`;
-- [ ] Engineering Manager dispatch -> Research and Development engineer prompt;
-- [ ] Research and Development engineer test-driven development/Pull Request -> `(In Review, qa)`;
+- [ ] architect spec/decomposition -> `(Ready, dev)`;
+- [ ] Tech Lead dispatch -> Developer prompt;
+- [ ] Developer test-driven development/Pull Request -> `(In Review, qa)`;
 - [ ] Quality Assurance engineer evidence/pass -> `(In Review, human)`;
 - [ ] human verifies and merges -> Done;
 - [ ] each step starts from only its Role/Card prompt and durable artifacts.
 
 #### M8.3 Negative paths
 
-- [ ] Quality Assurance engineer rejects at least once and Research and Development engineer fixes the same Card;
-- [ ] illegal Research and Development engineer -> human handoff refuses;
+- [ ] Quality Assurance engineer rejects at least once and Developer fixes the same Card;
+- [ ] illegal Developer -> human handoff refuses;
 - [ ] one claim race produces a clean loser;
 - [ ] one partial comment failure produces a fix-forward;
-- [ ] one handoff-cap breach routes to Engineering Manager.
+- [ ] one handoff-cap breach routes to Tech Lead.
 
 #### M8.4 Release verification
 
@@ -845,6 +925,52 @@ Show revenue by region for the last 30 days.
 - the live trace is linked from the release notes;
 - known limitations are explicit.
 
+## 15a. Cross-cutting change - seat rename
+
+Status: **Applied in this repository on 2026-07-31; one manual step remains**
+
+Two seat tokens were renamed for external legibility:
+
+| Before | After | Full name before | Full name after |
+|---|---|---|---|
+| `rd` | `dev` | Research and Development engineer | Developer |
+| `em` | `lead` | Engineering Manager / Team Lead | Tech Lead |
+
+Applied:
+
+- [x] `scripts/agent_teams/model.py` — `Role.DEV` / `Role.LEAD` members, wire
+      values, and `_FULL_NAMES`.
+- [x] `scripts/agent_teams/policy.py` — handoff graph, refusal pairs,
+      `CAP_BREACH_TARGET`, and every `(action, seat)` row.
+- [x] `scripts/agent_teams/config.py` — `dispatch_roles` default is now
+      `("architect", "dev", "qa")`.
+- [x] `scripts/agent_teams/workflows.py`, `scripts/producer_board.py`.
+- [x] All seven skill bodies, `docs/`, `README.md`, `HANDOFF.md`,
+      `CLAUDE_TESTING.md`, and the plugin manifest description.
+- [x] Tests, including the derived fake-`gh` option identifiers
+      (`ROLE_RD` became `ROLE_DEV`) — those do not contain a word boundary at
+      the token, so they survived the mechanical pass and were caught by the
+      suite rather than by grep. **130/130 pass.**
+
+Remaining, and it is not something this repository can do for you:
+
+- [ ] **Rename the `Role` single-select options on every configured GitHub
+      Project** from `rd` to `dev` and `em` to `lead`.
+
+That step is a manual Project edit. Until it happens, `doctor` will fail on a
+live board — correctly, because the configured options no longer match the six
+this code governs. Two migration shapes, and the choice depends on how many
+Cards exist:
+
+1. **Rename the option in place** (GitHub keeps the option's node identifier,
+   so every Card holding it follows automatically). Preferred.
+2. **Add the new option, re-set each Card, delete the old one.** Only if
+   renaming in place is unavailable; this leaves a window where both tokens
+   exist, and `list` will read the stale one as *unset* rather than crashing.
+
+Run `doctor` immediately after either path; it reports every missing option in
+one pass, so a half-finished migration is visible in a single command.
+
 ## 16. Optional milestones
 
 These are deliberately outside the critical path.
@@ -861,7 +987,7 @@ Revisit only after M1 confirms the installed `gh` command shape.
 
 ### O2 - Additional carriers
 
-- one-deep Engineering Manager subagent for short Quality Assurance engineer/triage work;
+- one-deep Tech Lead subagent for short Quality Assurance engineer/triage work;
 - scheduled `claude -p` runs;
 - carrier output consumes the same dispatch artifact;
 - board state remains the correctness channel.
@@ -901,11 +1027,14 @@ This is a forecast, not a claim that the files exist.
 | `scripts/agent_teams/github.py` | `gh` invocation and normalization |
 | `scripts/agent_teams/board.py` | semantic board operations |
 | `scripts/agent_teams/workflows.py` | intake/promote/claim/verdict composition |
-| `skills/using-agent-teams/SKILL.md` | Research and Development engineer/Quality Assurance engineer routing |
+| `skills/using-agent-teams/SKILL.md` | Developer/Quality Assurance engineer routing |
 | `skills/authoring-spec/SKILL.md` | promotion/decomposition contract |
 | `skills/dispatching-work/SKILL.md` | Role lanes/work-in-progress/recovery |
-| `skills/consuming-card/SKILL.md` | new Research and Development engineer workflow |
+| `skills/consuming-card/SKILL.md` | new Developer workflow |
 | `skills/verifying-delivery/SKILL.md` | new Quality Assurance engineer workflow |
+| `skills/resolving-issues/SKILL.md` | new blocker-resolution workflow (M6.5) |
+| `scripts/agent_teams/recovery.py` | blocker classification and precondition checks (M6.5) |
+| `tests/test_recovery.py` | classification and precondition-check behaviour |
 | `tests/test_producer_board.py` | retained CLI regression tests |
 | `tests/fixtures/gh/` | sanitized live `gh` response fixtures |
 | `tests/test_policy.py` | state and handoff matrix |
@@ -939,11 +1068,14 @@ Required principles:
 ## 19. Dependency and sequencing rules
 
 1. M1 precedes new GitHub mutation code; real response shapes first.
-2. M2 policy precedes Research and Development engineer/Quality Assurance engineer mutations; legality before workflows.
-3. M3 closes architect -> Ready before Research and Development engineer is implemented.
-4. M4 claim precedes parallel Research and Development engineer execution.
-5. M5 Quality Assurance engineer remains a separate session from Research and Development engineer.
+2. M2 policy precedes Developer/Quality Assurance engineer mutations; legality before workflows.
+3. M3 closes architect -> Ready before Developer is implemented.
+4. M4 claim precedes parallel Developer execution.
+5. M5 Quality Assurance engineer remains a separate session from Developer.
 6. M6 keeps human launch as the default carrier.
+6a. M6.5 follows M4: a resolver cannot verify claim, worktree, or Pull Request
+    preconditions that do not exist yet, and one built against absent state
+    would be re-derived rather than extended.
 7. M7 governance is derived from implemented actions, not speculative rows.
 8. M8 is the only point at which the whole Phase 1 team may be called
    complete.

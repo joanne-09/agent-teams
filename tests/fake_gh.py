@@ -59,15 +59,15 @@ def _item(item_id, number, title, status=None, role=None, repo=REPO):
 
 ITEMS = {
     "items": [
-        _item("ITEM_12", 12, "Implement parser", "Ready", "rd"),
+        _item("ITEM_12", 12, "Implement parser", "Ready", "dev"),
         _item("ITEM_8", 8, "Specify parser", "Ready", "architect"),
-        _item("ITEM_9", 9, "Blocked work", "Blocked", "rd"),
+        _item("ITEM_9", 9, "Blocked work", "Blocked", "dev"),
         _item("ITEM_10", 10, "Missing Role", "Ready"),
-        _item("ITEM_OTHER", 99, "Wrong repository", "Ready", "rd", repo="acme/other"),
+        _item("ITEM_OTHER", 99, "Wrong repository", "Ready", "dev", repo="acme/other"),
         _item("ITEM_20", 20, "Shaped requirement", "Backlog", "architect"),
         _item("ITEM_21", 21, "Delivery awaiting verdict", "In Review", "qa"),
         _item("ITEM_22", 22, "Verified, awaiting merge", "In Review", "human"),
-        _item("ITEM_23", 23, "Active build", "In Progress", "rd"),
+        _item("ITEM_23", 23, "Active build", "In Progress", "dev"),
     ]
 }
 
@@ -188,7 +188,7 @@ class SaturatingGh(FakeGh):
             count = min(limit, self.total)
             return {
                 "items": [
-                    _item(f"ITEM_{n}", n, f"Card {n}", "Ready", "rd")
+                    _item(f"ITEM_{n}", n, f"Card {n}", "Ready", "dev")
                     for n in range(1, count + 1)
                 ]
             }

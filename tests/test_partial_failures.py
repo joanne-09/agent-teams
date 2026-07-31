@@ -109,12 +109,12 @@ class HandoffFailureTests(unittest.TestCase):
     def test_comment_failure_after_role_change_is_reported_as_partial(self):
         gh = FakeGh(fail_on={"issue comment": "comment rejected"})
         result, config = producer(gh)
-        outcome = result.handoff(8, Role.ARCHITECT, Role.RD, "Spec merged.")
+        outcome = result.handoff(8, Role.ARCHITECT, Role.DEV, "Spec merged.")
         self.assertFalse(outcome["ok"])
         self.assertTrue(outcome["partial"])
         self.assertEqual(outcome["completed"], ["role_set"])
         self.assertEqual(outcome["failed"], "handoff_comment")
-        self.assertEqual(outcome["role"], "rd")
+        self.assertEqual(outcome["role"], "dev")
         recovery = " ".join(outcome["recovery"])
         self.assertIn("do not change it back", recovery)
         self.assertIn(config.repo, recovery)
@@ -123,7 +123,7 @@ class HandoffFailureTests(unittest.TestCase):
     def test_no_rollback_is_ever_claimed(self):
         gh = FakeGh(fail_on={"issue comment": "comment rejected"})
         result, _ = producer(gh)
-        outcome = result.handoff(8, Role.ARCHITECT, Role.RD, "Spec merged.")
+        outcome = result.handoff(8, Role.ARCHITECT, Role.DEV, "Spec merged.")
         serialised = repr(outcome).casefold()
         for forbidden in ("rolled back", "rollback", "reverted", "undone"):
             self.assertNotIn(forbidden, serialised)

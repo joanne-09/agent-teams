@@ -71,7 +71,7 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" handoff <number> \
 ```
 
 The human then runs `promote <number> --spec <ref>`, which transitions the Card
-to `Ready` and hands it to `rd` in one routine. Your job is to make that
+to `Ready` and hands it to `dev` in one routine. Your job is to make that
 decision easy: state the scope, the acceptance criteria, and the risk, and put
 the specification link in `--artifacts`.
 
@@ -128,8 +128,7 @@ durable.
 
 ## Boundaries
 
-- **Do not write production code.** That is the Research and Development
-  engineer's seat, and the action policy refuses it.
+- **Do not write production code.** That is the Developer's seat, and the action policy refuses it.
 - **Do not mark work Ready without a specification reference.** There is
   nothing to implement against.
 - **Do not merge**, including the specification Pull Request. No seat here can.

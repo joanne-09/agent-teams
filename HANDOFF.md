@@ -1,6 +1,6 @@
 # HANDOFF: agent-teams
 
-> A Claude Code plugin that runs the **Producer** side of an artificial intelligence engineering board over a GitHub Project: session bootstrap, requirement intake, architect specification and readiness, EM briefing/triage/dispatch, and QA queue inspection.
+> A Claude Code plugin that runs the **Producer** side of an artificial intelligence engineering board over a GitHub Project: session bootstrap, requirement intake, architect specification and readiness, Lead briefing/triage/dispatch, and QA queue inspection.
 
 **Stack**: Claude Code plugin / Python 3.12 standard library / GitHub CLI / GitHub Projects v2 / Git / Slidev
 
@@ -10,7 +10,7 @@
 
 ## Project Goal & Scope
 
-This orphan branch builds agent-teams from an empty tree, deliberately not inheriting the earlier full framework. **The Producer half is now complete.** A Producer session shapes work — creates, refines, routes, prioritises, unblocks — and a Consumer session resolves exactly one Card. Consumer execution (RD implementation, QA verdicts) is the next milestone and is not built.
+This orphan branch builds agent-teams from an empty tree, deliberately not inheriting the earlier full framework. **The Producer half is now complete.** A Producer session shapes work — creates, refines, routes, prioritises, unblocks — and a Consumer session resolves exactly one Card. Consumer execution (Dev implementation, QA verdicts) is the next milestone and is not built.
 
 The durable coordination surface is one GitHub Project. Cards are GitHub Issues carrying two orthogonal single-select fields: `Status` (where the work is) and `Role` (whose turn it is).
 
@@ -26,7 +26,7 @@ The earlier full implementation is a **separate sibling repository**, `../agent-
 
 - **This repository is the plugin.** Consuming repositories only hold `.agent-teams/config.json`.
 - **Claude-only surface.** `.claude-plugin/plugin.json` names `agent-teams` v0.2.0; local marketplace is `agent-teams-local`. No Codex manifest on this branch.
-- **Seven Producer skills.** `using-agent-teams` runs the mandatory read-only bootstrap, then **infers the seat and routine from the user's plain-language intent** — a person never names a seat. `intaking-requirement` (analyst), `authoring-spec` (architect), `briefing-board` / `triaging-board` / `dispatching-work` (em), `inspecting-queue` (qa).
+- **Seven Producer skills.** `using-agent-teams` runs the mandatory read-only bootstrap, then **infers the seat and routine from the user's plain-language intent** — a person never names a seat. `intaking-requirement` (analyst), `authoring-spec` (architect), `briefing-board` / `triaging-board` / `dispatching-work` (lead), `inspecting-queue` (qa).
 - **Orientation is the default and is directly callable.** A session that opens with no specific request runs `briefing-board` unprompted; "brief me" / "where are we" is also a first-class request at any point. Read-only, so it is always safe to repeat.
 - **The router may never infer `human`** (ARCHITECTURE §10.2). Every other seat is safe to infer because choosing one grants nothing — policy re-checks regardless. `human` holds both gates, so a router able to adopt it could approve its own readiness decision. **This boundary is instruction-level, not code-enforced, and cannot be**: the adapter cannot distinguish a seat token a person supplied from one a session supplied.
 - **Six functional modules** under `scripts/agent_teams/`, with a strictly downward dependency direction (plus `__init__.py` and `errors.py`, so `ls` shows eight files):
@@ -49,7 +49,7 @@ The earlier full implementation is a **separate sibling repository**, `../agent-
 - **Authority is checked before the first GitHub call**, so a refusal costs nothing and leaves no partial state.
 - **Status and Role are orthogonal.** A handoff changes Role and writes context; it never silently changes Status. When both must move, that is two operations.
 - **Honest partial failure.** Multi-step mutations return `{ok:false, partial:true, completed:[...], failed:..., recovery:[...]}`. Nothing ever claims a rollback that did not run.
-- **Two human gates, both enforced.** `merge_pull_request` is `refuse` for every agent seat and is listed in `policy.HARD_FLOORS` as non-overridable. `promote_to_ready` is also `refuse` for every agent seat including `em` (ARCHITECTURE Appendix A.2 decision 6) — readiness is the human's gate. Because authority keys off the transition *destination*, closing `promote` also closed `transition --to Ready` and `create-card --status Ready`.
+- **Two human gates, both enforced.** `merge_pull_request` is `refuse` for every agent seat and is listed in `policy.HARD_FLOORS` as non-overridable. `promote_to_ready` is also `refuse` for every agent seat including `lead` (ARCHITECTURE Appendix A.2 decision 6) — readiness is the human's gate. Because authority keys off the transition *destination*, closing `promote` also closed `transition --to Ready` and `create-card --status Ready`.
 - **agent-teams calls no other plugin.** Nothing in `skills/` or `scripts/` references `superpowers` or `gstack`; the disciplines are referenced by name only, so correctness never depends on a sibling being installed.
 
 ---
@@ -63,7 +63,7 @@ The earlier full implementation is a **separate sibling repository**, `../agent-
 - **Never report a mutation as successful without `"ok": true` in the CLI JSON.** Expected failures return structured error JSON on stderr and exit 1.
 - Python standard library only. No dependency install, no virtualenv, no SQLite.
 - Tests use an injected fake `gh` (`tests/fake_gh.py`). The suite must never need network or a real Project.
-- Intake leaves Status `Backlog` and Role `architect`. It must not make the Card Ready — **no agent seat may**. The architect shapes and hands to `human`; the human runs `promote`, which transitions to `Ready` and hands to `rd`. `decompose` therefore creates children at `(Backlog, human)`.
+- Intake leaves Status `Backlog` and Role `architect`. It must not make the Card Ready — **no agent seat may**. The architect shapes and hands to `human`; the human runs `promote`, which transitions to `Ready` and hands to `dev`. `decompose` therefore creates children at `(Backlog, human)`.
 - Dispatch is read-only and deterministic: configured seat order, then Card number. Say "prompt rendered", never "session started".
 - When superseding a test, leave a comment saying what changed and why. Four original tests were superseded this way; the reasons are in `tests/test_producer_board.py`.
 
@@ -79,7 +79,7 @@ The earlier full implementation is a **separate sibling repository**, `../agent-
 
 **`gh` is still not installed on this machine.** After installing: `gh auth login`, then `gh auth refresh -s project`. Configure a consuming repository with `producer_board.py init`, then run `producer_board.py doctor` before any mutation. Credentials stay in the GitHub CLI store, never in repository files.
 
-Live board tests need a disposable repository and Project with all six `Status` options (Backlog, Ready, In Progress, Blocked, In Review, Done) and all six `Role` options (analyst, architect, rd, qa, em, human). `doctor` validates all twelve and reports every missing one in a single response.
+Live board tests need a disposable repository and Project with all six `Status` options (Backlog, Ready, In Progress, Blocked, In Review, Done) and all six `Role` options (analyst, architect, dev, qa, lead, human). `doctor` validates all twelve and reports every missing one in a single response.
 
 ---
 
@@ -107,14 +107,14 @@ Producer surface complete and hermetically tested. Live GitHub behaviour still u
 | Adapter hardening | Done | Pagination with truncation detection, six-Status `doctor`, partial-failure recovery |
 | Six-state transitions + handoff cap | Done | Authority keyed to transition destination |
 | Architect → Ready vertical slice | Done | `promote` and `decompose`, gated on a durable specification |
-| EM operations | Done | `brief`, `triage`, WIP, data-quality detection |
+| Lead operations | Done | `brief`, `triage`, WIP, data-quality detection |
 | QA queue inspection | Done | Producer-shaped; issues no verdicts |
 | Session context bootstrap | Done | Read-only, per-seat, owned by the entry skill |
 | Slide deck | Done | Parts 3–5 clarity pass; **uncommitted** |
 | Plugin manifest re-validation | Pending | Not re-run since the seven-skill layout landed |
 | Test from unrelated repository | Pending | Never performed |
 | Live disposable Project test | Pending | Blocked on `gh` |
-| RD / QA Consumer execution | Pending | Next milestone; see plan M4/M5 |
+| Dev / QA Consumer execution | Pending | Next milestone; see plan M4/M5 |
 
 ---
 
@@ -181,7 +181,7 @@ Slides verified by build (`npx slidev build`) plus a pixel scan of all 23 export
 
 ## Open Decisions
 
-- **First Consumer capability** — options: RD claim/worktree/PR, or QA verdict first; need: evidence from the first live Producer run.
+- **First Consumer capability** — options: Dev claim/worktree/PR, or QA verdict first; need: evidence from the first live Producer run.
 - **Pagination ceiling** — options: keep escalation, or switch to a documented hard ceiling; need: observed `gh project item-list --limit` behaviour on a real board.
 - **`handoff_count` fail-open** — options: keep, or fail closed and stall; need: a live case where an unreadable comment thread mattered.
 - **Persistent installation** — options: continue `--plugin-dir`, or install the local marketplace; need: user preference after unrelated-repository testing.
@@ -248,7 +248,7 @@ Only then start Consumer work (M4/M5) or audit (M7). Building a second seat on u
 - **`superpowers:systematic-debugging`** — when the first live `gh` call disagrees with a fixture. Expect that, and diagnose rather than loosening the adapter.
 - **`superpowers:using-git-worktrees`** then **`superpowers:finishing-a-development-branch`** — the established flow for feature work on this branch.
 - **`superpowers:executing-plans`** — `docs/IMPLEMENTATION_PLAN.md` is a real written plan; execute it rather than improvising a milestone.
-- **`superpowers:brainstorming`** — before designing the RD/QA Consumer seats, which are genuinely new design work rather than plan execution.
+- **`superpowers:brainstorming`** — before designing the Dev/QA Consumer seats, which are genuinely new design work rather than plan execution.
 
 ---
 
@@ -260,9 +260,9 @@ Only then start Consumer work (M4/M5) or audit (M7). Building a second seat on u
 
 Closed two authority holes and added the second human gate.
 
-`create_card` wrote a whole `(Status, Role)` routing state while asking only whether the seat could create a Card. An analyst could therefore create a Card already `Ready` — bypassing the `promote_to_ready` refusal — or already owned by `rd`, forging the `analyst -> rd` edge §6.4 explicitly forbids. At the CLI it exited `0` and printed `"ok": true`. It had no test coverage at all, which is why 123 green tests never saw it. `create_card` now asks all three questions; recorded as ARCHITECTURE §16.1 decision 5.
+`create_card` wrote a whole `(Status, Role)` routing state while asking only whether the seat could create a Card. An analyst could therefore create a Card already `Ready` — bypassing the `promote_to_ready` refusal — or already owned by `dev`, forging the `analyst -> dev` edge §6.4 explicitly forbids. At the CLI it exited `0` and printed `"ok": true`. It had no test coverage at all, which is why 123 green tests never saw it. `create_card` now asks all three questions; recorded as ARCHITECTURE §16.1 decision 5.
 
-Then, checking whether the board really had the two human gates the deck claimed: it did not. Only merge was a floor, and `promote`, `transition`, `create-card`, and `decompose` were all open to the architect. `promote_to_ready` is now `refuse` for every agent seat including `em` — a `review`-class entry would have been decorative, since `Decision.permitted` is true for `REVIEW`. The architect hands to `human`; `promote` is the human's routine and defaults to `--acting-role human`; `decompose` creates children at `(Backlog, human)`. Because authority keys off the destination, that one change closed `transition --to Ready` and `create-card --status Ready` too. Recorded as decision 6, which supersedes the readiness half of decision 2.
+Then, checking whether the board really had the two human gates the deck claimed: it did not. Only merge was a floor, and `promote`, `transition`, `create-card`, and `decompose` were all open to the architect. `promote_to_ready` is now `refuse` for every agent seat including `lead` — a `review`-class entry would have been decorative, since `Decision.permitted` is true for `REVIEW`. The architect hands to `human`; `promote` is the human's routine and defaults to `--acting-role human`; `decompose` creates children at `(Backlog, human)`. Because authority keys off the destination, that one change closed `transition --to Ready` and `create-card --status Ready` too. Recorded as decision 6, which supersedes the readiness half of decision 2.
 
 Corrected a standing overclaim: agent-teams composes **no** sibling skills. `grep` finds zero references to `superpowers` or `gstack` in `skills/` or `scripts/`. §4.10, §11.12, §2.3, and the §16 decision table now say the disciplines are referenced by name, not invoked.
 

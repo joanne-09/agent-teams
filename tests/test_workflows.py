@@ -89,12 +89,12 @@ class PromoteTests(unittest.TestCase):
         result = team.promote(20, SPEC_PR)
         self.assertTrue(result["ok"])
         self.assertEqual(result["status"], "Ready")
-        self.assertEqual(result["role"], "rd")
+        self.assertEqual(result["role"], "dev")
         self.assertEqual(result["completed"], ["status_set", "role_set"])
         # Two independent semantic operations, in the documented order.
         edits = gh.calls_matching("project", "item-edit")
         self.assertIn("STATUS_READY", edits[0])
-        self.assertIn("ROLE_RD", edits[1])
+        self.assertIn("ROLE_DEV", edits[1])
 
     def test_refuses_when_the_specification_is_not_durable(self):
         gh = FakeGh(items=AT_THE_GATE, pr_state={"state": "OPEN", "mergedAt": None})
@@ -104,7 +104,7 @@ class PromoteTests(unittest.TestCase):
         self.assertEqual(gh.calls_matching("project", "item-edit"), [])
 
     def test_no_agent_seat_can_promote_even_its_own_work(self):
-        for seat in (Role.ANALYST, Role.ARCHITECT, Role.RD, Role.QA, Role.EM):
+        for seat in (Role.ANALYST, Role.ARCHITECT, Role.DEV, Role.QA, Role.LEAD):
             with self.subTest(seat=seat):
                 gh = FakeGh(items=AT_THE_GATE)
                 team, _ = producer(gh)
@@ -128,7 +128,7 @@ class PromoteTests(unittest.TestCase):
         gh = FakeGh(items=AT_THE_GATE)
         team, _ = producer(gh)
         with self.assertRaises(policy.ActionForbidden):
-            team.create_card("t", "b", Status.READY, Role.RD, Role.ARCHITECT)
+            team.create_card("t", "b", Status.READY, Role.DEV, Role.ARCHITECT)
         with self.assertRaises(policy.ActionForbidden):
             team.transition(20, Status.READY, Role.ARCHITECT)
         self.assertEqual(gh.calls_matching("issue", "create"), [])
@@ -161,11 +161,11 @@ class CreateCardTests(unittest.TestCase):
         self.assertEqual(gh.calls_matching("issue", "create"), [])
 
     def test_the_analyst_cannot_create_a_card_in_the_development_lane(self):
-        # Section 6.4: the System Analyst cannot hand directly to `rd`.
-        # Creating the Card already owned by `rd` is that handoff, pre-baked.
+        # Section 6.4: the System Analyst cannot hand directly to `dev`.
+        # Creating the Card already owned by `dev` is that handoff, pre-baked.
         team, gh = producer()
         with self.assertRaises(policy.IllegalHandoff):
-            team.create_card("t", "b", Status.BACKLOG, Role.RD, Role.ANALYST)
+            team.create_card("t", "b", Status.BACKLOG, Role.DEV, Role.ANALYST)
         self.assertEqual(gh.calls_matching("issue", "create"), [])
 
     def test_the_architect_creates_implementation_cards_at_the_gate(self):
@@ -203,7 +203,7 @@ class DecomposeTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(len(result["created"]), 2)
         self.assertTrue(result["summary_comment_posted"])
-        # Superseded: children used to be created at (Ready, rd), which put
+        # Superseded: children used to be created at (Ready, dev), which put
         # them past the readiness gate the architect may not open. They now
         # wait at (Backlog, human) for a per-Card approval, which is what the
         # reference project's first gate always meant.
@@ -218,7 +218,7 @@ class DecomposeTests(unittest.TestCase):
     def test_only_the_architect_may_split_work(self):
         team, gh = producer()
         with self.assertRaises(policy.ActionForbidden):
-            team.decompose(20, [{"title": "t", "body": "b"}], SPEC_PR, Role.RD)
+            team.decompose(20, [{"title": "t", "body": "b"}], SPEC_PR, Role.DEV)
         self.assertEqual(gh.calls_matching("issue", "create"), [])
 
     def test_refuses_without_a_durable_specification(self):
@@ -237,7 +237,7 @@ class BriefTests(unittest.TestCase):
     def test_groups_by_role_lane(self):
         team, _ = producer()
         report = team.brief()
-        self.assertIn("rd", report["lanes"])
+        self.assertIn("dev", report["lanes"])
         self.assertIn("qa", report["lanes"])
         self.assertIn("(no Role)", report["lanes"])
 
@@ -281,7 +281,7 @@ class BriefTests(unittest.TestCase):
         items = {
             "items": [
                 {
-                    "id": f"ITEM_{n}", "status": "In Progress", "role": "rd",
+                    "id": f"ITEM_{n}", "status": "In Progress", "role": "dev",
                     "content": {"number": n, "repository": REPO,
                                 "title": f"Build {n}", "url": "u"},
                 }
@@ -299,7 +299,7 @@ class TriageTests(unittest.TestCase):
         team, _ = producer()
         report = team.triage()
         self.assertEqual(report["blocked_total"], 1)
-        self.assertEqual([c["number"] for c in report["by_responsible_seat"]["rd"]], [9])
+        self.assertEqual([c["number"] for c in report["by_responsible_seat"]["dev"]], [9])
 
     def test_flags_blocked_cards_with_no_owner_first(self):
         items = {
@@ -344,7 +344,7 @@ class BootstrapTests(unittest.TestCase):
             Role.ANALYST: "needs_clarification",
             Role.ARCHITECT: "awaiting_shaping",
             Role.QA: "verification_queue",
-            Role.EM: "lanes",
+            Role.LEAD: "lanes",
         }
         for seat, key in expected.items():
             self.assertIn(key, team.bootstrap(seat)["seat_view"], seat)
@@ -356,7 +356,7 @@ class BootstrapTests(unittest.TestCase):
 
     def test_reports_missing_standing_context_rather_than_guessing(self):
         team, _ = producer()
-        result = team.bootstrap(Role.EM, repo_root=Path("/nonexistent-root"))
+        result = team.bootstrap(Role.LEAD, repo_root=Path("/nonexistent-root"))
         self.assertEqual(
             result["context_pointers_missing"],
             [entry["path"] for entry in result["standing_context"]],
@@ -366,7 +366,7 @@ class BootstrapTests(unittest.TestCase):
         team, _ = producer()
         self.assertIn("intake", team.bootstrap(Role.ANALYST)["routines"])
         self.assertNotIn("intake", team.bootstrap(Role.QA)["routines"])
-        self.assertEqual(team.bootstrap(Role.RD)["routines"], [])
+        self.assertEqual(team.bootstrap(Role.DEV)["routines"], [])
 
 
 class DispatchTests(unittest.TestCase):

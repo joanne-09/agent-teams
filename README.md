@@ -32,9 +32,9 @@ installed.
 | `using-agent-teams` | any | Read-only session bootstrap, then route by seat |
 | `intaking-requirement` | analyst | Shape a requirement into one Backlog Card |
 | `authoring-spec` | architect | Specify, then promote to Ready or decompose |
-| `briefing-board` | em | Whole-team flow, work in progress, merge queue |
-| `triaging-board` | em | Blocked work, grouped by who owes a decision |
-| `dispatching-work` | em | Render deterministic kickoff prompts |
+| `briefing-board` | lead | Whole-team flow, work in progress, merge queue |
+| `triaging-board` | lead | Blocked work, grouped by who owes a decision |
+| `dispatching-work` | lead | Render deterministic kickoff prompts |
 | `inspecting-queue` | qa | Order the verification queue (no verdicts) |
 
 ## What is intentionally absent
@@ -57,7 +57,7 @@ Required options — all six of each, validated by `doctor`:
 
 ```text
 Status: Backlog, Ready, In Progress, Blocked, In Review, Done
-Role:   analyst, architect, rd, qa, em, human
+Role:   analyst, architect, dev, qa, lead, human
 ```
 
 ## Configure a consuming repository
@@ -85,7 +85,7 @@ first.
 | Key | Default | Meaning |
 |---|---|---|
 | `wip_limit` | 5 | Cards in `In Progress` + `In Review` before the briefing warns |
-| `handoff_cap` | 6 | Handoffs before a Card is routed to `(Blocked, em)` |
+| `handoff_cap` | 6 | Handoffs before a Card is routed to `(Blocked, lead)` |
 | `spec_completion` | `merged` | Whether Ready requires a merged or merely opened specification |
 
 `spec_completion=merged` means implementation becomes Ready only after the
@@ -101,7 +101,7 @@ claude --plugin-dir "C:\path\to\this-plugin"
 Inside Claude:
 
 ```text
-[role:em] morning briefing
+[role:lead] morning briefing
 [role:analyst] Intake this requirement: improve the setup documentation.
 [role:architect] Make issue #12 ready against docs/architecture/0007-parser.md
 [role:qa] show the verification queue

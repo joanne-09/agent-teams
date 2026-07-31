@@ -10,7 +10,7 @@ architecture instead.
 
 > **Scope honesty.** The Producer half is built: intake, specification,
 > decomposition, briefing, triage, dispatch, and queue inspection. The Consumer
-> half (`rd` implementation, `qa` verdicts) is **not built yet**. Where this
+> half (`dev` implementation, `qa` verdicts) is **not built yet**. Where this
 > guide describes a Consumer step, it says so.
 
 ---
@@ -37,7 +37,7 @@ you say:    What's going on? What should I look at?
 
 Four things follow, and they explain most of what you will see:
 
-1. **Seats are internal.** `analyst`, `architect`, `em`, `qa`, `rd` are how the
+1. **Seats are internal.** `analyst`, `architect`, `lead`, `qa`, `dev` are how the
    plugin organises authority, not a menu you pick from. You will see them in
    output — that is reporting, not a request for input.
 2. **Sessions do not talk to each other.** Everything one seat needs to tell the
@@ -51,7 +51,7 @@ Four things follow, and they explain most of what you will see:
    That is the system working.
 
 > **The `[role:...]` token.** You will see prompts like
-> `[role:rd] [board-card:#12] …` in dispatch output. That is a **machine
+> `[role:dev] [board-card:#12] …` in dispatch output. That is a **machine
 > channel** — a kickoff artifact a carrier pastes into a fresh session. It is
 > readable by accident, not an interface you are expected to type. If you do
 > write one, the plugin honours it as an explicit override.
@@ -77,7 +77,7 @@ single-select fields**:
 | Field | Options (exact) |
 |---|---|
 | `Status` | `Backlog`, `Ready`, `In Progress`, `Blocked`, `In Review`, `Done` |
-| `Role` | `analyst`, `architect`, `rd`, `qa`, `em`, `human` |
+| `Role` | `analyst`, `architect`, `dev`, `qa`, `lead`, `human` |
 
 The plugin **never creates fields for you**. It validates and explains; you
 create. This is deliberate — silently provisioning a governance surface is how
@@ -162,7 +162,7 @@ useless without — outcome, scope and non-goals, testable acceptance criteria,
 constraints, open questions and who decides them.
 
 It ends at `(Backlog, architect)` with a handoff comment. **It cannot make the
-Card Ready**, and it cannot hand to `rd`; both refuse. Shaping demand and
+Card Ready**, and it cannot hand to `dev`; both refuse. Shaping demand and
 approving work are different jobs.
 
 ### 3.3 Shape it technically
@@ -188,8 +188,8 @@ session decomposes against the merged document.
 
 ### 3.4 Open the readiness gate — this one is yours
 
-The architect **cannot** declare work Ready. Nor can `em`, `analyst`, `qa`, or
-`rd`. Every path — `promote`, `transition --to Ready`, `create-card --status
+The architect **cannot** declare work Ready. Nor can `lead`, `analyst`, `qa`, or
+`dev`. Every path — `promote`, `transition --to Ready`, `create-card --status
 Ready` — refuses for every agent seat.
 
 You approve it:
@@ -198,7 +198,7 @@ You approve it:
 python .../producer_board.py promote 12 --spec https://github.com/OWNER/REPO/pull/5
 ```
 
-That runs two operations: transition to `Ready`, then hand to `rd`. What you are
+That runs two operations: transition to `Ready`, then hand to `dev`. What you are
 asserting by running it is the INVEST check — this is one independently
 shippable slice, its acceptance criteria are testable, and it is the right size.
 
@@ -213,11 +213,11 @@ you:  what's ready to work on?
 you:  hand out the next piece of work
 ```
 
-The plugin runs `dispatching-work` as `em`. It is **read-only and deterministic**: configured seat
+The plugin runs `dispatching-work` as `lead`. It is **read-only and deterministic**: configured seat
 order, then Card number. It renders a kickoff prompt per Ready Card:
 
 ```text
-[role:rd] [board-card:#12] Work on "Export report table as CSV". Read the
+[role:dev] [board-card:#12] Work on "Export report table as CSV". Read the
 Card and its comments first, and do not change another Card.
 ```
 
@@ -232,7 +232,7 @@ you:  what's stuck?
 you:  why hasn't #14 moved?
 ```
 
-The plugin runs `triaging-board` as `em`: Blocked Cards grouped by the seat that owes a decision,
+The plugin runs `triaging-board` as `lead`: Blocked Cards grouped by the seat that owes a decision,
 with unowned Blocked Cards flagged first — a Blocked Card with no `Role` is
 waiting on nobody and will sit there forever.
 
@@ -322,9 +322,9 @@ In `.agent-teams/config.json`:
 | Key | Default | Effect |
 |---|---|---|
 | `wip_limit` | `5` | Reported by `brief`; nothing blocks on it yet |
-| `handoff_cap` | `6` | Past this, a Card routes to `(Blocked, em)` instead of ping-ponging |
+| `handoff_cap` | `6` | Past this, a Card routes to `(Blocked, lead)` instead of ping-ponging |
 | `spec_completion` | `merged` | Whether Ready needs a merged or merely open specification PR |
-| `dispatch_roles` | `architect, rd, qa` | Which lanes dispatch considers, in order |
+| `dispatch_roles` | `architect, dev, qa` | Which lanes dispatch considers, in order |
 | `status_overrides` | — | Map a canonical Status to your board's option name |
 
 ---
@@ -335,9 +335,10 @@ In `.agent-teams/config.json`:
 |---|---|
 | Everything refuses at startup | `doctor` — usually a missing `Role` option or the `project` scope |
 | A Card is invisible to dispatch | It has no `Role`, or its `Status` is not `Ready`. `brief` lists these under data quality |
-| A Card keeps bouncing between seats | The handoff cap will stop it at `(Blocked, em)`. The cap is a signal that the Card is under-specified, not a nuisance |
+| A Card keeps bouncing between seats | The handoff cap will stop it at `(Blocked, lead)`. The cap is a signal that the Card is under-specified, not a nuisance |
 | `promote` refuses and you *are* the human | The specification is not durable. Merge the spec PR, or change `spec_completion` |
 | A mutation half-landed | Read `completed` and `recovery` in the envelope; fix forward, do not undo |
+| A half-landed `intake` or `decompose` | Replay only the pieces `recovery` names. **Never re-run the whole command** — Issue creation is not idempotent, so a second run files a second Card for the same requirement |
 
 ---
 
