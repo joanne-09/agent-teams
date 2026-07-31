@@ -107,7 +107,7 @@ Backlog → Ready → In Progress → In Review → Done
 ```
 
 - Card = GitHub Issue: Goal · Acceptance criteria · Out of scope · Dependencies · spec link
-- <span class="accent">Gate 1</span> — human approves Backlog → Ready (INVEST, vertical slice, sized)
+- <span class="accent">Gate 1</span> — human approves Backlog → Ready
 - <span class="accent">Gate 2</span> — human reviews and merges the PR; agents only propose
 - Between the gates: fully autonomous
 
