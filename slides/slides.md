@@ -167,7 +167,7 @@ class: dense
 | CI / merge machinery | <span class="accent">OPS</span> — phase 2 |
 
 - Keep: board as truth · one card = one PR · git as lock · two human gates
-- Drop: multi-backend, BYO database, dual-platform — demo-grade by choice
+- Drop: multi-backend, dual-platform
 
 <!--
 Our deviation: make the five roles explicit named skills for demo legibility.
@@ -339,11 +339,11 @@ class: dense
 # Producer Mechanics
 
 <div class="plugin-flow">
-  <div class="plugin-node"><span class="node-label">1 · INPUT</span><strong>Requests</strong><code>[role:analyst] Intake …</code></div><div class="plugin-arrow">→</div>
-  <div class="plugin-node"><span class="node-label">2 · BOOTSTRAP</span><strong>Read-only orientation</strong><code>bootstrap --role</code></div><div class="plugin-arrow">→</div>
-  <div class="plugin-node"><span class="node-label">3 · ORCHESTRATION</span><strong>Workflow skill</strong><code>intake | promote | brief</code></div><div class="plugin-arrow">→</div>
-  <div class="plugin-node"><span class="node-label">4 · ENFORCEMENT</span><strong>Policy, then adapter</strong><code>policy.py → board.py</code></div><div class="plugin-arrow">→</div>
-  <div class="plugin-node"><span class="node-label">5 · DURABLE EFFECT</span><strong><code>gh</code> → GitHub</strong><code>Project + Issue + comment</code></div>
+  <div class="plugin-node"><span class="node-label">1 · INPUT</span><strong>Requests</strong><code>[role:analyst] …</code></div><div class="plugin-arrow">→</div>
+  <div class="plugin-node"><span class="node-label">2 · BOOTSTRAP</span><strong>Read-only orientation</strong><code>bootstrap</code></div><div class="plugin-arrow">→</div>
+  <div class="plugin-node"><span class="node-label">3 · ORCHESTRATION</span><strong>Workflow skill</strong><code>intake · promote</code></div><div class="plugin-arrow">→</div>
+  <div class="plugin-node"><span class="node-label">4 · ENFORCEMENT</span><strong>Policy, then adapter</strong><code>policy → board</code></div><div class="plugin-arrow">→</div>
+  <div class="plugin-node"><span class="node-label">5 · DURABLE EFFECT</span><strong><code>gh</code> → GitHub</strong><code>Issue + comment</code></div>
 </div>
 
 <!--
@@ -438,17 +438,14 @@ class: dense
   <div>
     <div class="stage">NEXT</div>
     <div class="roadmap-copy"><strong>The <code>rd</code> Consumer seat</strong><span>Remote claim as the lock, isolated worktree, test-first work, one governed Pull Request.</span></div>
-    <div class="roadmap-note">first Consumer shape</div>
   </div>
   <div>
     <div class="stage">THEN</div>
     <div class="roadmap-copy"><strong>The <code>qa</code> verdict</strong><span>Independent verification with evidence, and the rejection loop back to the same Card.</span></div>
-    <div class="roadmap-note">makes the fail path real</div>
   </div>
   <div>
     <div class="stage">LATER</div>
     <div class="roadmap-copy"><strong>Audit, then OPS</strong><span>A reconstructable seat-by-seat trace for one Card; CI and merge machinery in phase 2.</span></div>
-    <div class="roadmap-note">only once the path works</div>
   </div>
 </div>
 
@@ -478,23 +475,23 @@ class: dense
 
 # Our Seats
 
-| Seat | Token | Skill | Does |
-|---|---|---|---|
-| <span class="accent">analyst</span> | `[role:analyst]` | `intaking-requirement` | requirement → Backlog card → hand to architect |
-| <span class="accent">architect</span> | `[role:architect]` | `authoring-spec` | spec → **promote** to Ready, or **decompose** into cards |
-| <span class="accent">em</span> | `[role:em]` | `briefing-board` · `triaging-board` · `dispatching-work` | flow + WIP · blocked work · kickoff prompts |
-| <span class="accent">qa</span> | `[role:qa]` | `inspecting-queue` | order the verification queue — <span class="muted">verdicts are Consumer work</span> |
-| rd | `[role:rd]` | <span class="muted">not yet</span> | claim → TDD → code PR → hand to qa |
-| human | — | — | <span class="accent">merge gate</span> — the one thing agents never do |
+| Seat | Skill | Does |
+|---|---|---|
+| <span class="accent">analyst</span> | `intaking-requirement` | requirement → Backlog card → architect |
+| <span class="accent">architect</span> | `authoring-spec` | spec PR · send to gate · decompose |
+| <span class="accent">em</span> | `briefing-board` · `triaging-board` · `dispatching-work` | brief · triage · dispatch kickoffs |
+| <span class="accent">qa</span> | `inspecting-queue` | order the verification queue |
+| rd | <span class="muted">not yet</span> | claim → TDD → code PR → qa |
+| human | — | the two gates: <span class="accent">promote</span> + <span class="accent">merge</span> |
 
-- Routing is a leading token: skill descriptions name their triggers, the model matches
-- Authority lives in `policy.py` — <span class="accent">illegal handoffs and out-of-seat actions refuse before any GitHub call</span>
+- Routing: plain language or a `[role:…]` token — skill descriptions match the request
+- Authority: `policy.py` <span class="accent">refuses illegal actions before any GitHub call</span>
 
 <!--
 A seat = which skill the session loads, nothing more. Sessions are peers, not a call stack.
 Two layers: routing is soft (prompt matching), authority is hard (Python raises before mutating).
 Producer surface now complete across all four Producer seats; the rd Consumer slice is next.
-qa appears twice in the architecture: queue inspection is Producer-shaped, a verdict is Consumer-shaped.
+qa's verdict is Consumer-shaped and not built yet; inspecting-queue only orders the queue.
 -->
 
 ---
@@ -502,23 +499,59 @@ layout: ppt
 class: dense
 ---
 
-# One Card, End to End — Live Run
+# One Requirement, End to End — Live Run
 
-| # | Who | What we typed / did | Result |
+| # | Seat | We said / did | Durable result |
 |---|---|---|---|
-| 1 | em | `[role:em] dispatch work` | empty queue reported — <span class="accent">no invented work</span> |
-| 2 | analyst | `[role:analyst] New requirement: … Tetris …` | Issue #1 · Backlog · handed to architect |
-| 3 | architect | `[role:architect] author the spec for card #1` | PR #2, docs-only spec · handed to rd |
-| 4 | human | board UI: Status → <span class="accent">Ready</span> | the human lifecycle gate |
-| 5 | em | `[role:em] dispatch work` | renders `[role:rd] [board-card:#1] …` kickoff |
-| 6 | rd | paste the kickoff | <span class="muted">no rd skill — edge of the MVP</span> |
+| 1 | analyst | "we need a mini data dashboard …" | Issue #7 · `(Backlog, architect)` |
+| 2 | architect | "write the spec for card #7" | spec PR #8, docs-only — then <span class="accent">stop</span> |
+| 3 | human | merge PR #8 | spec durable on `main` |
+| 4 | architect | "split #7 into implementation cards" | cards #9 + #10 · `(Backlog, human)` |
+| 5 | human | `promote 9 --spec PR#8` (and 10) | <span class="accent">the readiness gate</span> → `(Ready, rd)` |
+| 6 | em | "what's ready to work on?" | two `[role:rd] [board-card:#…]` kickoffs |
+| 7 | rd | — | <span class="muted">not written yet — where the demo honestly ends</span> |
+
+- No token needed: the plugin routed every plain-language request to the right seat
+- Two human moments only: merge and promote — everything between ran itself
 
 <!--
-This trace is the record of an actual run against the earlier MVP; it is left unedited on purpose.
-Repeatable live GitHub contract proof still remains pending.
-Step 1 and the pre-Ready dispatch are negative tests: dispatch keys on Status, not Role.
-Step 6 finding: the model admits no procedure exists, then freelances — why rd must be a skill.
-What changed since: step 4 no longer needs a human at the board UI, though the human still merges the spec PR that unlocks it.
+Update issue/PR numbers after the live run if they differ.
+Steps 2 and 4 are separate architect sessions: one job per session (Consumer vs Producer shape).
+Step 5 refuses every agent seat in policy.py, and refuses the human too until the spec PR is merged.
+Step 6 renders prompts; rendering is not starting a session — a carrier starts the rd Consumer.
+-->
+
+---
+layout: ppt
+class: dense
+---
+
+# What Testing Taught Us
+
+<div class="grid-2" style="max-width:100%;">
+  <div class="card">
+    <h3>Seats with a skill</h3>
+    <p>Announced every mutation first, reported CLI JSON faithfully, refused out-of-authority
+    actions, kept Role and Status orthogonal.<br/>
+    <span class="accent">Protocol held all day.</span></p>
+  </div>
+  <div class="card">
+    <h3>The seat without one (rd)</h3>
+    <p>Kept the git habits — branch, one PR — but skipped the claim, skipped In&nbsp;Review,
+    wrote no tests.<br/>
+    <span class="accent">Tools alone don't make discipline.</span></p>
+  </div>
+</div>
+
+<br/>
+
+- Same model, same CLI available — the only variable was whether a skill defined the procedure
+- <span class="accent">Capability lives in scripts; discipline lives in skills</span> — neither substitutes for the other
+
+<!--
+Evidence: Tetris (#1) and Snake (#4) both implemented by an unscripted rd seat.
+Both runs produced honest handoffs and clean PRs, and both left the board wrong until a human repaired it.
+This is the argument for building rd/qa as skills rather than trusting the protocol surface.
 -->
 
 ---
