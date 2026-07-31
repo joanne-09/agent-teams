@@ -529,5 +529,218 @@ a { color: var(--accent); text-decoration: none; }
 .status-note strong { font-family: var(--serif); font-size: 0.9rem; }
 .status-note span { color: var(--muted); font-size: 0.79rem; line-height: 1.5; }
 
+/* Lifecycle rail (Part 1). Six cells, two of them shaded: the shading is the
+   whole point of the slide -- it shows the human touching the flow exactly
+   twice, at the two ends of the autonomous stretch. */
+.rail { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0.5rem; margin: 0.3rem 0 0.2rem; }
+.rail > div {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  min-height: 8.2rem;
+  gap: 0.4rem;
+  padding: 0.75rem 0.6rem;
+  border-top: 2px solid var(--accent);
+  background: rgba(43, 76, 126, 0.04);
+}
+.rail strong { font-family: var(--serif); font-size: 1.02rem; }
+.rail > div > span:last-child { color: var(--fg-dim); font-size: 0.78rem; line-height: 1.4; }
+.actor { color: var(--muted); font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.09em; }
+.rail > div.gate { border-top-color: var(--fg); background: rgba(28, 27, 24, 0.085); }
+.rail > div.gate .actor { color: var(--fg); }
+
+/* Part 1 defines "session" before the deck leans on it. A banded aside rather
+   than another card: it is a definition the rest of the slide depends on, not
+   a third peer of Producer and Consumer. */
+.session-band {
+  display: grid;
+  grid-template-columns: 5.4rem 1fr;
+  align-items: start;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+  padding: 0.7rem 0.9rem;
+  border-left: 2px solid var(--accent);
+  background: rgba(43, 76, 126, 0.04);
+}
+.session-band .node-label { line-height: 1.45; padding-top: 0.15rem; }
+.session-band strong { display: block; font-family: var(--serif); font-size: 1.06rem; margin-bottom: 0.3rem; }
+.session-band span { display: block; color: var(--fg-dim); font-size: 0.85rem; line-height: 1.55; }
+
+/* Session definition (Part 2). */
+.session-def { display: grid; grid-template-columns: 1.25fr 1fr; gap: 0.9rem; }
+.session-def > div {
+  display: flex;
+  min-height: 7.6rem;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.85rem 1rem;
+  border-top: 2px solid var(--accent);
+  background: rgba(43, 76, 126, 0.04);
+}
+.session-def > div.negative { border-top-color: var(--muted); background: rgba(28, 27, 24, 0.03); }
+.session-def strong { font-family: var(--serif); font-size: 1.1rem; }
+.session-def code { font-size: 0.84rem !important; }
+.session-def span { color: var(--fg-dim); font-size: 0.85rem; line-height: 1.5; }
+.session-def ul { margin: 0 !important; padding-left: 1rem; font-size: 0.85rem !important; line-height: 1.5 !important; }
+.session-def li { margin-bottom: 0.18rem !important; }
+.wordgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.65rem; margin-top: 0.7rem; }
+.wordgrid > div { display: flex; min-height: 4.6rem; flex-direction: column; gap: 0.25rem; padding-top: 0.5rem; border-top: 1px solid var(--line); }
+/* The session slide carries a definition block, a four-word grid, a takeaway
+   and a citation footer. Every one of them earns its place, so the slack has
+   to come from spacing rather than from cutting a band. */
+.session-def > div { min-height: 6.9rem; padding: 0.75rem 0.9rem; }
+.session-def + .wordgrid + .takeaway { margin: 0.7rem 0 0 !important; padding-top: 0.55rem; }
+.wordgrid b { font-family: var(--mono); font-size: 0.86rem; color: var(--accent); }
+.wordgrid strong { font-family: var(--serif); font-size: 0.92rem; }
+.wordgrid span { color: var(--muted); font-size: 0.76rem; line-height: 1.45; }
+
+/* Source citations. Deliberately mono and small: they are provenance, not
+   argument -- readable when someone asks, quiet when nobody does. */
+.citations {
+  margin-top: 0.7rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  line-height: 1.65;
+}
+.citations b { color: var(--fg-dim); font-weight: 500; }
+/* One source per line. The run-on middot-separated form packed more in but
+   made individual references impossible to pick out, which defeats the point
+   of citing at all. */
+/* div.citations, not .citations: the per-slide list rules (.sources, .dense)
+   match a bare `ul` at the same specificity and would otherwise blow these up
+   to body size wherever both apply. */
+div.citations ul {
+  margin: 0 !important;
+  padding: 0;
+  list-style: none;
+  font-size: 0.66rem !important;
+  line-height: 1.5 !important;
+}
+div.citations li {
+  margin: 0 0 0.12rem !important;
+  padding-left: 0.72rem;
+  text-indent: -0.72rem;
+  color: var(--muted);
+  font-size: 0.66rem !important;
+  line-height: 1.5 !important;
+  break-inside: avoid;
+}
+div.citations li::before { content: "·"; margin-right: 0.42em; }
+div.citations.cols2 ul { columns: 2; column-gap: 1.5rem; }
+/* Part 1 describes someone else's system, so its chapter page names the source
+   up front rather than leaving it to a presenter note. */
+.chapter-cite {
+  margin-top: 1.1rem;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  line-height: 1.6;
+}
+.src { color: var(--muted); font-family: var(--mono); font-size: 0.7rem; }
+
+/* Six-row provenance table plus a citation footer. Same reasoning as
+   .stagefail: the footer only survives if every row stays one line. */
+.sources table { font-size: 0.85rem; }
+.sources th, .sources td { padding: 0.22rem 0.55rem !important; line-height: 1.4; }
+.sources ul { font-size: 0.88rem !important; line-height: 1.5 !important; }
+.sources li { margin-bottom: 0.15rem !important; }
+
+/* Failure taxonomy (Part 3). */
+/* 1.45fr, not 1.25fr: the left column carries a trigger line and a recovery
+   line per class, and at the narrower split each one wrapped a single orphan
+   word onto its own row -- four wasted rows pushed class 4 off the canvas. */
+.failsplit { display: grid; grid-template-columns: 1.45fr 1fr; gap: 1rem; align-items: start; }
+.failsplit pre { margin: 0 !important; }
+.failsplit pre, .failsplit pre code { font-size: 0.78rem !important; line-height: 1.5 !important; }
+.failclass { display: flex; flex-direction: column; gap: 0.5rem; }
+.failclass > div {
+  display: grid;
+  grid-template-columns: 1.5rem 1fr;
+  gap: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--line);
+}
+.failclass > div.defect { border-top: 2px solid var(--accent); }
+.fc-num { color: var(--accent); font-family: var(--mono); font-size: 1.05rem; line-height: 1.2; }
+.failclass strong { font-family: var(--serif); font-size: 1rem; }
+.failclass code { font-size: 0.74rem !important; }
+.failclass p { margin: 0.15rem 0 0 !important; max-width: 100% !important; color: var(--muted); font-size: 0.79rem !important; line-height: 1.45 !important; }
+/* Trigger and recovery are two different questions, so they get two lines. The
+   recovery line sits brighter than the trigger above it -- in the room the
+   question is always "so what do I do", and that answer should win the eye. */
+.failclass .fix { display: block; margin-top: 0.22rem; color: var(--fg-dim); font-size: 0.79rem; line-height: 1.45; }
+.failclass .fix b { color: var(--accent); font-weight: 500; }
+/* The recovery slide runs the same four rows full-width instead of beside the
+   envelope. There the steps ARE the content rather than a coda to the trigger,
+   so they take full-strength text and a little more room per row. */
+.failclass.wide > div { padding-top: 0.45rem; }
+.failclass.wide .fix { color: var(--fg); margin-top: 0.28rem; }
+.failclass.wide .fix i { color: var(--muted); font-style: italic; }
+
+/* Worked examples sit between the taxonomy and the recovery steps, and both of
+   those are row lists. A third list in a row read as one long undifferentiated
+   table, so the examples take a 2x2 case-card grid instead: each card is one
+   incident read top-to-bottom -- what was run, what came back, what is true on
+   the board afterwards. The last line is the one the recovery slide answers. */
+.casegrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+.casegrid > div {
+  display: flex;
+  min-height: 9.4rem;
+  flex-direction: column;
+  gap: 0.34rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--accent);
+  border-radius: 3px;
+}
+.casegrid > div.defect { background: rgba(43, 76, 126, 0.04); }
+.case-head { display: flex; align-items: baseline; gap: 0.55rem; }
+.case-head strong { font-family: var(--serif); font-size: 1.02rem; }
+.casegrid p { margin: 0 !important; max-width: 100% !important; font-size: 0.78rem !important; line-height: 1.45 !important; }
+.casegrid code { font-size: 0.73rem !important; }
+.case-do { color: var(--fg); }
+.case-out { color: var(--muted); }
+/* Pushed to the bottom edge of the card so the four "board afterwards" lines
+   sit on one visual row across the grid and can be read as a set. */
+.case-board { margin-top: auto !important; padding-top: 0.4rem; border-top: 1px solid var(--line); color: var(--fg-dim); }
+.case-board b { color: var(--accent); font-weight: 500; }
+/* The recovery grid repeats the example grid position-for-position, so a card
+   here is read against the card that sat in the same cell one slide earlier. */
+.case-step { color: var(--fg); }
+.case-step b { color: var(--accent); font-weight: 500; margin-right: 0.18rem; }
+.case-step i { color: var(--muted); font-style: italic; }
+
+/* Eight-row failure-by-stage table. Tighter than the default dense table so
+   every row stays on one line -- a wrapped row here costs two rows of height
+   and pushes the takeaway off the canvas. */
+.stagefail table { font-size: 0.85rem; }
+.stagefail th, .stagefail td { padding: 0.2rem 0.55rem !important; line-height: 1.45; }
+.stagefail code { font-size: 0.8rem !important; }
+
+/* Escalation ladder. Indented rungs: the offset is the message -- each step
+   is further from the session that hit the problem. */
+.ladder { display: flex; flex-direction: column; gap: 0.45rem; }
+.ladder .rung {
+  display: grid;
+  grid-template-columns: 1.6rem minmax(0, 1.15fr) minmax(0, 1.55fr) 8.5rem;
+  align-items: center;
+  gap: 0.8rem;
+  min-height: 3.5rem;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: 3px;
+}
+.ladder .rung:nth-child(2) { margin-left: 1.3rem; }
+.ladder .rung:nth-child(3) { margin-left: 2.6rem; }
+.ladder .rung:nth-child(4) { margin-left: 3.9rem; }
+.ladder .rung:nth-child(5) { margin-left: 5.2rem; border-left-color: var(--fg); background: rgba(28, 27, 24, 0.05); }
+.rung-n { color: var(--accent); font-family: var(--mono); font-size: 0.95rem; }
+.ladder strong { font-family: var(--serif); font-size: 0.98rem; }
+.ladder > .rung > span { color: var(--fg-dim); font-size: 0.79rem; line-height: 1.4; }
+.ladder code { font-size: 0.72rem !important; text-align: right; }
+
 .slidev-v-click-target { transition: opacity 0.3s ease; }
 :root { --slidev-theme-primary: var(--accent); }
