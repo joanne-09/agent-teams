@@ -509,7 +509,7 @@ class: dense
 | 4 | architect | "split #7 into implementation cards" | cards #9 + #10 · `(Backlog, human)` |
 | 5 | human | `promote 9 --spec PR#8` (and 10) | <span class="accent">the readiness gate</span> → `(Ready, rd)` |
 | 6 | em | "what's ready to work on?" | two `[role:rd] [board-card:#…]` kickoffs |
-| 7 | rd | — | <span class="muted">future work|
+| 7 | rd | — | <span class="muted">future work</span> |
 
 - No token needed: the plugin routed every plain-language request to the right seat
 - Two human moments only: merge and promote — everything between ran itself
@@ -546,6 +546,7 @@ class: dense
 <br/>
 
 - Same model, same CLI available — the only variable was whether a skill defined the procedure
+
 
 <!--
 Evidence: Tetris (#1) and Snake (#4) both implemented by an unscripted rd seat.
