@@ -180,89 +180,6 @@ layout: center
 
 <div class="chapter">
   <div class="chapter-num">Part 2</div>
-  <div class="chapter-title">Demo Projects</div>
-  <div class="chapter-sub">Our agent team at work</div>
-</div>
-
-<!--
-Joanne's repo: the agent team implementation (agent-teams) drives demo projects here.
--->
-
----
-layout: ppt
-class: dense
----
-
-# Our Seats
-
-| Seat | Token | Skill | Does |
-|---|---|---|---|
-| <span class="accent">analyst</span> | `[role:analyst]` | `intaking-requirement` | requirement → Backlog card → hand to architect |
-| <span class="accent">architect</span> | `[role:architect]` | `authoring-spec` | spec → **promote** to Ready, or **decompose** into cards |
-| <span class="accent">em</span> | `[role:em]` | `briefing-board` · `triaging-board` · `dispatching-work` | flow + WIP · blocked work · kickoff prompts |
-| <span class="accent">qa</span> | `[role:qa]` | `inspecting-queue` | order the verification queue — <span class="muted">verdicts are Consumer work</span> |
-| rd | `[role:rd]` | <span class="muted">not yet</span> | claim → TDD → code PR → hand to qa |
-| human | — | — | <span class="accent">merge gate</span> — the one thing agents never do |
-
-- Routing is a leading token: skill descriptions name their triggers, the model matches
-- Authority lives in `policy.py` — <span class="accent">illegal handoffs and out-of-seat actions refuse before any GitHub call</span>
-
-<!--
-A seat = which skill the session loads, nothing more. Sessions are peers, not a call stack.
-Two layers: routing is soft (prompt matching), authority is hard (Python raises before mutating).
-Producer surface now complete across all four Producer seats; the rd Consumer slice is next.
-qa appears twice in the architecture: queue inspection is Producer-shaped, a verdict is Consumer-shaped.
--->
-
----
-layout: ppt
-class: dense
----
-
-# One Card, End to End — Live Run
-
-| # | Who | What we typed / did | Result |
-|---|---|---|---|
-| 1 | em | `[role:em] dispatch work` | empty queue reported — <span class="accent">no invented work</span> |
-| 2 | analyst | `[role:analyst] New requirement: … Tetris …` | Issue #1 · Backlog · handed to architect |
-| 3 | architect | `[role:architect] author the spec for card #1` | PR #2, docs-only spec · handed to rd |
-| 4 | human | board UI: Status → <span class="accent">Ready</span> | the human lifecycle gate |
-| 5 | em | `[role:em] dispatch work` | renders `[role:rd] [board-card:#1] …` kickoff |
-| 6 | rd | paste the kickoff | <span class="muted">no rd skill — edge of the MVP</span> |
-
-<!--
-This trace is the record of an actual run against the earlier MVP; it is left unedited on purpose.
-Repeatable live GitHub contract proof still remains pending.
-Step 1 and the pre-Ready dispatch are negative tests: dispatch keys on Status, not Role.
-Step 6 finding: the model admits no procedure exists, then freelances — why rd must be a skill.
-What changed since: step 4 no longer needs a human at the board UI, though the human still merges the spec PR that unlocks it.
--->
-
----
-layout: ppt
-class: dense
----
-
-# The Board in Action
-
-<div class="figure">
-  <img src="./images/board.png" />
-</div>
-
-<p class="takeaway">Card #1 after the live run — spec-derived acceptance criteria, <code>Status</code> and <code>Role</code>, linked Pull Request.</p>
-
-<!--
-One real artifact beats an illustrated one: an invented mini-board alongside a real screenshot said two different things about the same run.
-The demo workload now belongs in the sibling agent-teams-test repository, while the plugin remains in agent-teams.
-The current implementation plan still marks disposable-Project end-to-end proof as pending.
--->
-
----
-layout: center
----
-
-<div class="chapter">
-  <div class="chapter-num">Part 3</div>
   <div class="chapter-title">Project Architecture</div>
   <div class="chapter-sub">Independent sessions, one durable coordination plane</div>
 </div>
@@ -357,7 +274,7 @@ layout: center
 ---
 
 <div class="chapter">
-  <div class="chapter-num">Part 4</div>
+  <div class="chapter-num">Part 3</div>
   <div class="chapter-title">Work Flow & Mechanics</div>
   <div class="chapter-sub">How one request becomes one reviewable delivery</div>
 </div>
@@ -474,7 +391,7 @@ layout: center
 ---
 
 <div class="chapter">
-  <div class="chapter-num">Part 5</div>
+  <div class="chapter-num">Part 4</div>
   <div class="chapter-title">What We Have Built</div>
   <div class="chapter-sub">The Producer MVP, and what comes after it</div>
 </div>
@@ -538,4 +455,87 @@ class: dense
 <!--
 The order is not preference, it is dependency: building a second seat on unverified response shapes doubles what must be re-checked when the first real gh call disagrees with a fixture.
 Say the quiet part out loud: passing tests is a statement about internal consistency, not about GitHub.
+-->
+
+---
+layout: center
+---
+
+<div class="chapter">
+  <div class="chapter-num">Part 5</div>
+  <div class="chapter-title">Demo</div>
+  <div class="chapter-sub">Our agent team at work</div>
+</div>
+
+<!--
+The demo workload lives in the sibling agent-teams-test repository; the plugin remains in agent-teams.
+-->
+
+---
+layout: ppt
+class: dense
+---
+
+# Our Seats
+
+| Seat | Token | Skill | Does |
+|---|---|---|---|
+| <span class="accent">analyst</span> | `[role:analyst]` | `intaking-requirement` | requirement → Backlog card → hand to architect |
+| <span class="accent">architect</span> | `[role:architect]` | `authoring-spec` | spec → **promote** to Ready, or **decompose** into cards |
+| <span class="accent">em</span> | `[role:em]` | `briefing-board` · `triaging-board` · `dispatching-work` | flow + WIP · blocked work · kickoff prompts |
+| <span class="accent">qa</span> | `[role:qa]` | `inspecting-queue` | order the verification queue — <span class="muted">verdicts are Consumer work</span> |
+| rd | `[role:rd]` | <span class="muted">not yet</span> | claim → TDD → code PR → hand to qa |
+| human | — | — | <span class="accent">merge gate</span> — the one thing agents never do |
+
+- Routing is a leading token: skill descriptions name their triggers, the model matches
+- Authority lives in `policy.py` — <span class="accent">illegal handoffs and out-of-seat actions refuse before any GitHub call</span>
+
+<!--
+A seat = which skill the session loads, nothing more. Sessions are peers, not a call stack.
+Two layers: routing is soft (prompt matching), authority is hard (Python raises before mutating).
+Producer surface now complete across all four Producer seats; the rd Consumer slice is next.
+qa appears twice in the architecture: queue inspection is Producer-shaped, a verdict is Consumer-shaped.
+-->
+
+---
+layout: ppt
+class: dense
+---
+
+# One Card, End to End — Live Run
+
+| # | Who | What we typed / did | Result |
+|---|---|---|---|
+| 1 | em | `[role:em] dispatch work` | empty queue reported — <span class="accent">no invented work</span> |
+| 2 | analyst | `[role:analyst] New requirement: … Tetris …` | Issue #1 · Backlog · handed to architect |
+| 3 | architect | `[role:architect] author the spec for card #1` | PR #2, docs-only spec · handed to rd |
+| 4 | human | board UI: Status → <span class="accent">Ready</span> | the human lifecycle gate |
+| 5 | em | `[role:em] dispatch work` | renders `[role:rd] [board-card:#1] …` kickoff |
+| 6 | rd | paste the kickoff | <span class="muted">no rd skill — edge of the MVP</span> |
+
+<!--
+This trace is the record of an actual run against the earlier MVP; it is left unedited on purpose.
+Repeatable live GitHub contract proof still remains pending.
+Step 1 and the pre-Ready dispatch are negative tests: dispatch keys on Status, not Role.
+Step 6 finding: the model admits no procedure exists, then freelances — why rd must be a skill.
+What changed since: step 4 no longer needs a human at the board UI, though the human still merges the spec PR that unlocks it.
+-->
+
+---
+layout: ppt
+class: dense
+---
+
+# The Board in Action
+
+<div class="figure">
+  <img src="./images/board.png" />
+</div>
+
+<p class="takeaway">Card #1 after the live run — spec-derived acceptance criteria, <code>Status</code> and <code>Role</code>, linked Pull Request.</p>
+
+<!--
+One real artifact beats an illustrated one: an invented mini-board alongside a real screenshot said two different things about the same run.
+The demo workload now belongs in the sibling agent-teams-test repository, while the plugin remains in agent-teams.
+The current implementation plan still marks disposable-Project end-to-end proof as pending.
 -->
