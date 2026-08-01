@@ -53,15 +53,10 @@ class: dense
 - No server, no database, no UI — only skills, hooks, and bash scripts
 - The <span class="accent">GitHub Project board is the single source of truth</span> and dispatcher
 - Work is delegated: `superpowers` (TDD, planning) · `gstack` (review, QA, security)
-- Design thesis: AI throughput scales 100x — <span class="accent">human attention does not</span>
 
 <div class="citations">
 <ul>
-<li><b>board-superpowers</b> — github.com/PanQiWei/board-superpowers; doc paths below are from the repo root</li>
-<li><b>scheduling layer + delegation</b> — AGENTS.md § "Architecture at a glance"; premise <code>P4b</code>, ADR-0004</li>
-<li><b>board as truth</b> — <code>P4a</code> "the user's existing board is the truth. Period." — 0001-positioning.md</li>
-<li><b>no server</b> — <code>C-PLUGIN-2</code> "no daemon, ever" — 0003-domain-model/03-aggregates-and-entities.md §3.3.4</li>
-<li><b>100× thesis</b> — <code>P1</code> "throughput scales 100× while architect attention does not" — 0001-positioning.md</li>
+<li><b>Source</b> — board-superpowers README, github.com/PanQiWei/board-superpowers</li>
 </ul>
 </div>
 
@@ -97,17 +92,9 @@ class: dense
 
 - Core invariant: <span class="accent">one card = one Consumer session = one PR</span>
 - Session: one cold-start execution — a launched CLI session, or a subagent the Producer spawns
-- These two are their <span class="accent">only</span> kanban-relative roles — no SA / Architect / Dev / QA seats exist
+- Producer and Consumer are their <span class="accent">only</span> roles — no SA / Architect / Dev / QA agents exist
+- That work is done by <span class="accent">skills invoked when needed</span> (`superpowers` TDD · `gstack` review/QA), not by standing agents
 
-<div class="citations">
-<ul>
-<li><b>purpose, not I/O</b> — "both roles read and write; what differs is what the session delivers" — 02-roles.md</li>
-<li><b>Manager</b> — board orchestration; "long-lived, aggregate view" — 03-producer-surface.md §1.3.1</li>
-<li><b>I-1 / I-2</b> — one card = one <b>Consumer</b> session = one PR; the two hard floors above — 07-cross-cutting-invariants.md</li>
-<li><b>Mode-1 / Mode-2</b> — interactive CLI session, both platforms · Producer-spawned subagent, CC only — 04-consumer-surface.md</li>
-<li><b>lifetime lock</b> their <b>original framing</b> · pull-system after Anderson, <i>Kanban</i> (2010) — 02-roles.md</li>
-</ul>
-</div>
 
 <!--
 Define the word before using it. The concrete version, if the room looks unsure: usually a session is one terminal running `claude` — not a container, not a daemon, not a bot with a name. When it exits it is gone, and the only reason the next one can continue the work is that this one wrote its result to GitHub. The one caveat is their Mode-2 Consumer, which is a subagent rather than its own terminal; it still cold-starts and still persists everything to GitHub, so nothing downstream changes. Everything else in the deck follows from that: no in-memory handoffs, no "ask the QA agent" — because there is nothing to ask.
@@ -139,13 +126,6 @@ class: dense
 - Card = GitHub Issue: Goal · Acceptance criteria · Out of scope · Dependencies · spec link
 - `Blocked` is an <span class="accent">interrupt on any AGENT cell</span>, not a step in the line
 
-<div class="citations">
-<ul>
-<li><b>six states + per-transition checklist</b> — skills/board-canon/references/state-machine.md</li>
-<li><b>their <code>Backlog → Ready</code> gate is a checklist, not a person</b> — 5 mandatory body sections · INVEST · estimate set · no unmet hard <code>depends-on</code></li>
-<li><b>ADR-0006 §3 autonomy matrix</b> — row 5 <code>Backlog → Ready = A</code> (auto, "forward state advance") · row 12 <code>merge = R</code> ("architect's reserved power") · <b>N = 0</b>, nothing permanently forbidden</li>
-</ul>
-</div>
 
 <!--
 Cards are thin pointers to specs — no spec, no card (anti-slop rule).
@@ -165,8 +145,8 @@ class: dense
 <div class="grid-2" style="max-width:100%;">
   <div class="card">
     <h3>Claim = branch push</h3>
-    <p>Push empty <code>claim/42-slug</code> — first push wins.<br/>
-    <span class="accent">Git is the lock</span>; no server.</p>
+    <p>To claim card #42, push branch <code>claim/42-slug</code>.<br/>
+    <span class="accent">The remote refuses a second push to the same branch</span> — first push wins, so two agents can never claim one card. No lock server needed.</p>
   </div>
   <div class="card">
     <h3>Worktree isolation</h3>
@@ -185,14 +165,6 @@ class: dense
   </div>
 </div>
 
-<div class="citations">
-<ul>
-<li><b>claim = branch push</b> — ADR-0002 "Atomic claim via remote branch push"; created by <code>git push --force-with-lease=&lt;ref&gt;:</code></li>
-<li><b>worktree isolation</b> — ADR-0003 "One worktree per Consumer session" + invariant <code>I-7</code> one-card-one-worktree</li>
-<li><b>PR contract</b> — 0002-…/08-pr-contract.md · skills/enforcing-pr-contract/ · premise <code>P6</code> "human verification is a first-class output"</li>
-<li><b>A / R / N + audit</b> — ADR-0006 §3 matrix, §5 audit log</li>
-</ul>
-</div>
 
 <!--
 Pattern everywhere: judgment in prompts, enforcement in code (exit codes).
@@ -208,22 +180,17 @@ class: dense
 
 | Their design | Our team |
 |---|---|
-| Manager intake conversation | <span class="accent">analyst</span> — requirement → spec |
-| Decomposition into cards | <span class="accent">architect</span> — spec → INVEST cards |
-| Consumer TDD loop | <span class="accent">dev</span> — card → tested PR |
-| Verification chain + review queue | <span class="accent">qa</span> — evidence → verdict |
-| Board briefing · dispatch · triage | <span class="accent">lead</span> — queue, WIP, dispatch |
+| Manager intake conversation | <span class="accent">analyst</span> |
+| Decomposition into cards | <span class="accent">architect</span> |
+| Consumer TDD loop | <span class="accent">dev</span> |
+| Verification chain + review queue | <span class="accent">qa</span> |
+| Board briefing · dispatch · triage | <span class="accent">lead</span> |
 
-- Keep: board as truth `P4a` · one card = one PR `I-1` · git as lock, worktree per Consumer `ADR-0002/3`
-- Drop: multi-backend · dual-platform · runtime dependency on sibling plugins `P4b`
+- We remove other redundant features such as multi-backend support, dual-platform support and others...
 
 <div class="citations">
 <ul>
-<li><b>P4a</b> — "the user's existing board is the truth. Period." — 0001-positioning.md</li>
-<li><b>I-1 / I-7</b> — one card = one <b>Consumer</b> session = one PR · one-card-one-worktree — 07-cross-cutting-invariants.md</li>
-<li><b>ADR-0002 / ADR-0003</b> — "Atomic claim via remote branch push" · "One worktree per Consumer session" — adr/</li>
-<li><b>P4b</b> — "Composition is permanent … hard runtime dependency is a feature, not a bug" — what our Drop line rejects</li>
-<li><b>Add / Drop are ours</b> — hard-floor gates (inv. 5) · no sibling-plugin dependency (inv. 10) — docs/ARCHITECTURE.md</li>
+<li><b>Source</b> — board-superpowers, github.com/PanQiWei/board-superpowers</li>
 </ul>
 </div>
 
