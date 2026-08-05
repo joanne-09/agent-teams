@@ -1,18 +1,20 @@
 # HANDOFF: agent-teams
 
-> A Claude Code plugin that runs the **Producer** side of an artificial intelligence engineering board over a GitHub Project: session bootstrap, requirement intake, architect specification and readiness, Lead briefing/triage/dispatch, and QA queue inspection.
+> A Claude Code plugin for a GitHub-Project-coordinated artificial intelligence engineering team: the Producer surface is complete, and the next target is one-Card Developer execution plus evidence-grounded QA and deterministic acceptance.
 
 **Stack**: Claude Code plugin / Python 3.12 standard library / GitHub CLI / GitHub Projects v2 / Git / Slidev
 
-**Last updated**: 2026-07-31 by session 4
+**Last updated**: 2026-08-05 by session 5
 
 ---
 
 ## Project Goal & Scope
 
-This orphan branch builds agent-teams from an empty tree, deliberately not inheriting the earlier full framework. **The Producer half is now complete.** A Producer session shapes work — creates, refines, routes, prioritises, unblocks — and a Consumer session resolves exactly one Card. Consumer execution (Dev implementation, QA verdicts) is the next milestone and is not built.
+This orphan branch builds agent-teams from an empty tree, deliberately not inheriting the earlier full framework. **The Producer half is complete.** A Producer session shapes work — creates, refines, routes, prioritises, unblocks — and a Consumer session resolves exactly one Card. Consumer execution remains the next milestone: M4 adds Developer claim/worktree/Pull Request delivery; M5 adds the new QA review, verdict, deterministic acceptance, and controlled merge path. None of that Consumer execution is built yet.
 
 The durable coordination surface is one GitHub Project. Cards are GitHub Issues carrying two orthogonal single-select fields: `Status` (where the work is) and `Role` (whose turn it is).
+
+The target no longer spends human attention on every passing delivery. Readiness remains the mandatory human gate. QA independently reviews the implementation, publishes evidence for the exact Pull Request head, and a separate deterministic evaluator routes `eligible` to a non-agent merge controller, `defect` back to `dev`, and `protected_change` to `human`. No agent seat directly merges or selects its own merge route.
 
 Normative design lives in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md); delivery status and the milestone ledger live in [`docs/IMPLEMENTATION_PLAN.md`](./docs/IMPLEMENTATION_PLAN.md). **Do not restate milestone detail here — that plan is the single status ledger.**
 
@@ -28,7 +30,7 @@ The earlier full implementation is a **separate sibling repository**, `../agent-
 - **Claude-only surface.** `.claude-plugin/plugin.json` names `agent-teams` v0.2.0; local marketplace is `agent-teams-local`. No Codex manifest on this branch.
 - **Seven Producer skills.** `using-agent-teams` runs the mandatory read-only bootstrap, then **infers the seat and routine from the user's plain-language intent** — a person never names a seat. `intaking-requirement` (analyst), `authoring-spec` (architect), `briefing-board` / `triaging-board` / `dispatching-work` (lead), `inspecting-queue` (qa).
 - **Orientation is the default and is directly callable.** A session that opens with no specific request runs `briefing-board` unprompted; "brief me" / "where are we" is also a first-class request at any point. Read-only, so it is always safe to repeat.
-- **The router may never infer `human`** (ARCHITECTURE §10.2). Every other seat is safe to infer because choosing one grants nothing — policy re-checks regardless. `human` holds both gates, so a router able to adopt it could approve its own readiness decision. **This boundary is instruction-level, not code-enforced, and cannot be**: the adapter cannot distinguish a seat token a person supplied from one a session supplied.
+- **The router may never infer `human`** (ARCHITECTURE §10.2). Every other seat is safe to infer because choosing one grants nothing — policy re-checks regardless. `human` holds readiness and protected-change exception authority, so a router able to adopt it could approve its own exception. **This boundary is instruction-level, not code-enforced, and cannot be**: the adapter cannot distinguish a seat token a person supplied from one a session supplied.
 - **Six functional modules** under `scripts/agent_teams/`, with a strictly downward dependency direction (plus `__init__.py` and `errors.py`, so `ls` shows eight files):
 
   ```
@@ -49,8 +51,11 @@ The earlier full implementation is a **separate sibling repository**, `../agent-
 - **Authority is checked before the first GitHub call**, so a refusal costs nothing and leaves no partial state.
 - **Status and Role are orthogonal.** A handoff changes Role and writes context; it never silently changes Status. When both must move, that is two operations.
 - **Honest partial failure.** Multi-step mutations return `{ok:false, partial:true, completed:[...], failed:..., recovery:[...]}`. Nothing ever claims a rollback that did not run.
-- **Two human gates, both enforced.** `merge_pull_request` is `refuse` for every agent seat and is listed in `policy.HARD_FLOORS` as non-overridable. `promote_to_ready` is also `refuse` for every agent seat including `lead` (ARCHITECTURE Appendix A.2 decision 6) — readiness is the human's gate. Because authority keys off the transition *destination*, closing `promote` also closed `transition --to Ready` and `create-card --status Ready`.
-- **agent-teams calls no other plugin.** Nothing in `skills/` or `scripts/` references `superpowers` or `gstack`; the disciplines are referenced by name only, so correctness never depends on a sibling being installed.
+- **One mandatory human gate plus one exception lane is the new target.** `promote_to_ready` remains refused for every agent seat including `lead`; only the human opens `Backlog -> Ready`. The delivered code still has `merge_pull_request` in `policy.HARD_FLOORS` and therefore remains human-only. M5 must atomically replace that old merge floor with deterministic acceptance and a controlled non-agent merge operation; protected or ambiguous changes still go to `human`.
+- **QA owns review evidence, not merge authority.** The QA Consumer claims one `(In Review, qa)` Card/Pull Request, checks design and architecture conformance, correctness and edge cases, every changed/new file, security and compatibility, cross-file risks, and test strength. It detects blind spots, repeats affected dimensions, challenges material findings, and publishes a structured verdict bound to the exact head SHA.
+- **Verdict and acceptance are separate contracts.** QA writes `pass`, `fail`, or `blocked`. Deterministic policy separately writes `eligible`, `defect`, or `protected_change`; QA cannot select its own route. A pass is invalid if stale, incomplete, missing a required dimension, or treating line execution as sufficient test evidence.
+- **Protected changes are explicit.** The initial protected set covers authority/policy, QA acceptance and merge logic, GitHub workflow or credential handling, dependencies and plugin manifests, agent instruction files, security boundaries, and changes to approved architecture/design.
+- **agent-teams calls no other plugin.** M5 may adapt compatible open review instructions into its own `skills/verifying-delivery/SKILL.md` with attribution, but nothing is called at runtime and correctness never depends on a sibling being installed.
 
 ---
 
@@ -63,6 +68,8 @@ The earlier full implementation is a **separate sibling repository**, `../agent-
 - **Never report a mutation as successful without `"ok": true` in the CLI JSON.** Expected failures return structured error JSON on stderr and exit 1.
 - Python standard library only. No dependency install, no virtualenv, no SQLite.
 - Tests use an injected fake `gh` (`tests/fake_gh.py`). The suite must never need network or a real Project.
+- QA evidence must distinguish execution coverage from behavioral strength. Changed-line coverage alone never establishes a pass; require branch outcomes, positive/negative scenarios, mutation resistance where applicable, and live integration evidence for GitHub behavior.
+- QA may use multiple bounded reviewer agents or independent passes by dimension when the carrier supports them, but the bound QA Consumer owns completeness and synthesis. Reviewer outputs are evidence, never authority.
 - Intake leaves Status `Backlog` and Role `architect`. It must not make the Card Ready — **no agent seat may**. The architect shapes and hands to `human`; the human runs `promote`, which transitions to `Ready` and hands to `dev`. `decompose` therefore creates children at `(Backlog, human)`.
 - Dispatch is read-only and deterministic: configured seat order, then Card number. Say "prompt rendered", never "session started".
 - When superseding a test, leave a comment saying what changed and why. Four original tests were superseded this way; the reasons are in `tests/test_producer_board.py`.
@@ -77,7 +84,7 @@ The earlier full implementation is a **separate sibling repository**, `../agent-
 - Development load: `claude --plugin-dir C:\Users\User\Documents\intern\ITRI\agent-teams-project\agent-teams` from an unrelated repository. Confirm the checkout is on `mvp/producer-from-scratch` first.
 - Slides: `cd slides && npx slidev build` (verify) or `npm run dev` (present). `npx slidev export --format png --range N` renders individual slides for visual inspection.
 
-**`gh` is still not installed on this machine.** After installing: `gh auth login`, then `gh auth refresh -s project`. Configure a consuming repository with `producer_board.py init`, then run `producer_board.py doctor` before any mutation. Credentials stay in the GitHub CLI store, never in repository files.
+**`gh` is installed at `C:\Program Files\GitHub CLI\gh.exe` but is not authenticated.** Run `gh auth login`, then `gh auth refresh -s project`. Configure a consuming repository with `producer_board.py init`, then run `producer_board.py doctor` before any mutation. Credentials stay in the GitHub CLI store, never in repository files.
 
 Live board tests need a disposable repository and Project with all six `Status` options (Backlog, Ready, In Progress, Blocked, In Review, Done) and all six `Role` options (analyst, architect, dev, qa, lead, human). `doctor` validates all twelve and reports every missing one in a single response.
 
@@ -87,10 +94,17 @@ Live board tests need a disposable repository and Project with all six `Status` 
 
 - [Claude Code plugin docs](https://code.claude.com/docs/en/plugins) — manifests, `--plugin-dir`, namespaces.
 - [GitHub CLI Project manual](https://cli.github.com/manual/gh_project) — the commands the adapter wraps.
+- [OpenCodeReview](https://github.com/alibaba/open-code-review) — strongest reviewed pattern for deterministic changed-file enumeration, bundling, high-precision line findings, and locally adaptable review instructions; do not add it as a runtime dependency.
+- [PR-AF](https://github.com/Agent-Field/pr-af) — inspiration for dynamic review dimensions, evidence grounding, falsification, cross-file compound risk, and blind-spot loops; repository licensing was unclear during this research, so do not copy code or treat its benchmark claims as independent proof.
+- [GitHub Agentic Workflows](https://github.com/github/gh-aw) and [safe-output policy](https://github.github.com/gh-aw/reference/safe-outputs-pull-requests/) — inspiration for read-only agents, typed validated outputs, protected files, fail-closed policy, and separation of reasoning from mutation; not a runtime dependency.
+- [Prow Tide](https://docs.prow.k8s.io/docs/components/core/tide/) — the clearest open merge-controller pattern: continuously evaluate eligibility, retest against the current base, then merge; many deployments still rely on human `lgtm`/approval labels.
+- [Code Review Benchmark](https://github.com/withmartian/code-review-benchmark) — open offline and online evaluator for reviewer precision/recall; useful for shadow-mode calibration before automated acceptance.
+- [OpenWorker](https://github.com/andrewyng/openworker) — researched and rejected for this gate: it is a general local desktop coworker whose consequential actions are approval-gated, not a Pull Request assurance or merge-policy engine.
+- [2026 automated-code-review evaluation](https://arxiv.org/abs/2606.15689) — one preprint found a severe synthetic-to-real PR performance drop; evidence against making one language-model verdict the merge authority.
 - `../agent-teams-main/docs/agent-team-adaptation/` — the design dossier this adaptation implements. `03-target-architecture.md` §5.2 is the authority matrix; `00-goal.md` records why nesting is impossible.
-- [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — normative design. Appendix A.2 records the settled implementation decisions.
+- [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — normative design. Appendix A records decisions 1-8; decision 8 supersedes the mandatory human merge gate for eligible changes.
 - [`docs/IMPLEMENTATION_PLAN.md`](./docs/IMPLEMENTATION_PLAN.md) — the sole status ledger.
-- [`docs/USAGE.md`](./docs/USAGE.md) — operating guide: setup, the daily loop, the two human gates, reading result envelopes, troubleshooting.
+- [`docs/USAGE.md`](./docs/USAGE.md) — operating guide: setup, the daily loop, readiness, automated acceptance, protected-change exceptions, result envelopes, and troubleshooting.
 - [`README.md`](./README.md) — setup, tuning knobs, full CLI reference.
 - [`CLAUDE_TESTING.md`](./CLAUDE_TESTING.md) — safe, persistent-install, and live test procedure. **Stale: written for the four-skill layout.**
 
@@ -98,23 +112,23 @@ Live board tests need a disposable repository and Project with all six `Status` 
 
 ## Progress
 
-Producer surface complete and hermetically tested. Live GitHub behaviour still unproven.
+Producer surface complete. The replacement for the mandatory second human gate
+is now researched and documented as architecture, but no Consumer, QA verdict,
+acceptance evaluator, or controlled merge implementation exists. Live GitHub
+behavior remains unproven.
 
 | Milestone | Status | Notes |
 |---|---|---|
-| Producer MVP (4 skills, 1 script) | Done | Sessions 1–2 |
-| Domain model + pure policy layer | Done | `model.py`, `policy.py`; every Status/Role pair asserted |
-| Adapter hardening | Done | Pagination with truncation detection, six-Status `doctor`, partial-failure recovery |
-| Six-state transitions + handoff cap | Done | Authority keyed to transition destination |
-| Architect → Ready vertical slice | Done | `promote` and `decompose`, gated on a durable specification |
-| Lead operations | Done | `brief`, `triage`, WIP, data-quality detection |
-| QA queue inspection | Done | Producer-shaped; issues no verdicts |
-| Session context bootstrap | Done | Read-only, per-seat, owned by the entry skill |
-| Slide deck | Done | Parts 3–5 clarity pass; **uncommitted** |
+| Producer surface | Done | Seven skills and six deterministic modules; latest recorded suite is 130 hermetic tests from 2026-07-31 |
+| QA-gate replacement research | Done | Open reviewers, agentic workflow safety, merge controllers, testing strength, and benchmark evidence assessed in session 5 |
+| Normative QA workflow and decision 8 | Done | Commit `f4378ee`; QA evidence, separate acceptance result, protected-change exception, and controlled merge target documented |
+| Developer Consumer (M4) | Pending | Claim/worktree/one-Pull-Request delivery is not built |
+| QA Consumer (M5.1–M5.3) | Pending | `skills/verifying-delivery/SKILL.md`, verdict schema, multidimensional review, evidence challenge, and report publication are not built |
+| Deterministic acceptance and merge (M5.4–M5.5) | Pending | Eligibility policy, exact-SHA invalidation, protected classification, status/check publication, controlled merge, and reconciliation are not built |
+| Test-strength infrastructure | Pending | No changed-branch, mutation, state-property, or live-GitHub acceptance proof exists yet |
 | Plugin manifest re-validation | Pending | Not re-run since the seven-skill layout landed |
 | Test from unrelated repository | Pending | Never performed |
-| Live disposable Project test | Pending | Blocked on `gh` |
-| Dev / QA Consumer execution | Pending | Next milestone; see plan M4/M5 |
+| Live disposable Project test | Pending | `gh` is installed but unauthenticated; disposable repository/Project still needed |
 
 ---
 
@@ -122,139 +136,148 @@ Producer surface complete and hermetically tested. Live GitHub behaviour still u
 
 | File | Status | Description |
 |---|---|---|
-| `scripts/producer_board.py` | Active | Stable public CLI entry point; delegates to the package |
-| `scripts/agent_teams/policy.py` | **Load-bearing** | Pure legality. Change nothing here without adding an edge test |
-| `scripts/agent_teams/model.py` | Active | Validated domain values; `_one_line` neutralises comment-forging input |
-| `scripts/agent_teams/workflows.py` | Active | Producer transactions and their recovery recipes |
-| `scripts/agent_teams/board.py` | Active | Semantic operations; no generic field setter |
-| `scripts/agent_teams/github.py` | Active | `gh` wrapper, error classification, pagination escalation |
-| `scripts/agent_teams/config.py` | Active | Validation that reports every defect at once |
-| `skills/*/SKILL.md` | Active | Seven Producer skills |
-| `skills/using-agent-teams/SKILL.md` | **Load-bearing** | Entry router: intent inference, orientation default, and the `human` exemption |
-| `docs/USAGE.md` | Active | Operating guide — the user-facing counterpart to ARCHITECTURE |
-| `tests/fake_gh.py` | Active | Shared fake `gh`; supports arming any subcommand to fail on the *n*th call |
-| `tests/test_policy.py` | Active | 41 tests; exhaustive pair coverage |
-| `tests/test_partial_failures.py` | Active | 12 tests; every mutation boundary |
-| `tests/test_workflows.py` | Active | 41 tests; the Producer flows plus the readiness gate |
-| `tests/test_producer_board.py` | Active | 36 tests; adapter + CLI contract |
-| `slides/slides.md` | **Modified** | 23 slides: title + 5 dividers + 17 content |
-| `slides/styles/index.css` | **Modified** | Type scale and layout for the deck |
-| `CLAUDE_TESTING.md` | **Stale** | Still describes four skills |
+| `docs/ARCHITECTURE.md` | **Active / normative** | Session 5 added the New QA workflow, decision 8, protected-change policy, verdict/acceptance separation, and end-to-end target |
+| `docs/IMPLEMENTATION_PLAN.md` | **Active / status ledger** | M5 now specifies locally owned QA review, evidence challenge, deterministic eligibility, controlled merge, and stronger testing |
+| `docs/USAGE.md` | Active | Explains the pending target versus the still-manual delivered merge path |
+| `README.md` | Active | Overview updated for one readiness gate plus protected-change exceptions |
+| `HANDOFF.md` | **Modified** | This session-5 continuation record; do not commit unless the user asks |
+| `scripts/agent_teams/policy.py` | **Load-bearing / target mismatch** | Pure current legality still makes merge human-only; M5 must add non-agent eligibility/merge without granting an agent seat direct merge |
+| `scripts/agent_teams/model.py` | Active | Existing `Verdict` model will need exact head, conformance, review coverage, test-strength, challenges, blind spots, and limitations |
+| `scripts/agent_teams/workflows.py` | Active | Producer transactions; planned home or composition seam for verdict, acceptance, merge, and reconciliation |
+| `scripts/agent_teams/board.py` | Active | Semantic operations only; future acceptance/merge operations must not introduce a generic mutation escape hatch |
+| `scripts/agent_teams/github.py` | Active | `gh` wrapper and likely adapter boundary for checks, Pull Request head validation, mergeability, and controlled merge |
+| `scripts/producer_board.py` | Stable | Public CLI entry point; future commands must preserve existing syntax and structured envelopes |
+| `skills/using-agent-teams/SKILL.md` | **Load-bearing** | Router may infer agent seats but never `human` |
+| `skills/verifying-delivery/SKILL.md` | **Missing / planned** | M5 QA Consumer workflow; may adapt compatible open instructions locally but must call no sibling plugin |
+| `tests/fake_gh.py` | Active / assumption risk | Shared fake `gh`; live shapes remain unverified |
+| `tests/test_policy.py` | Active | Current exhaustive seat/status policy coverage; must grow for acceptance and protected-change decisions |
+| `tests/test_workflows.py` | Active | Current Producer flows; no Consumer/QA/merge-controller coverage |
+| `tests/test_partial_failures.py` | Active | Must eventually cover verdict/status/check/merge/reconciliation boundaries |
+| `CLAUDE_TESTING.md` | **Stale** | Still describes four skills and predates the QA target |
 
 ---
 
 ## Test Status
 
-`python -m unittest discover -s tests -p "test_*.py"` → **130 passed**, 0.24s, no network.
+No unit, integration, mutation, coverage, or live GitHub suite was run in session 5 because this session changed research and documentation only. The result below is the last recorded hermetic run from 2026-07-31, not fresh evidence for current HEAD.
 
-Notable coverage:
+- `python -m unittest discover -s tests -p "test_*.py"` — **130 passed**, 0.24s, no network (last recorded 2026-07-31).
+- That suite exhaustively checked Status and Role pairs, partial-mutation behavior, and the current human-only merge floor. The merge-floor assertion describes the code as it exists today; the new QA acceptance/controller design is not implemented.
+- Split at that run: `test_policy` 41, `test_workflows` 41, `test_producer_board` 36, `test_partial_failures` 12.
+- The slide deck was previously verified by build plus a calibrated exported-PNG clipping scan.
+- `git diff --check` passed for the final handoff edit; Git emitted only its normal LF-to-CRLF working-copy advisory.
+- No line, branch, mutation, requirements-traceability, integration, or failure-injection metrics were produced. The new QA standard explicitly treats line execution as insufficient evidence of behavioral test strength.
 
-- every Status pair (36) and every Role pair (36) asserted individually, not sampled;
-- pagination: a 250-Card board reads completely; a 10,000-Card board raises rather than returning a partial board;
-- every partial-mutation boundary in intake, handoff, promote, decompose — including an assertion that no result ever contains the words "rolled back", "rollback", "reverted", or "undone";
-- the merge floor: refused for all five agent seats, permitted only for `human`.
+Still untested: every live `gh` path; disposable-repository intake; architect docs PR; live handoff; persistent marketplace installation; manifest validation since the seven-skill layout; unrelated-repository end to end; the proposed QA verdict, acceptance evaluator, protected-change routing, and merge controller.
 
-Split: `test_policy` 41, `test_workflows` 41, `test_producer_board` 36, `test_partial_failures` 12.
-
-Slides verified by build (`npx slidev build`) plus a pixel scan of all 23 exported PNGs confirming no slide clips its bottom edge. **Calibrate that scan against a sampled pixel** — the exporter renders on white, not the theme's warm canvas, and assuming the theme colour makes it report every slide clipped.
-
-**Not tested**: any live `gh` call; disposable-repository intake; architect docs PR; live handoff; persistent marketplace install; plugin manifest validation since the seven-skill layout; end-to-end from an unrelated consuming repository.
-
-> Every green test is hermetic. It proves the adapter behaves correctly **given response shapes that have never met a real `gh`**. That gap is the project's largest open risk.
-
+> The 130 green tests are hermetic and predate this session. They prove adapter behavior only against assumed response shapes. Live GitHub behavior and the new QA workflow remain the largest assurance gaps.
 ---
 
 ## Known Issues & Deferred Debt
 
-- **Live `gh` JSON shapes are assumed** (`tests/fake_gh.py`) — fixtures encode expected shapes; a live Project must confirm `project view`, `field-list`, `item-list`, `item-add`, and `pr view`.
-- **Pagination strategy is an assumption** (`github.fetch_all_items`) — it escalates `--limit` until a response returns short. **If the installed `gh` caps `--limit`, this must become a documented ceiling instead.** Verify before trusting dispatch on a large board.
-- **Handoff remains partially non-atomic** (`board.handoff_card`) — Role changes before the comment posts. Now surfaced as `PartialHandoff` carrying the exact comment body for replay, rather than hidden.
-- **`handoff_count` fails open** (`board.handoff_count`) — if comments cannot be read it returns 0, so the cap under-counts rather than stalling the team. Deliberate; revisit if ping-pong goes undetected.
-- **No automatic field provisioning** — `doctor` validates and explains, never creates.
-- **No claim or WIP enforcement** — `brief` reports WIP but nothing blocks dispatch past the limit.
-- **No audit trail beyond GitHub artifacts** — the partial-failure envelope is not a substitute; plan M7.
-- **`CLAUDE_TESTING.md` is stale** — describes four skills and the old command set.
-- **The specification gate accepts an unverified pointer** (`workflows.check_spec_gate`) — a `--spec` value that is not a Pull Request number or URL is treated as durable "by construction" without checking the file exists, so `--spec docs/never-written.md` satisfies it. Only `human` can walk through it now that readiness is gated, which is why it was left; close it if a real run shows a Card promoted against a missing document.
-- **`create-card` and `transition` never consult the specification gate** — only `promote` and `decompose` do. Reaching `Ready` by those paths is human-only, but a human can still create a Ready Card with no specification at all.
+- **Target/code mismatch is intentional but high-risk** — the docs now specify automated QA plus deterministic acceptance, while the implementation and the last recorded tests still enforce the old human-only merge floor. Do not describe the target as shipped.
+- **The QA path does not exist yet** — no claim workflow, complete-change inventory, architecture baseline check, structured evidence schema, verdict publisher, blind-spot loop, or exact-head-SHA invalidation has been implemented.
+- **Acceptance and merge enforcement do not exist yet** — there is no independent `eligible | defect | protected_change` evaluator, protected-path matcher, expected-source status check, stale-base retest, or non-agent merge controller.
+- **Test-strength enforcement does not exist yet** — there are no current line/branch figures, mutation results, requirement-to-test traceability, property/state checks, or integration/failure-injection evidence. A covered line must never be treated as proof that its behavior was asserted.
+- **Live `gh` JSON shapes are assumed** (`tests/fake_gh.py`) — fixtures encode expected shapes; a disposable live Project must confirm `project view`, `field-list`, `item-list`, `item-add`, and `pr view`.
+- **Pagination strategy is an assumption** (`github.fetch_all_items`) — it escalates `--limit` until a response returns short. If `gh` caps the limit, this must become an explicit documented ceiling.
+- **Handoff remains partially non-atomic** (`board.handoff_card`) — Role changes before the comment posts. `PartialHandoff` preserves the exact replay material but does not undo the first mutation.
+- **`handoff_count` fails open** (`board.handoff_count`) — unreadable comments count as zero. This avoids stalling but can under-count ping-pong.
+- **No automatic field provisioning, WIP enforcement, or independent audit store** — `doctor` only validates, `brief` only reports, and GitHub artifacts remain the audit trail.
+- **`CLAUDE_TESTING.md` is stale** — it describes four skills and the old command set.
+- **Specification-gate gaps remain** — an unverified non-PR pointer is accepted, and `create-card` / `transition` do not consult the gate directly.
+- **Research projects are patterns, not dependencies** — OpenCodeReview, PR-AF, GitHub Agentic Workflows, Prow Tide, OpenReview, PR-Agent, Code Review Benchmark, and OpenWorker have not been installed or invoked. Recheck licensing before copying; PR-AF had no clearly identified license during this research.
 
 ---
 
 ## Open Decisions
 
-- **First Consumer capability** — options: Dev claim/worktree/PR, or QA verdict first; need: evidence from the first live Producer run.
-- **Pagination ceiling** — options: keep escalation, or switch to a documented hard ceiling; need: observed `gh project item-list --limit` behaviour on a real board.
-- **`handoff_count` fail-open** — options: keep, or fail closed and stall; need: a live case where an unreadable comment thread mattered.
-- **Persistent installation** — options: continue `--plugin-dir`, or install the local marketplace; need: user preference after unrelated-repository testing.
+- **Merge backend and identity** — choose GitHub auto-merge/merge queue, a GitHub App, or a narrow CLI controller; define the one non-agent identity allowed to request merge and the exact expected source of its acceptance status.
+- **Protected-change matcher** — settle the versioned path/rule configuration for policy and authority code, QA acceptance/merge logic, GitHub workflows and credentials, dependency manifests, agent instructions, security boundaries, and architecture/design changes.
+- **Evidence schema and thresholds** — define required fields, requirement/invariant identifiers, changed-file accounting, severity model, coverage dimensions, mutation policy including equivalent mutants, and which missing evidence fails closed.
+- **Shadow-rollout exit criteria** — define the PR sample, seeded-defect suite, precision/recall targets, false-negative budget, flake budget, and rollback trigger before routine human review can be removed.
+- **Review topology** — decide which bounded dimensions run as separate agents/passes when the carrier supports them, their context boundaries, and how the QA Consumer detects and repeats blind spots while retaining sole responsibility for synthesis.
+- **Board routing after acceptance** — settle durable artifacts and transitions for `eligible`, `defect`, and `protected_change`, plus who reconciles a successfully merged Card to `Done`.
+- **Pagination ceiling, `handoff_count` fail-open behavior, and persistent installation** — retain as live-verification decisions after authenticated GitHub testing.
 
-**Settled** (rationale in `docs/ARCHITECTURE.md` Appendix A.2, do not relitigate without new evidence): `architect → analyst` is legal (1); `spec_completion` defaults to `merged` (2, readiness half superseded by 6); decomposition is by shape (3); transition authority keys off the destination (4); creation obeys that same destination rule on both axes (5); **only `human` opens `Backlog -> Ready`** (6); **the plugin infers the seat, the user never names one, and the router may never infer `human`** (7).
+**Settled** (rationale in `docs/ARCHITECTURE.md` Appendix A.2–A.3; do not relitigate without new evidence): `architect → analyst` is legal (1); `spec_completion` defaults to `merged` (2, readiness half superseded by 6); decomposition is by shape (3); transition authority keys off the destination (4); creation obeys the same destination rule on both axes (5); only `human` opens `Backlog → Ready` (6); the plugin infers agent seats but never `human` (7); and the second routine human gate is replaced in the target design by QA evidence, an independently computed acceptance result, deterministic policy enforcement, and a human exception only for protected changes (8). The current code still implements the old merge floor until M5.
 
 ---
 
 ## Hard-won Discoveries
 
-- **A rule applied in one place is not a rule.** The destination-authority rule (decision 4) was correct but enforced only where a Card *moved*, so `create_card` reached `Ready` and `Done` unchecked and exited `0` saying `"ok": true`. It had zero test coverage, which is why 123 green tests never saw it. When fixing an authority hole, grep for every path to the same state before calling it closed.
-- **Ask what a claim rests on before repeating it.** The deck said "two human gates" for weeks. It had one. Verifying it meant enumerating every path to `Ready` and running them, not re-reading the policy table.
-- **`ActionClass.REVIEW` does not gate anything.** `Decision.permitted` is true for `REVIEW`, so a review-class entry is documentation, not enforcement. Only `REFUSE` gates.
-- **Writing the rules down as executable policy found five real bugs.** Three contradicted documents already written (`architect → analyst` missing from the authority matrix; `doctor` checking 2 of 6 Statuses; board read capped at 100 with no truncation check). Two only became visible once the rules ran: a generic `transition` could reach `Ready`, bypassing the `promote_to_ready` refusal, and handoff free text could forge a second `**Handoff**` line a parser would read. **Both authority holes were caught by tests written expecting them to pass.** Prose can hold a contradiction indefinitely; a table of 36 asserted pairs cannot.
-- **Silent truncation was the worst bug in the codebase.** A Card past page one was invisible to dispatch while dispatch reported success. Failing loudly beats returning a short list.
-- **A pure policy module is worth the extra file.** Because `policy.py` imports nothing that touches the network, its edges are cheap to assert exhaustively — which is exactly why the holes surfaced.
-- **Slide density is a layout problem, not a wording problem.** Type in Parts 3–5 ran down to 0.54rem (~9px). Judging from source was useless; exporting PNGs and looking at them revealed two slides overflowing and two with headings misaligned because each card centred its content independently. Fixed structurally (`grid-template-rows: auto auto 1fr`), not by trimming words until nothing wrapped.
-- **Verify a verification.** A pixel scan for clipped slides reported all nine clipped — because it assumed the theme's warm background while the export renders on white. Calibrate the check against a sampled pixel before trusting its verdict.
-- **`--plugin-dir` remains the reliable development proof**; it overrides stale installed copies.
-- **Worktrees under `../.worktrees/` work well here** — created, merged with `--no-ff`, verified on the merged result, then removed. Used twice this session without incident.
+- **An AI reviewer is not a merge controller.** Most open reviewers reduce review effort but still assume a human or platform policy makes the final decision. Removing the routine second human gate requires a separate deterministic acceptance and merge-control layer.
+- **Separate reasoning, evidence, decision, and mutation.** QA may investigate and publish a structured verdict, but an independent deterministic evaluator must select `eligible`, `defect`, or `protected_change`; only a tightly scoped non-agent controller may mutate merge state.
+- **Bind every verdict to the exact PR head SHA.** A new push invalidates the evidence. Current-base eligibility also requires the platform to retest or merge-queue the candidate rather than trusting a stale review.
+- **Line coverage is execution evidence, not behavioral proof.** Strong assurance combines branch and scenario coverage, explicit negative paths, mutation resistance, requirement/invariant traceability, property or state testing where suitable, and integration/failure injection at risky boundaries.
+- **Complete change accounting prevents quiet blind spots.** Enumerate every changed/new/deleted file, split large changes into reviewable units, and require each requirement and architectural invariant to map to implementation and test evidence.
+- **OpenWorker is the wrong layer for this gate.** It is a general local coworker with approval-gated consequential actions, not a PR assurance or merge-policy system.
+- **GitHub Agentic Workflows contributed the strongest safety pattern.** Read-only/default-deny capabilities, typed safe outputs, protected files, and deterministic enforcement are more important here than adopting that project as a runtime dependency.
+- **Empirical reviewer quality drops on real PRs.** The reviewed 2026 study reported very low real-only F1 in its setup; do not let one LLM verdict become sole merge authority. Use multiple evidence dimensions, deterministic checks, protected exceptions, and shadow calibration.
+- **A rule applied in one path is not a rule.** Earlier authority bugs survived because alternate paths reached the same state. Search and test every route to a protected outcome.
+- **Hermetic fixtures can hide the largest integration risk.** The 130 tests have never exercised a real `gh`; validate response shapes and pagination before building more workflow logic on them.
+- **Documents must label target versus shipped behavior.** Decision 8 deliberately changes the future architecture while the current code still has the human-only merge floor.
+- **The Windows sandbox helper is unavailable in this environment.** `codex-windows-sandbox-setup.exe` could not launch, so this session needed approved out-of-sandbox reads and direct invocation of Codex's patch engine. Recheck before assuming normal sandboxed tools work.
 
 ---
 
 ## Blockers / Waiting On
 
-- **Live GitHub verification** — waiting on: `gh` plus a disposable Project. This blocks plan M1.1–M1.3 and gates everything downstream.
-- **Remote synchronisation** — waiting on: user decision. `mvp/producer-from-scratch` is **1 commit ahead** of `origin/mvp/producer-from-scratch`; nothing has been pushed.
+- **Authenticated live GitHub verification** — `gh` is installed at `C:\Program Files\GitHub CLI\gh.exe` but is not logged in. A disposable repository and Project are still required to verify the Producer adapter, pagination, mutations, and durable artifacts before M4/M5 can be trusted end to end.
+- **QA policy choices** — the merge backend/identity, expected status-check source, protected matcher, evidence schema, quantitative thresholds, and shadow-rollout exit criteria must be settled before implementing an auto-merge path.
+- **Implementation authorization/scope** — this session was research and documentation only. No QA, evaluator, merge-controller, CI, or test-infrastructure implementation was requested or started.
+- **Remote synchronization** — `mvp/producer-from-scratch` is one commit ahead of origin. Nothing should be pushed without the user's instruction.
+- **Local tooling** — the Codex Windows sandbox setup helper is missing. Safe reads/patches were possible with approval, but future command execution may need the same workaround or a repaired installation.
 
 ---
 
 ## Current State
 
-On `mvp/producer-from-scratch`, HEAD `2cd10b6` ("feat: add human backlog gate to producer"), **1 ahead of origin**, one worktree (the repo root). That commit carries the whole gate change: `policy.py`, `workflows.py`, `producer_board.py`, four skills, five test files, `docs/ARCHITECTURE.md`, and the new `docs/USAGE.md`.
+Repository: `C:\Users\User\Documents\intern\ITRI\agent-teams-project\agent-teams`.
 
-**Uncommitted**: `HANDOFF.md`, `README.md`, `slides/slides.md`, `slides/styles/index.css`. The slide files have been uncommitted at the user's explicit request since session 3 — do not commit them without asking.
+Branch `mvp/producer-from-scratch` is at `f4378ee0ee467ab4c027c9eae1bb5c2c7c983844` (`feat: research second human gate replacement and write docs`), one commit ahead of `origin/mvp/producer-from-scratch`, with one worktree. The commit appeared during this session under Joanne's identity and changed `README.md`, `docs/ARCHITECTURE.md`, `docs/IMPLEMENTATION_PLAN.md`, and `docs/USAGE.md`; the assistant did not create it.
 
-The plugin is v0.2.0: seven skills, six deterministic modules, **130 passing tests**. No process is running, no live board has been touched, and `gh` is not installed.
+The only working-tree change after this handoff is `HANDOFF.md`. Do not commit, push, or otherwise publish it unless the user asks. No implementation, policy, workflow, or test file was changed in this session.
 
-Cross-repo note: the sibling `../agent-teams-main` had its `docs/producer-context-bootstrap` worktree merged into `main` (fast-forward to `1077530`) and removed. That repo is clean and unrelated to this branch's history.
+Producer remains v0.2.0 with seven skills and six deterministic modules. The last known test result is 130 hermetic passing tests from 2026-07-31. The documentation now contains the target QA/acceptance architecture, but runtime behavior remains the old human-only merge floor until M5 and the acceptance/controller work are implemented.
+
+`gh`  is installed but unauthenticated. No live Project, repository mutation, PR review, external reviewer runtime, or merge attempt occurred, and no relevant process is running.
 
 ---
 
 ## Next Steps
 
-The Producer surface is code-complete. **Every remaining Producer risk is the same risk: none of it has met a real GitHub CLI.** Close that before building more.
-
-1. Install `gh`; authenticate with Project scope.
-2. Create a disposable repository and Project with both six-option fields.
-3. Run `producer_board.py doctor` and confirm it reports what is actually missing.
-4. Capture real `gh project view / field-list / item-list / item-add` JSON; replace the assumed shapes in `tests/fake_gh.py` with the captures.
-5. **Confirm `gh project item-list --limit` behaviour** against `github.fetch_all_items`. If `gh` caps the limit, convert the escalation into a documented ceiling.
-6. Run one disposable intake, one promote, one handoff; check the durable board against what each JSON envelope claimed.
-7. Re-run `claude plugin validate .` and load from an unrelated repository; confirm all seven skills appear.
-8. Refresh `CLAUDE_TESTING.md` for the seven-skill layout, and update the §4.4 verification table in the plan with observed evidence.
-
-Only then start Consumer work (M4/M5) or audit (M7). Building a second seat on unverified response shapes doubles what must be re-checked when the first real `gh` call disagrees with a fixture.
+1. Review this handoff and the committed documentation target; keep the target/current-code distinction explicit.
+2. Authenticate `gh` with the needed repository and Projects scopes, create a disposable repository/Project, and close the Producer live-verification gaps including JSON shapes, pagination, intake, promotion, and handoff.
+3. Settle the open QA policy choices: evidence schema, exact-head invalidation, protected matcher, thresholds, merge backend/identity, expected check source, and shadow-rollout criteria.
+4. Follow the implementation-plan order unless deliberately reprioritized: build and verify the M4 Developer Consumer, then build the M5 QA Consumer around complete change inventory and bounded review dimensions.
+5. Implement the structured QA verdict as evidence only, then a separate deterministic acceptance evaluator returning exactly `eligible`, `defect`, or `protected_change`.
+6. Add the narrow non-agent merge controller and durable board routing: eligible may merge, defects return to Dev, protected changes route to Human, and Lead reconciles successful merge to Done.
+7. Build the assurance suite before removing routine human review: branch/scenario assertions, mutation testing, requirements/invariant traceability, property/state checks where useful, integration/failure injection, stale-SHA tests, protected-path tests, and current-base/merge-queue tests.
+8. Run in shadow mode against historical and seeded-defect PRs, publish precision/recall/false-negative/flake evidence, and remove the routine second human gate only after the agreed exit criteria pass.
 
 ---
 
 ## Suggested Skills
 
-- **`superpowers:verification-before-completion`** — the single most relevant skill here. This project's recurring failure mode is a confident claim ahead of its evidence; the handoff above distinguishes hermetic from live proof precisely because of it.
-- **`superpowers:test-driven-development`** — before touching `policy.py`. Both authority holes were found by writing the test first and being surprised.
-- **`superpowers:systematic-debugging`** — when the first live `gh` call disagrees with a fixture. Expect that, and diagnose rather than loosening the adapter.
-- **`superpowers:using-git-worktrees`** then **`superpowers:finishing-a-development-branch`** — the established flow for feature work on this branch.
-- **`superpowers:executing-plans`** — `docs/IMPLEMENTATION_PLAN.md` is a real written plan; execute it rather than improvising a milestone.
-- **`superpowers:brainstorming`** — before designing the Dev/QA Consumer seats, which are genuinely new design work rather than plan execution.
+No additional plugin or skill runtime is required or desired for the planned QA workflow. Compatible open `SKILL.md` instructions may be adapted locally as documented process, with source and license attribution, but the workflow must not depend on invoking those external plugins. If multiple reviewer agents/passes are supported by the host carrier, keep them bounded by review dimension and let the QA Consumer own completeness, challenge, and synthesis.
 
 ---
 
 ## Session Log
 
 <!-- newest entry at top -->
+
+### 2026-08-05 — Session 5
+
+- Researched current open approaches to replacing the second routine human code-review gate: OpenCodeReview, PR-AF, GitHub Agentic Workflows, Prow Tide, OpenReview, PR-Agent, Code Review Benchmark, OpenWorker, GitHub native merge controls, and recent empirical reviewer evaluation.
+- Settled the target split: QA claims and reviews the PR, grounds and challenges findings, publishes an exact-head-SHA verdict, and never chooses its own route; an independent deterministic evaluator returns `eligible`, `defect`, or `protected_change`.
+- Defined QA review dimensions: architecture/design conformance, correctness and edge cases, complete change accounting and splitting, security/compatibility, cross-file risk, behavioral test strength, and blind-spot detection/review repetition. Multiple bounded agents/passes are optional; QA owns completeness and synthesis.
+- Clarified that line coverage is not test adequacy. Required evidence should include branch/scenario assertions, negative paths, mutation resistance, requirements/invariant traceability, property/state testing where suitable, and integration/failure injection.
+- Updated `README.md`, `docs/ARCHITECTURE.md`, `docs/IMPLEMENTATION_PLAN.md`, and `docs/USAGE.md`; those documentation changes were committed during the session as `f4378ee` under Joanne's identity. The target is explicitly not implemented, and no external reviewer plugin becomes a runtime dependency.
+- No code or tests were changed or run. `gh` is installed but unauthenticated; no live GitHub operation occurred. This `HANDOFF.md` update remains uncommitted at the user's request.
+
+---
 
 ### 2026-07-31 — Session 4
 
