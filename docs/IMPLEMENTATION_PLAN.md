@@ -3,7 +3,7 @@
 Status: active plan for evolving the Producer minimum viable product into the
 proposed Phase 1 agent team
 Applies to: `mvp/producer-from-scratch`
-Last updated: 2026-07-31
+Last updated: 2026-08-05
 
 ## 1. Outcome
 
@@ -15,11 +15,12 @@ The desired outcome is a small but complete Claude Code agent team in which:
 3. a Tech Lead dispatches the next legal seat;
 4. a Developer claims one Card, works through
    test-driven development, and opens one Pull Request;
-5. a separate Quality Assurance engineer session writes an evidence-backed
-   verdict;
-6. the Quality Assurance engineer either returns the Card to the Developer or hands it to the human merge gate;
-7. the human verifies and merges;
-8. standing repository context plus live board state is sufficient for every
+5. a separate Quality Assurance engineer session performs multidimensional,
+   evidence-grounded review and writes a structured verdict;
+6. deterministic policy routes an eligible delivery to automated merge, a
+   defect back to the Developer, or a protected change to the human exception
+   lane;
+7. standing repository context plus live board state is sufficient for every
    next session to reconstruct its role-appropriate project view and resume.
 
 This plan started from a four-skill, one-script minimum viable product. The
@@ -52,8 +53,8 @@ Functional Phase 1 is complete when one disposable Card can traverse:
   -> (Ready, dev)
   -> (In Progress, dev)
   -> (In Review, qa)
-  -> (In Review, human)
-  -> Done after human merge
+  -> deterministic acceptance
+  -> Done after automated merge
 ```
 
 It must also prove the Quality Assurance rejection path:
@@ -62,14 +63,22 @@ It must also prove the Quality Assurance rejection path:
 (In Review, qa) -> (In Progress, dev)
 ```
 
-and refuse an illegal direct handoff from the Developer to the human.
+It must also prove the protected-change path:
+
+```text
+(In Review, qa) -> (In Review, human) -> Done after human decision
+```
+
+and refuse an illegal direct handoff from the Developer to the human or any
+direct agent merge.
 
 ### 2.2 Governed target
 
 The governed target additionally requires:
 
 - a seat-aware action policy;
-- hard human-only merge;
+- deterministic acceptance and merge for eligible changes;
+- a human exception lane for protected changes;
 - handoff cap and work-in-progress policy;
 - append-only actor-seat audit;
 - recovery visibility for partial mutations;
@@ -115,7 +124,7 @@ team-of-teams are not required for either completion level.
 | Tech Lead triage skill | Done | `skills/triaging-board/SKILL.md` |
 | Quality Assurance queue inspection skill | Done | `skills/inspecting-queue/SKILL.md`; Producer-shaped, issues no verdicts |
 | Developer execution skill | Pending | Consumer-shaped; outside the Producer scope |
-| Quality Assurance engineer verification skill | Pending | Consumer-shaped; outside the Producer scope |
+| Quality Assurance engineer verification and acceptance skill | Pending | Consumer-shaped; must implement the multidimensional review and evidence contract in M5 |
 
 ### 4.3 Board adapter
 
@@ -139,7 +148,7 @@ team-of-teams are not required for either completion level.
 | `promote` (Backlog to Ready) | Done | Readiness gate plus two independent operations; `PromoteTests`, `PromoteFailureTests` |
 | `create-card` / `decompose` | Done | Flat implementation Cards with spec pointer and provenance; `DecomposeTests`, `DecomposeFailureTests` |
 | Card claim/worktree | Pending | Consumer-shaped; outside the Producer scope |
-| Pull Request link/verdict/post-merge operations | Pending | Consumer-shaped; outside the Producer scope |
+| Pull Request link/verdict/acceptance/merge/reconciliation operations | Pending | Consumer-shaped; outside the delivered Producer scope |
 | Append-only audit log | Pending | M7; the partial-failure envelope is not a substitute |
 
 ### 4.4 Verification
@@ -180,8 +189,10 @@ partial-mutation reporting with recovery instructions.
 
 ### P1: complete the five-seat workflow
 
-Producer-side items are done: Status transition policy, the human merge gate
-as a non-overridable floor, and work-in-progress plus handoff-loop safety.
+Producer-side items are done: Status transition policy, the currently enforced
+human-only merge floor, and work-in-progress plus handoff-loop safety. M5 must
+replace that floor atomically with deterministic acceptance plus the protected-
+change exception; until then, automated merge is designed but not implemented.
 Remaining items are Consumer-shaped:
 
 - add Developer claim/test-driven development/Pull Request workflow;
@@ -215,8 +226,8 @@ M3  Architect -> Ready vertical slice                Done except live proof
  |
 M4  Developer execution      Pending (Consumer)
  |
-M5  Quality Assurance verification + human lane      Queue inspection done;
- |                                                   verdicts pending (Consumer)
+M5  QA verification + deterministic acceptance       Queue inspection done;
+ |                                                   verdicts/gating pending
 M6  Tech Lead operations, WIP, recovery    Done except stale-claim
  |                                                   detection (needs claims)
 M6.5 Blocker resolution (`resolving-issues`)         Pending (needs M4 claims)
@@ -610,29 +621,40 @@ Create `skills/consuming-card/SKILL.md` with:
 - resulting board state is `(In Review, qa)`;
 - Developer -> human is deterministically refused.
 
-## 12. M5 - Quality Assurance engineer verification and the human lane
+## 12. M5 - Quality Assurance verification and deterministic acceptance
 
 Status: **Pending**
 
-Purpose: make the Quality Assurance engineer an independent seat rather than
-a self-review step inside the Developer session.
+Purpose: make Quality Assurance an independent, multidimensional review stage
+that produces challenged evidence for deterministic merge eligibility rather
+than sending every passing Pull Request to a second mandatory human gate.
 
 ### Work items
 
-#### M5.1 Verdict contract
+#### M5.1 Structured verdict and evidence contract
 
 Define:
 
 ```text
 verdict: pass | fail | blocked
-evidence: commands, URLs, screenshots, findings
-scope: functional, UI, data correctness, security applicability
-artifacts: Pull Request and Card references
+head_sha: exact reviewed Pull Request head
+design_baseline: specification, architecture, and decision references
+review_dimensions: design, architecture, correctness, edge cases, security,
+                   compatibility, cross-file risk, test strength
+changed_files: complete enumerated set and bounded review units
+conformance: requirement/invariant -> implementation evidence -> test evidence
+test_strength: line, branch, mutation, scenario, and integration evidence
+findings: evidence, challenge performed, challenge outcome
+blind_spots: unresolved or unreviewed areas
+artifacts: Pull Request, Card, commands, URLs, screenshots, and machine results
 ```
 
 - [ ] reject a bare pass/fail without evidence;
 - [ ] preserve reproducible findings;
-- [ ] keep verdict comments parseable.
+- [ ] bind every verdict to the exact Pull Request head;
+- [ ] reject a pass with missing changed files, required dimensions, or
+      unresolved blind spots;
+- [ ] publish one readable Pull Request report plus parseable evidence.
 
 #### M5.2 Add Quality Assurance engineer skill
 
@@ -641,42 +663,79 @@ Create `skills/verifying-delivery/SKILL.md` with:
 - [ ] `[role:qa] [board-card:#N]` routing;
 - [ ] ownership precondition `(In Review, qa)`;
 - [ ] Pull Request-contract validation;
-- [ ] `gstack:/review`;
-- [ ] browser-based verification for user-interface Cards;
-- [ ] data-correctness checks for connector/metric Cards;
-- [ ] `gstack:/cso` when security-relevant;
+- [ ] deterministic enumeration of every changed and new file;
+- [ ] bounded splitting of large changes without omitting any review unit;
+- [ ] design and architecture conformance review;
+- [ ] correctness and edge-case review;
+- [ ] security and compatibility review;
+- [ ] cross-file and compound-risk review;
+- [ ] test-strength review that does not equate line execution with tested
+      behaviour;
+- [ ] blind-spot detection and repeated review of affected dimensions;
+- [ ] optional multiple bounded reviewer agents or independent passes by
+      dimension, while the bound QA Consumer retains ownership and synthesis;
+- [ ] browser-based verification for user-interface Cards and data-correctness
+      checks for connector/metric Cards when applicable;
+- [ ] locally owned review instructions; no runtime dependency on another
+      plugin or its skills; compatible open instructions may be adapted into
+      this skill with attribution rather than called at runtime;
 - [ ] refusal to modify production code;
 - [ ] evidence-backed verdict.
 
-#### M5.3 Pass path
+#### M5.3 Evidence grounding and challenge
 
-- [ ] write PASS verdict;
-- [ ] preserve Status `In Review`;
-- [ ] handoff `qa -> human`;
-- [ ] surface the exact `Human Verification TODO`;
-- [ ] prevent any agent merge operation.
+- [ ] require every material finding to cite code, behaviour, design, test, or
+      command evidence;
+- [ ] challenge each material finding against callers, related files, intended
+      behaviour, existing mitigations, and contrary evidence;
+- [ ] retain the challenge outcome in the verdict;
+- [ ] record unresolved uncertainty as `blocked`; deterministic policy may then
+      classify it as a protected change, but QA never selects its own route;
+- [ ] rerun a dimension when changed-file or review-dimension coverage exposes
+      a blind spot.
 
-#### M5.4 Fail path
+#### M5.4 Deterministic eligibility and routing
 
-- [ ] write FAIL verdict with reproducible findings;
-- [ ] transition `In Review -> In Progress`;
-- [ ] handoff `qa -> dev`;
-- [ ] ensure Tech Lead dispatch can return the same Card to Developer;
-- [ ] retain the same Pull Request/branch when appropriate.
+Define a separate, policy-authored result:
+
+```text
+acceptance: eligible | defect | protected_change
+head_sha: exact head for which the decision is valid
+policy_version: deterministic policy version
+reasons: satisfied requirements or exact refusal/escalation reasons
+```
+
+- [ ] validate verdict schema, exact head SHA, evidence completeness, required
+      checks, mergeability, and protected-change policy before any mutation;
+- [ ] eligible: preserve `In Review`, publish the acceptance status, and let the
+      deterministic merge controller merge the same reviewed head;
+- [ ] defect: write reproducible findings, transition `In Review -> In
+      Progress`, hand off `qa -> dev`, and retain the same Pull Request/branch;
+- [ ] protected change: preserve `In Review`, hand off `qa -> human`, and name
+      the exact protected file, design decision, risk, or unresolved judgment;
+- [ ] reject stale evidence immediately after any new Pull Request commit;
+- [ ] prevent QA, Developer, or any other agent seat from directly merging or
+      bypassing eligibility policy;
+- [ ] ensure Tech Lead dispatch can resume each durable route.
 
 #### M5.5 Post-merge reconciliation
 
-- [ ] define whether GitHub auto-close is sufficient or an explicit
-      reconciliation command is required;
-- [ ] represent Done Role consistently (`human` or empty);
+- [ ] use an explicit reconciliation command after confirmed automated or human
+      merge;
+- [ ] represent Done Role consistently without inventing an automation seat;
 - [ ] clean the claim worktree only after merge is confirmed.
 
 ### Exit criteria
 
-- Quality Assurance engineer pass creates `(In Review, human)` without merging;
-- Quality Assurance engineer fail creates `(In Progress, dev)` with actionable findings;
+- a QA pass publishes complete, challenged evidence for the current head;
+- deterministic policy routes an eligible pass to merge without a mandatory
+  human review;
+- a QA defect creates `(In Progress, dev)` with actionable findings;
+- a protected change creates `(In Review, human)` with an exact escalation
+  reason;
 - the entry router recognizes Quality Assurance engineer and Developer;
-- one live failure/fix/pass cycle completes.
+- one live failure/fix/pass/eligible-merge cycle completes;
+- one live protected-change/human-decision cycle completes.
 
 ## 13. M6 - Tech Lead operations, work-in-progress, and recovery
 
@@ -695,7 +754,7 @@ correctness to autonomous spawning.
 #### M6.1 Role-lane briefing
 
 - [ ] group Cards by Role and Status;
-- [ ] show human-lane merge queue;
+- [ ] show automated-acceptance and protected-change queues separately;
 - [ ] show Blocked Cards and aging;
 - [ ] show handoff counts approaching the cap;
 - [ ] identify missing Role/Status as data-quality errors.
@@ -826,14 +885,15 @@ Purpose: reach the governed target proposed by the adaptation architecture.
 
 - [ ] enumerate semantic mutations once, without duplicating IDs per Role;
 - [ ] include create, transition, handoff, claim, release, Pull Request submit,
-      verdict, and cleanup;
+      verdict, eligibility, controlled merge, and cleanup;
 - [ ] distinguish read-only events from mutations.
 
 #### M7.2 Seat-aware policy
 
 - [ ] classify `(action, seat)` as automatic, review-required, or forbidden;
 - [ ] apply hard forbidden floors before overrides;
-- [ ] make agent merge forbidden and non-overridable;
+- [ ] make direct agent merge forbidden and non-overridable while allowing only
+      the deterministic controller to execute an eligible merge;
 - [ ] make out-of-seat mutations refuse before calling GitHub;
 - [ ] add project-local overrides only after a live approval proves to be
       pure friction.
@@ -895,14 +955,18 @@ Show revenue by region for the last 30 days.
 - [ ] architect spec/decomposition -> `(Ready, dev)`;
 - [ ] Tech Lead dispatch -> Developer prompt;
 - [ ] Developer test-driven development/Pull Request -> `(In Review, qa)`;
-- [ ] Quality Assurance engineer evidence/pass -> `(In Review, human)`;
-- [ ] human verifies and merges -> Done;
+- [ ] Quality Assurance engineer review/evidence/pass -> deterministic
+      acceptance;
+- [ ] eligible Pull Request -> automated merge -> Done;
 - [ ] each step starts from only its Role/Card prompt and durable artifacts.
 
 #### M8.3 Negative paths
 
 - [ ] Quality Assurance engineer rejects at least once and Developer fixes the same Card;
 - [ ] illegal Developer -> human handoff refuses;
+- [ ] protected change routes to `(In Review, human)` with the exact reason;
+- [ ] stale QA evidence cannot authorize merge after a new commit;
+- [ ] missing changed-file or review-dimension coverage cannot produce pass;
 - [ ] one claim race produces a clean loser;
 - [ ] one partial comment failure produces a fix-forward;
 - [ ] one handoff-cap breach routes to Tech Lead.
@@ -1050,6 +1114,7 @@ modules are not a milestone deliverable.
 | Layer | Purpose | Network |
 |---|---|---|
 | Unit | policy, parsing, ordering, recovery shapes | none |
+| Test strength | changed branches, mutation resistance, required scenarios, state-machine properties | none |
 | Adapter contract | replay sanitized real `gh` fixtures | none |
 | Git integration | claim races and worktrees with temp remotes | local only |
 | Plugin validation | manifest and skill discovery | none |
@@ -1061,6 +1126,11 @@ Required principles:
 - fake `gh` remains injectable;
 - live tests never use a production Project;
 - expected failures are asserted as structured results;
+- changed-line coverage is never accepted as sole evidence that behaviour is
+  tested; branch outcomes, assertion strength, mutation resistance, and required
+  positive/negative scenarios are evaluated where applicable;
+- critical policy and transition changes have no unexplained surviving mutants
+  and no untested legal or illegal state transition;
 - no test depends on an installed audit DB client;
 - tests distinguish "prompt rendered" from "session started";
 - success claims always cite the latest observed run.
@@ -1071,7 +1141,8 @@ Required principles:
 2. M2 policy precedes Developer/Quality Assurance engineer mutations; legality before workflows.
 3. M3 closes architect -> Ready before Developer is implemented.
 4. M4 claim precedes parallel Developer execution.
-5. M5 Quality Assurance engineer remains a separate session from Developer.
+5. M5 Quality Assurance remains a separate session from Developer; its
+   structured evidence contract precedes deterministic eligibility and merge.
 6. M6 keeps human launch as the default carrier.
 6a. M6.5 follows M4: a resolver cannot verify claim, worktree, or Pull Request
     preconditions that do not exist yet, and one built against absent state

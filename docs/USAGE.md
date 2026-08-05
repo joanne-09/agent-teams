@@ -43,9 +43,11 @@ Four things follow, and they explain most of what you will see:
 2. **Sessions do not talk to each other.** Everything one seat needs to tell the
    next is written to the Issue as a structured handoff comment. Close every
    terminal you have; the work is unaffected.
-3. **You are the one seat the plugin may not take.** `human` holds both gates.
-   The plugin will never adopt it, never run `promote` for you, and never
-   merge. It hands those back with a recommendation and the exact command.
+3. **You are the one seat the plugin may not take.** `human` holds readiness
+   and protected-change exception authority. The plugin will never adopt it or
+   run `promote` for you. No agent seat directly merges; after M5, a separate
+   deterministic controller may merge only an eligible, currently reviewed
+   Pull Request head.
 4. **A refusal is a normal outcome.** When a seat asks for something outside its
    authority, the command exits non-zero with a JSON reason and changes nothing.
    That is the system working.
@@ -123,7 +125,8 @@ All seven skills should appear in the `agent-teams:` namespace.
 Everything below is something you *say*, not a command you memorise. The seat
 and skill named after each example are what the plugin picks — shown so you can
 tell whether it read you correctly, not so you have to drive it yourself. The
-only commands you run by hand are the two gates in §3.4 and §3.8.
+mandatory human command is the readiness gate in §3.4; after M5, §3.8 requires
+human action only for protected changes.
 
 ### 3.1 Get oriented — the default, and available whenever you want it
 
@@ -244,34 +247,46 @@ Triage routes; it does not resolve. It cannot promote to Ready and cannot merge.
 you:  what's waiting to be checked?
 ```
 
-The plugin runs `inspecting-queue` as `qa`: Cards in `(In Review, qa)`, ordered, one kickoff prompt
-each, plus what is already waiting on you in `(In Review, human)`.
+The plugin runs `inspecting-queue` as `qa`: Cards in `(In Review, qa)`, ordered,
+one kickoff prompt each, plus protected changes already waiting in
+`(In Review, human)`.
 
 Inspection is **not** verification. A verdict belongs to a separately bound
 Consumer session, which is not built yet.
 
-### 3.8 Merge — the second gate
+### 3.8 Automated acceptance and protected-change review
 
-Read the Pull Request: the Summary, the Automated Verification evidence, and the
-Human Verification TODO. Merge it yourself. No agent seat can, and no
-configuration override can grant it — `merge_pull_request` is in
-`policy.HARD_FLOORS`.
+The M5 target has QA publish a structured verdict, design/architecture
+conformance, complete changed-file review coverage, challenged findings, and
+test-strength metrics for the exact Pull Request head. Deterministic policy then
+routes the result:
+
+- eligible changes are merged by the non-agent merge controller;
+- defects return to `dev` on the same Pull Request; and
+- protected or ambiguous changes move to `(In Review, human)` with the exact
+  reason human judgment is required.
+
+No agent seat can directly merge. This target is not implemented yet: the
+delivered Producer policy still contains the older human-only merge floor, so
+merge remains manual until M5 replaces that floor and verifies the automated
+path end to end.
 
 ---
 
-## 4. Your two gates
+## 4. Your human-attention boundaries
 
-Everything between them is meant to run without you. These are the two places
-the design deliberately spends your attention:
+The target design spends mandatory human attention once and escalates only when
+automation cannot safely establish acceptance:
 
-| Gate | You are deciding | Runs |
+| Boundary | You are deciding | Runs |
 |---|---|---|
 | **Backlog → Ready** | Is this the right work, sliced right, sized right? | `promote` |
-| **Merge** | Is this delivery acceptable? | `gh pr merge`, by hand |
+| **Protected-change exception** | Does this protected, ambiguous, or policy-exception delivery remain acceptable? | Human review and, if accepted, merge |
 
-Both are cheap on purpose: read a one-screen Card, read one Pull Request. Minutes
-of your attention govern hours of machine work. If you find yourself needed
-*between* the gates, that is a design smell worth reporting.
+Eligible routine changes do not enter the second row: QA evidence and
+deterministic acceptance take them through merge. If routine changes repeatedly
+require human attention, the QA evidence or protected-change policy needs
+improvement.
 
 ---
 

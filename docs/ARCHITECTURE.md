@@ -2,7 +2,7 @@
 
 Status: normative architecture for the complete Phase 1 team
 Applies to: `agent-teams` (Claude Code plugin, v0.2.0)
-Last updated: 2026-07-31
+Last updated: 2026-08-05
 Delivery status: [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) — the sole status ledger
 Operating guide: [`USAGE.md`](./USAGE.md) — how a human actually drives this
 
@@ -46,7 +46,7 @@ reviewable delivery or one verdict. No session does both.
 
 ```mermaid
 flowchart TB
-    Stakeholder[Human stakeholder and merge authority]
+    Stakeholder[Human stakeholder and exception authority]
     Carrier[Session carrier]
     Manager[Tech Lead session]
     Analyst[System Analyst session]
@@ -54,6 +54,7 @@ flowchart TB
     Development[Developer session]
     Quality[Quality Assurance engineer session]
     AgentTeams[agent-teams skills and deterministic services]
+    Acceptance[Deterministic acceptance and merge controller]
     Project[GitHub Project]
     Issues[GitHub Issues and comments]
     PullRequests[GitHub Pull Requests and reviews]
@@ -77,7 +78,9 @@ flowchart TB
     AgentTeams <--> PullRequests
     AgentTeams <--> Git
 
-    PullRequests -->|human verification and merge| Stakeholder
+    AgentTeams --> Acceptance
+    Acceptance -->|eligible merge| PullRequests
+    PullRequests -->|protected-change review| Stakeholder
 ```
 
 Each seat box is an independent session with its own context. **There is no
@@ -86,8 +89,9 @@ reconstructed from durable GitHub state on the next launch.
 
 ### 1.2 The invariants
 
-Ten rules the rest of the document elaborates. Each is enforced somewhere
-concrete; nothing here is aspiration.
+Ten rules the rest of the document elaborates. Each must have a concrete
+enforcement point before Phase 1 is complete; the implementation plan records
+which enforcement points are delivered and which remain pending.
 
 | # | Invariant | Enforced in |
 |---|---|---|
@@ -95,7 +99,7 @@ concrete; nothing here is aspiration.
 | 2 | One session = one master agent = one seat = one execution shape. | §3.1 |
 | 3 | `Status` and `Role` are orthogonal. Changing one never implicitly changes the other. | §9.2 |
 | 4 | A Producer never implements a Card; a Consumer never merges its own Pull Request. | §3.1, §4.5 |
-| 5 | Only `human` opens `Backlog -> Ready`, and only `human` merges. Both are hard floors. | §4.5 |
+| 5 | Only `human` opens `Backlog -> Ready`. No agent seat directly merges; deterministic policy merges only eligible reviewed heads, and protected changes require `human`. | §4.5 |
 | 6 | Authority is checked before the first GitHub call, so a refusal costs nothing and leaves no partial state. | §4.4, §10.3 |
 | 7 | The system exposes semantic operations, never a generic field setter. | §9.8 |
 | 8 | Partial failure is reported honestly. No result claims a rollback that did not run. | §11.2 |
@@ -265,8 +269,9 @@ chosen.
 
 **The router may never select `human`.** Every other seat is inferable, because
 inferring one only chooses which refusals will apply. `human` is different: it
-holds both lifecycle gates (§4.5), so a router able to adopt it could approve
-its own readiness decision and defeat the gate by construction.
+holds readiness and protected-change exception authority (§4.5), so a router
+able to adopt it could approve its own exception and defeat the boundary by
+construction.
 
 When the next legal step is human-gated, the session stops and reports the
 decision, its recommendation and why, and the exact command or Pull Request for
@@ -378,8 +383,8 @@ artifacts are authoritative.
 | System Analyst | `analyst` | Converts stakeholder demand into a well-shaped requirement with acceptance criteria and durable context. |
 | System Architect | `architect` | Technical specification, architecture decisions, decomposition, dependencies, technical escalation. Proposes readiness; cannot grant it. |
 | Developer | `dev` | Implements exactly one Ready Card with test-driven development and produces one Pull Request. |
-| Quality Assurance engineer | `qa` | Independently verifies one delivery, records evidence, rejects defects, or opens the human review lane. |
-| Human stakeholder / merge authority | `human` | Resolves business and authority questions, performs remaining human verification, and holds **both** lifecycle gates. |
+| Quality Assurance engineer | `qa` | Independently verifies one delivery across the required review dimensions, records challenged evidence, and publishes a structured verdict for deterministic acceptance. |
+| Human stakeholder / exception authority | `human` | Holds the readiness gate and resolves protected changes, design ambiguity, business questions, and policy exceptions. |
 
 Which shapes each seat may take:
 
@@ -389,8 +394,8 @@ Which shapes each seat may take:
 | System Analyst | Requirement intake, clarification, acceptance-criteria shaping, return-path refinement. | None in Phase 1. |
 | System Architect | Technical shaping, architecture review, dependency analysis, decomposition. | Author one specification or Architecture Decision Record as one documentation Card and Pull Request. |
 | Developer | None in Phase 1. | Claim and implement one Ready Card, verify it, open one Pull Request. |
-| Quality Assurance engineer | Inspect and summarise the verification queue. | Verify one delivery, write a verdict, reject to development, or hand to the human lane. |
-| Human | May originate or reprioritise demand by explicit decision. | Manual review and merge sit outside automated Consumer execution. |
+| Quality Assurance engineer | Inspect and summarise the verification queue. | Verify one delivery, write a verdict, return a defect to development, or submit evidence for deterministic acceptance. |
+| Human | May originate or reprioritise demand by explicit decision. | Readiness approval and protected-change review sit outside automated Consumer execution. |
 
 ### 4.2 Team structure
 
@@ -401,7 +406,7 @@ Tech Lead
    |- Developer
    `- Quality Assurance engineer
 
-Human stakeholder / merge authority: outside the agent team, at the gates
+Human stakeholder / exception authority: outside the agent team, at readiness and exception boundaries
 ```
 
 This expresses responsibility and escalation. It authorises no nested runtime
@@ -414,7 +419,7 @@ calls (§3.3).
 | Maintain queue, priority, and dispatch | Tech Lead |
 | Implement one unit | Developer Consumer |
 | Independently verify one delivery | Quality Assurance engineer Consumer |
-| Resolve authority questions and merge | Human stakeholder / merge authority |
+| Resolve readiness, protected-change, and authority questions | Human stakeholder / exception authority |
 
 ### 4.3 Legal handoff authority
 
@@ -435,7 +440,7 @@ The handoff graph is the enforceable organisation chart.
 | Quality Assurance engineer | Developer | Delivery failed verification and must be corrected. |
 | Quality Assurance engineer | System Architect | Finding reveals a specification or architecture defect. |
 | Quality Assurance engineer | Tech Lead | Repeated or organisational blocker requires team-level recovery. |
-| Quality Assurance engineer | Human | Verification passed; the Pull Request is ready for human review. |
+| Quality Assurance engineer | Human | A protected change or unresolved design/architecture question requires human review. |
 | Tech Lead | Any team seat or human | Dispatch, rebalance, recovery, or escalation within policy. |
 | Human | Any team seat | Human decision, requested change, reprioritisation, or restart. |
 
@@ -444,7 +449,8 @@ Critical refusals:
 - the System Analyst cannot hand directly to the Developer;
 - the Developer cannot hand directly to the human;
 - the Developer cannot mark its own work Ready;
-- no artificial intelligence seat can merge;
+- no artificial intelligence seat can directly merge or bypass deterministic
+  acceptance;
 - a normal handoff cannot exceed the configured per-Card handoff cap.
 
 ### 4.4 Seat-aware action policy
@@ -460,18 +466,31 @@ partial state.
 | Promote `Backlog -> Ready` | refuse | refuse | refuse | refuse | **refuse** | allow |
 | Claim implementation | refuse | documentation only | own Card only | governed verification/test Card only | refuse | allow |
 | Write Quality Assurance verdict | refuse | refuse | refuse | own Card only | refuse | allow |
-| Merge Pull Request | refuse | refuse | refuse | refuse | refuse | allow |
+| Directly merge Pull Request | refuse | refuse | refuse | refuse | refuse | allow |
 
 One subtlety worth stating plainly: a `review`-class classification **gates
 nothing**. A review-class entry is documentation; only an explicit refusal
 blocks an action. Anything intended as a gate must be a refusal.
 
-### 4.5 The two human gates
+The automated merge controller is not a seventh seat and accepts no free-form
+instruction. It may merge only after deterministic policy validates a current,
+schema-valid QA verdict and all required evidence for the exact Pull Request
+head. QA can submit evidence but cannot directly invoke or bypass the merge
+mutation.
 
-| Gate | Action | Why it is the human's |
+### 4.5 Human gate and exception lane
+
+| Boundary | Action | Authority |
 |---|---|---|
-| **Readiness** | `Backlog -> Ready` | Declaring work ready commits the team to build it. An agent seat shapes the Card and hands it to `human`; the human approves it into `Ready`, which also hands it to `dev`. |
-| **Merge** | Merging a Pull Request | Accepting a change into the repository is the final independent acceptance boundary. Every agent seat may prepare, argue for, and evidence a change; only the human accepts it. |
+| **Readiness gate** | `Backlog -> Ready` | Human-only. Declaring work ready commits the team to build it. An agent seat shapes the Card and hands it to `human`; the human approves it into `Ready`, which also hands it to `dev`. |
+| **Automated acceptance** | Merge an eligible Pull Request | A deterministic controller evaluates the structured QA verdict, evidence completeness, protected-change policy, and current Pull Request head before merging. No agent seat directly merges. |
+| **Protected-change exception** | Accept or reject a protected or ambiguous Pull Request | Human-only. QA routes here when automation cannot establish eligibility without judgment. |
+
+The initial protected set includes authority and policy code, acceptance or
+merge logic, GitHub workflow and credential handling, dependency and plugin
+manifests, agent instruction files, security boundaries, and changes to the
+approved architecture or design baseline. Repository policy may add categories
+but must not silently remove a protected category.
 
 Because transition authority keys off the **destination** (Appendix A,
 decision 4), closing readiness closed every path to it at once: `promote`,
@@ -570,13 +589,14 @@ The Pull Request is where work stops being a board state and becomes a
 reviewable proposal. It carries the fixed body contract of §9.5.
 
 It is the only artifact where **evidence** lives. A Card can claim a state; a
-Pull Request has to show commands, outputs, and diffs. That is what lets the
-Quality Assurance seat reject something on the record rather than on judgment
-alone, and what makes the human's merge decision cheap enough to be a real gate
-rather than a rubber stamp.
+Pull Request has to show commands, outputs, diffs, review coverage, design
+conformance, challenged findings, and test-strength results. That lets Quality
+Assurance reject a defect on the record and lets deterministic policy establish
+eligibility without turning a human into a routine rubber stamp.
 
-It is also where the system's hardest floor sits: no artificial intelligence
-seat may merge (§4.5).
+No artificial intelligence seat may directly merge. Eligible reviewed heads
+are merged only by the deterministic controller; protected or ambiguous
+changes route to the human exception authority (§4.5).
 
 ### 5.5 How the four compose
 
@@ -589,7 +609,7 @@ Project      where it is, whose turn        <- queues and dispatch read this
   +
 Git          who holds it, where they work  <- exclusive claim + isolation
   +
-Pull Request what was delivered, evidence   <- review and the merge gate
+Pull Request what was delivered, evidence   <- review and acceptance
   =
 everything a fresh session needs to continue, with no memory of any previous one
 ```
@@ -752,7 +772,7 @@ flowchart TD
     Work --> Verify[Run required automated and specialist verification]
     Verify --> Outcome{Outcome}
     Outcome -->|delivery| PullRequest[Create or update one Pull Request]
-    Outcome -->|pass verdict| Pass[Write evidence and hand to human]
+    Outcome -->|pass verdict| Pass[Publish evidence for deterministic acceptance]
     Outcome -->|fail verdict| Fail[Write findings and return to development]
     Outcome -->|blocked| Blocked[Record blocker and escalate]
     PullRequest --> Handoff[Transition and hand off to next seat]
@@ -806,7 +826,8 @@ deliverable, a separate Architect Consumer session binds one documentation Card,
 claims one branch and worktree, researches the codebase, authors only
 documentation and supporting diagrams or decision records, validates links and
 internal consistency, opens one documentation Pull Request under the standard
-contract, routes it through review and human merge, and stops.
+contract, routes it through review and the protected-change human lane, and
+stops.
 
 A later Architect **Producer** session observes the merged specification and
 performs decomposition. Combining documentation delivery with multi-Card
@@ -817,22 +838,53 @@ decomposition in one session would blend the two shapes and is prohibited.
 The verification Consumer owns one `(In Review, qa)` Card and its linked Pull
 Request:
 
-1. Bind `[role:qa] [board-card:#N]` and validate Role, Status, and Pull Request
-   linkage.
-2. Read the specification, acceptance criteria, implementation handoff, Pull
-   Request body, commits, automated checks, and known limitations.
-3. Validate the Pull Request contract **before** evaluating behaviour.
-4. Run applicable functional, regression, browser, data-correctness, security,
-   and review checks through whatever tooling is actually available.
-5. Record a structured `pass`, `fail`, or `blocked` verdict (§9.6) with
-   commands, URLs, screenshots, observations, and reproducible findings.
-6. On pass: preserve `In Review`, hand off `qa -> human`, and surface the exact
-   remaining Human Verification TODO.
-7. On failure: transition `In Review -> In Progress`, hand off `qa -> dev`, and
-   retain the same Issue, branch, and Pull Request where correction can safely
-   continue.
-8. On specification or architecture failure: route to the Architect.
-9. Stop without changing production code and without merging.
+#### New QA workflow
+
+1. **Claim the Pull Request.** Bind `[role:qa] [board-card:#N]`; validate Role,
+   Status, Pull Request linkage, current head commit, and the Pull Request
+   contract.
+2. **Review the delivery.** Read the specification, acceptance criteria,
+   approved design and architecture, implementation handoff, complete diff,
+   commits, automated checks, and known limitations. The review must:
+   - evaluate design and architecture conformance;
+   - evaluate correctness and edge cases;
+   - deterministically enumerate every changed and new file, and split large
+     changes into bounded review units without silently omitting any unit;
+   - evaluate security and compatibility;
+   - examine cross-file and compound risks;
+   - evaluate test strength, including coverage quality rather than treating
+     line execution as proof of behaviour; and
+   - detect review blind spots and repeat the affected review dimension before
+     reaching a verdict.
+
+   QA may use multiple bounded reviewer agents or independent reviewer passes
+   for different dimensions when the session carrier supports them. They are
+   evidence producers, not nested authorities: the bound QA Consumer remains
+   responsible for complete coverage and the final synthesis, and correctness
+   never depends on another plugin being installed.
+3. **Ground and challenge findings.** Every material finding must cite concrete
+   code, behaviour, design, test, command, or artifact evidence. Before it is
+   accepted, a separate pass attempts to falsify it by checking callers,
+   related files, existing mitigations, intended behaviour, and contrary
+   evidence. Unresolved uncertainty is recorded, never converted into a pass.
+4. **Publish a structured verdict.** Write `pass`, `fail`, or `blocked` under
+   the verdict contract (§9.6), bound to the exact Pull Request head. Publish a
+   human-readable Pull Request report and machine-readable evidence containing
+   design conformance, changed-file review coverage, test-strength metrics,
+   security results, findings, limitations, and remaining blind spots.
+5. **Run deterministic eligibility policy.** The policy, not the reviewer,
+   chooses the route:
+   - **eligible:** preserve `In Review`; the merge controller validates the
+     same head, required checks, and branch state, then merges;
+   - **defect:** transition `In Review -> In Progress`, hand off `qa -> dev`,
+     and retain the same Issue, branch, and Pull Request for correction; or
+   - **protected change:** preserve `In Review`, hand off `qa -> human`, and
+     state the exact protected files, design decision, risk, or unresolved
+     judgment requiring human review.
+
+On specification or architecture defects that cannot be corrected as an
+implementation defect, QA routes to the Architect. QA stops without changing
+production code and without directly merging.
 
 A test-only correction may use a separate, explicitly governed test or
 documentation Card. **QA must not silently fix production code in the
@@ -875,8 +927,8 @@ flowchart LR
     DevelopmentConsumer[Developer Consumer]
     CodePullRequest[Implementation Pull Request]
     QualityConsumer[Quality Assurance Consumer]
-    HumanReview[Card: In Review, human]
-    HumanMerge[Human verification and merge]
+    HumanReview[Protected Card: In Review, human]
+    HumanMerge[Human exception decision and merge]
     Done[Card: Done]
 
     HumanRequest --> AnalystProducer
@@ -896,15 +948,19 @@ flowchart LR
     ManagerProducer --> DevelopmentConsumer
     DevelopmentConsumer --> CodePullRequest
     CodePullRequest --> QualityConsumer
-    QualityConsumer -->|pass| HumanReview
+    QualityConsumer -->|eligible| AcceptancePolicy[Deterministic acceptance]
+    AcceptancePolicy --> AutomatedMerge[Merge controller]
+    AutomatedMerge --> Done
+    QualityConsumer -->|protected change| HumanReview
     HumanReview --> HumanMerge
     HumanMerge --> Done
     QualityConsumer -->|fail| DevelopmentConsumer
 ```
 
 Each node is a **separate session**. Returning to a prior node means launching
-a new session that reconstructs context from GitHub. The two human-owned nodes
-are the readiness gate and the merge.
+a new session that reconstructs context from GitHub. Readiness remains the
+mandatory human gate; human review after QA is an exception path for protected
+or ambiguous changes.
 
 ### 8.2 Session by session
 
@@ -917,8 +973,9 @@ are the readiness gate and the merge.
 | 5 | **Human — readiness gate** | Each shaped Card, its specification and acceptance criteria. | `(Ready, dev)` via `promote`. | Ready Cards appear in the development lane. |
 | 6 | Tech Lead Producer | Complete projection, priority, dependencies, work-in-progress counts. | Dispatch queue and optional legal rebalancing handoffs. | A carrier starts one Developer Consumer per selected Card. |
 | 7 | Developer Consumer | One Card, specification, claim state, worktree, tests. | Claim branch, commits, tests, one Pull Request, `(In Review, qa)`, handoff comment. | Card appears in the QA lane. |
-| 8 | QA Consumer | One Card, Pull Request, checks, acceptance criteria, delivery evidence. | Verdict and evidence; either `Role=human` or `(In Progress, dev)`. | Human review, or a correction session, becomes dispatchable. |
-| 9 | **Human — merge gate** | Pull Request, verdict, automated evidence, Human Verification TODO. | Review decision, merge or requested changes, final `Done` reconciliation. | Completed Card, or a durable return path. |
+| 8 | QA Consumer | One Card, Pull Request, checks, acceptance criteria, approved design and delivery evidence. | Structured verdict, conformance report, review coverage, challenged findings, and test-strength metrics. | Deterministic acceptance, correction, or protected-change review becomes dispatchable. |
+| 9a | Automated acceptance and merge controller | Current Pull Request head, QA verdict, required checks, protected-change policy, and branch state. | Eligibility decision, merge attempt, and final `Done` reconciliation after confirmed merge. | Completed Card, or a durable blocked/return path. |
+| 9b | **Human — protected-change exception** | Protected or ambiguous Pull Request, verdict, evidence, and exact escalation reason. | Review decision, merge or requested changes, final `Done` reconciliation. | Completed Card, or a durable return path. |
 
 ### 8.3 Failure and escalation paths
 
@@ -932,6 +989,7 @@ The routing table below is the *what*. §11.6 classifies these failures and
 | Architect cannot resolve an organisational or authority question | `Blocked` | `lead` or `human` | Tech Lead or human decision. |
 | QA rejects behaviour | `In Progress` | `dev` | New Developer Consumer on the same Card and Pull Request. |
 | QA finds a specification defect | `Blocked` or `Backlog` as governed | `architect` | Architect Producer correction. |
+| QA or policy identifies a protected change | `In Review` | `human` | Human exception review. |
 | Handoff cap exceeded | `Blocked` | `lead` | Tech Lead recovery. |
 | Claim race lost | unchanged | unchanged | Losing Consumer exits; the winner continues. |
 | Partial external mutation | explicitly reported partial pair | responsible recovery seat | Fix-forward replays only the missing semantic operations. |
@@ -948,7 +1006,8 @@ store.
 | Ready development lane | `(Ready, dev)` Cards. |
 | Active claims | In Progress Cards with claim branches, worktrees, and session identifiers. |
 | Verification queue | `(In Review, qa)` Cards with Pull Request contract state. |
-| Human merge queue | `(In Review, human)` Cards with verdict and Human Verification TODO. |
+| Automated acceptance queue | `(In Review, qa)` Cards with a current pass verdict awaiting deterministic eligibility or merge. |
+| Protected-change queue | `(In Review, human)` Cards with verdict, evidence, and an explicit escalation reason. |
 | Blocked and recovery | Blocked Cards grouped by responsible seat, with age, blocker, partial mutation, and handoff count. |
 | Flow history | Seat-by-seat Status, Role, comment, claim, Pull Request, verdict, and merge events for one Card. |
 
@@ -1002,7 +1061,7 @@ The routing state is the pair. Common pairs:
 | `(Ready, dev)` | Implementation Card is ready to claim. |
 | `(In Progress, dev)` | Implementation is actively claimed or being corrected. |
 | `(In Review, qa)` | Delivery awaits independent verification. |
-| `(In Review, human)` | Verification passed; human review and merge remain. |
+| `(In Review, human)` | QA or policy identified a protected or ambiguous change requiring human review. |
 | `(Blocked, architect)` | Technical resolution required. |
 | `(Blocked, lead)` | Organisational recovery required. |
 | `(Done, human)` or `(Done, empty)` | Human accepted the delivery; the final Role representation is a configured policy choice. |
@@ -1088,14 +1147,35 @@ A verdict is structured data rendered for humans:
 verdict: pass | fail | blocked
 card: stable Card and Issue identity
 pull_request: URL and node identity
-scope: functional | user-interface | data-correctness | security | regression
-checks: commands, URLs, screenshots, observations
-findings: reproducible expected-versus-actual results
+head_sha: exact reviewed Pull Request head
+design_baseline: specification, architecture, and decision identifiers
+review_dimensions: correctness, architecture, security, compatibility, cross-file, test-strength
+changed_files: complete enumerated set plus reviewed units
+design_conformance: requirement/invariant -> implementation evidence -> test evidence
+test_strength: line, branch, mutation, scenario, and integration evidence where applicable
+checks: commands, URLs, screenshots, observations, and machine-readable results
+findings: reproducible expected-versus-actual results plus supporting evidence
+challenges: attempts to falsify each material finding and their outcomes
+blind_spots: unreviewed or uncertain areas; must be empty for pass
 limitations: checks not performed, and why
-next_role: human | dev | architect | lead
+next_role: qa | dev | human | architect | lead
 ```
 
 A bare "looks good" or "tests fail" is not a valid verdict.
+
+The deterministic evaluator produces a separate acceptance result so the QA
+reviewer cannot select its own merge route:
+
+```text
+acceptance: eligible | defect | protected_change
+head_sha: exact head for which the decision is valid
+policy_version: deterministic policy version
+reasons: satisfied requirements or exact refusal/escalation reasons
+```
+
+A pass is also invalid when it is stale, omits a changed file or required
+review dimension, treats line execution as sufficient test evidence, or leaves
+a review blind spot unresolved.
 
 ### 9.7 Claim and worktree model
 
@@ -1125,7 +1205,7 @@ routing states no policy rule governs.
 | `resolve_project`, `list_cards`, `get_card`, `create_card` | built |
 | `comment_on_card`, `transition_card`, `handoff_card` | built |
 | `claim_card`, `release_claim` | designed — Consumer milestone |
-| `link_pull_request_to_card`, `record_verdict`, `reconcile_done` | designed — Consumer milestone |
+| `link_pull_request_to_card`, `record_verdict`, `evaluate_acceptance`, `request_automated_merge`, `reconcile_done` | designed — Consumer milestone |
 
 A backend-neutral port is introduced only when a real second backend exists.
 
@@ -1204,7 +1284,8 @@ completion of the same bootstrap contract. The router may never select `human`
 `policy.py` owns valid Status and Role values, legal transitions, legal
 handoffs and escalation routes, allowed actions by seat, the Producer and
 Consumer hard floors, work-in-progress and handoff caps, valid `(Status, Role)`
-preconditions, and the human-only refusals.
+preconditions, seat refusals, protected-change policy, and automated-acceptance
+requirements.
 
 **It touches no network.** That is the load-bearing design choice: because it
 imports nothing that reaches GitHub, every transition edge and every seat pair
@@ -1431,7 +1512,7 @@ the artifacts are insufficient.
 | Handoff | Semantic `handoff_card` plus structured comment. | Generic field mutation leaks backend details and omits the durable context contract. |
 | Lifecycle | Six Status values plus an independent Role. | Adding `In Quality Assurance` or `In Architect Review` confuses stage with ownership. |
 | Quality Assurance | Independent verification session. | Self-verification by the implementing Consumer lets findings be rationalised away. |
-| Merge | Human-only. | Agent self-merge removes the final independent acceptance boundary. |
+| Merge | Deterministic acceptance with a human protected-change exception. | Direct agent merge lets a fallible reviewer authorize its own unsupported conclusion; mandatory human review for every passing delivery does not scale. |
 | Coordination | GitHub artifacts are authoritative. | In-memory messages disappear with sessions and cannot support resume or audit. |
 | Engineering methods | agent-teams owns its skills and references the disciplines by name. | Invoking another plugin's skills makes correctness depend on that plugin being installed; a missing sibling would silently downgrade governance rather than refuse. |
 | Backend abstraction | Semantic board surface first. | A premature multi-backend abstraction weakens the GitHub contract before a second backend is real. |
@@ -1442,17 +1523,32 @@ Decisions 1–3 were the contracts M2 required before Status operations could be
 built. Decisions 4–7 emerged during implementation, because they close
 authority holes or settle the interaction model rather than merely choosing
 between options. **Decision 6 supersedes the readiness half of decision 2.**
-All seven are enforced in `scripts/agent_teams/policy.py`.
+Decisions 1-7 describe the currently enforced Producer policy. Decision 8 below
+supersedes the merge portion of the target architecture and remains pending in
+M5 until the QA evidence contract and deterministic acceptance controller are
+implemented together.
 
 | # | Question | Decision | Rationale |
 |---|---|---|---|
 | 1 | Is `architect -> analyst` a legal handoff? | **Yes.** | §4.3 and the adaptation dossier's authority matrix both grant it. An architect that cannot return an under-specified Card must either guess at the requirement or block it, and both are worse than asking. The pre-package implementation omitted this edge; that omission was a defect, not a policy. |
-| 2 | Does specification completion mean the Pull Request is opened or merged? | **Merged**, configurable per repository via `spec_completion`. | Implementation work becomes Ready only once the specification is durable on the target branch, so development never builds against a document review may still change. The cost is a human merge inside the analyst-to-development path, which is accepted: it is the same merge gate the architecture already requires, arriving earlier. A repository may set `spec_completion=opened` deliberately. |
+| 2 | Does specification completion mean the Pull Request is opened or merged? | **Merged**, configurable per repository via `spec_completion`. | Implementation work becomes Ready only once the specification is durable on the target branch, so development never builds against a document review may still change. Because a specification changes protected architecture, it follows the human exception path before merge. A repository may set `spec_completion=opened` deliberately. |
 | 3 | Does the intake Card become the implementation Card, or does decomposition create new ones? | **Both, by shape.** A genuine single-Card change is promoted in place. A specification with several independently shippable slices creates flat implementation Cards, and the intake Card keeps a summary comment. | Reusing the intake Card for a multi-slice specification would force one Consumer session to deliver several Pull Requests, breaking the one-Card-one-delivery invariant. Creating a second Card for a genuinely single change adds a hop that carries no information. |
 | 4 | Which seat authority governs a generic Status transition? | The **destination** decides. Moving to `Ready` is checked as `promote_to_ready`; moving to `Done` as `reconcile_done`; every other move as `transition_card`. | Without this, a generic `transition` is a hole through which any seat takes an action its own policy row forbids — an analyst could reach `Ready` despite `promote_to_ready` refusing that seat. Keying the check to the destination keeps one rule in one place. |
 | 5 | Does that destination rule apply to Card *creation* as well as movement? | **Yes, on both axes.** Creating a Card writes a whole `(Status, Role)` routing state, so `create_card` asks the destination Status's action question and — when the new Card is owned by a seat other than the creator — the destination Role's handoff question. Keeping a Card one creates is not a handoff. | Decision 4 was enforced only where a Card *moved*. Creation reached the same states by a different door: an analyst refused `promote_to_ready` could create a Card already `Ready`, and one refused the `analyst -> dev` edge of §4.3 could create one already sitting in the development lane. A rule that governs only one of the two ways to reach a state is not a rule. |
 | 6 | Who opens `Backlog -> Ready`? | **Only the human.** `promote_to_ready` refuses every artificial intelligence seat, including `lead`. An agent seat shapes the Card and hands it to `human`; the human approves it into `Ready`, which also hands it to `dev`. Decomposition therefore creates children at `(Backlog, human)`, not `(Ready, dev)`. | This reverses the readiness half of decision 2. The architecture claimed two human gates and had one: the only hard floor was merge, and every path to `Ready` — `promote`, `transition`, `create-card`, `decompose` — was open to the architect. `spec_completion=merged` was an indirect gate at best, and it lapses entirely when the specification reference is a path rather than a Pull Request, because a path is accepted as durable without checking it exists. A gate a routine argument steps around is not a gate. A `review`-class entry would not have worked either: a review classification is permitted, so only a refusal gates (§4.4). Because decision 4 keys authority to the destination, closing `promote` closed `transition` and `create-card` on the same rule. |
 | 7 | Does the user name the seat, or does the plugin choose it? | **The plugin chooses.** A person states intent in ordinary language; the entry router infers seat and routine from that intent plus live board state, and defaults to orientation when intent is unstated. `[role:<seat>]` remains the dispatch-artifact format and an explicit override, not the human interface. The router may never infer `human`. | Seats are an authority model, and asking a user to classify themselves exposes internal machinery as a menu. Inference is safe because selecting a seat grants nothing — `policy.py` evaluates the same rules however the seat was chosen — with one exception: `human` holds both gates, so a router able to adopt it could approve its own readiness decision. This matches the reference project, whose entry skill routes "what should I work on" / "new requirement" / "what's blocked" straight to a routine; it never asks the user to name a role, because it has none to name. |
+
+---
+
+### A.3 Superseding QA acceptance decision
+
+| # | Question | Decision | Rationale |
+|---|---|---|---|
+| 8 | Who accepts an implementation after QA? | **Deterministic acceptance for eligible changes; human review for protected changes.** QA publishes a current, structured, evidence-grounded verdict but cannot directly merge. A non-agent controller validates eligibility and merges only the reviewed head. | This removes the mandatory second human gate without letting the implementing Developer, the reviewing QA agent, or free-form model output authorize its own merge. Protected files, unresolved blind spots, design ambiguity, stale evidence, and policy exceptions remain human decisions. |
+
+Decision 8 supersedes earlier references to the human holding both gates. Those
+references now mean readiness authority plus protected-change exception
+authority; routine eligible merge is no longer a human gate.
 
 ---
 
@@ -1467,17 +1563,17 @@ authority model. `03-target-architecture.md` §5.2 is the authority matrix;
 
 | Concern | Original board-superpowers | agent-teams adaptation |
 |---|---|---|
-| Human operator | A human Architect starts sessions, verifies deliveries, and merges. | The human remains the stakeholder and holds both gates. Technical shaping is delegated to a System Architect seat, flow coordination to a Tech Lead seat. |
+| Human operator | A human Architect starts sessions, verifies deliveries, and merges. | The human remains the stakeholder, holds readiness, and reviews protected or ambiguous deliveries. Technical shaping is delegated to a System Architect seat, flow coordination to a Tech Lead seat, and eligible merges to a deterministic controller. |
 | Session shape | Producer maintains the board; Consumer resolves one Card. | Preserved exactly, and made orthogonal to team seat. |
 | Worker identity | No persistent role required — the original had no seats. | Six durable `Role` values identify the active seat. |
 | Cross-session context | Carried by the Card body, Status, claim branch, and Pull Request contract; `comment_on_card` was optional. | `Role` plus a mandatory structured `handoff_card` comment. **This is the adaptation's addition**, because seats create a "whose turn is it" question the original did not have. |
 | Runtime topology | Independent sessions coordinated by the board. | Preserved. The org chart is authority over board state, never a call stack. |
 | Delivery unit | One Card, one Consumer, one worktree, one Pull Request. | Preserved. Independent verification is a second *sequential* Consumer stage on the same Card and Pull Request. |
 | Board model | Project lifecycle plus Issue and Pull Request links. | Extended with an orthogonal `Role` field and semantic `handoff_card`. |
-| Quality gate | Consumer verifies; the human reviews. | Expanded into an independent QA seat that can reject a delivery before the human lane. |
+| Quality gate | Consumer verifies; the human reviews. | Expanded into an independent QA seat that performs multidimensional, evidence-grounded review before deterministic eligibility policy; the human lane is reserved for protected changes. |
 | Entry routing | Entry skill routes plain-language intent to a routine, and asks when ambiguous. | Same model, routing to *seat plus routine*; orients and proposes rather than asking. Auto-invocation via routing blocks and session hooks is deliberately not adopted. |
 | Engineering disciplines | Composed from board-superpowers, superpowers, and gstack. | **Not composed** — referenced by name only (§10.1). |
-| Merge | Consumer cannot self-merge. | No agent seat can merge; the human gate is a hard floor. |
+| Merge | Consumer cannot self-merge. | No agent seat can directly merge. A deterministic controller merges only eligible, currently reviewed heads; protected changes route to the human exception lane. |
 
 ---
 
@@ -1499,13 +1595,18 @@ following with no undocumented board edits:
    development, and creates one governed Pull Request.
 8. A separate QA Consumer rejects the delivery and returns the same Card and
    Pull Request for correction.
-9. A later QA pass hands the Card to the human lane with evidence and any
-   genuine Human Verification TODO.
-10. Every agent attempt to merge or bypass QA is refused.
-11. The human merges and the Card reconciles to `Done`.
-12. One query reconstructs the full seat, shape, Status, Role, claim, Pull
-    Request, verdict, and merge history.
-13. Partial mutations, interrupted sessions, stale dispatch, claim races, and
+9. A later QA pass publishes a structured verdict bound to the exact Pull
+   Request head, with complete review dimensions, challenged findings, design
+   conformance, changed-file coverage, and test-strength evidence.
+10. Every agent attempt to directly merge or bypass QA and deterministic
+    acceptance is refused.
+11. Deterministic policy routes eligible changes to the merge controller,
+    defects to Developer, and protected changes to the human exception lane.
+12. An eligible Pull Request merges and reconciles to `Done`; a protected Pull
+    Request requires an explicit human decision.
+13. One query reconstructs the full seat, shape, Status, Role, claim, Pull
+    Request, verdict, eligibility, and merge history.
+14. Partial mutations, interrupted sessions, stale dispatch, claim races, and
     handoff-cap breaches all have deterministic recovery paths.
 
 Progress against these criteria is tracked only in

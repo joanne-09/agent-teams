@@ -13,12 +13,13 @@ orthogonal single-select fields: `Status` (where the work is) and `Role`
 (whose turn it is).
 
 **New here? Read [`docs/USAGE.md`](./docs/USAGE.md)** — setup, the daily loop,
-your two gates, and how to read what comes back. This README is the reference;
-that is the walkthrough.
+the readiness gate, protected-change exceptions, and how to read what comes
+back. This README is the reference; that is the walkthrough.
 
-The human holds two gates and nothing between them: **`Backlog -> Ready`**
-(only `human` may run `promote`) and **merge** (no agent seat can, ever). See
-[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) Appendix A.2, decisions 4-6.
+The human holds the mandatory **`Backlog -> Ready`** gate and reviews protected
+or ambiguous changes. The target QA workflow sends eligible Pull Requests to a
+deterministic merge controller; no agent seat can directly merge. See
+[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) Appendix A, decisions 4-8.
 
 agent-teams calls **no other plugin**. `superpowers` and `gstack` are
 referenced by name as recommended disciplines; nothing in `skills/` or
@@ -44,7 +45,10 @@ provisioning, no Codex package, no multi-backend adapter, and no autonomous
 agent spawning. The plugin renders kickoff prompts; a human or an external
 carrier starts sessions.
 
-No seat can merge. That floor is enforced in policy and is not overridable.
+No seat can directly merge. The delivered Producer policy still enforces the
+older human-only merge floor; M5 will replace it atomically with deterministic
+acceptance plus a human protected-change exception. Until M5 is implemented,
+the automated merge path described in the architecture is not available.
 
 ## Requirements
 
