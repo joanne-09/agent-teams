@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "slidev --open",
+    "dev:weekly": "slidev 2026-08-06-weekly.md --open",
     "build": "slidev build",
     "export": "slidev export",
     "export:pptx": "slidev export --format pptx"
