@@ -26,16 +26,18 @@ from agent_teams.board import Board, BoardError, PartialHandoff  # noqa: E402
 from agent_teams.config import DEFAULT_CONFIG, Config, ConfigError  # noqa: E402
 from agent_teams.errors import AgentTeamsError  # noqa: E402
 from agent_teams.github import Gh, GitHubError  # noqa: E402
-from agent_teams.model import ROLES, STATUSES, Card, Role, Status  # noqa: E402
-from agent_teams.workflows import Producer, WorkflowError  # noqa: E402
+from agent_teams.model import (  # noqa: E402
+    ROLES, STATUSES, Card, Role, Status, Verdict,
+)
+from agent_teams.workflows import Consumer, Producer, WorkflowError  # noqa: E402
 
 #: Retained so existing callers and tests can keep catching one name.
 ProducerError = AgentTeamsError
 
 __all__ = [
-    "Board", "BoardError", "Card", "Config", "ConfigError", "Gh", "GitHubError",
-    "PartialHandoff", "Producer", "ProducerError", "ROLES", "STATUSES",
-    "Role", "Status", "WorkflowError", "main", "policy",
+    "Board", "BoardError", "Card", "Config", "ConfigError", "Consumer", "Gh",
+    "GitHubError", "PartialHandoff", "Producer", "ProducerError", "ROLES",
+    "STATUSES", "Role", "Status", "Verdict", "WorkflowError", "main", "policy",
 ]
 
 
@@ -50,6 +52,22 @@ def _read_body(args: argparse.Namespace) -> str:
         except OSError as exc:
             raise WorkflowError(f"cannot read body file {args.body_file}: {exc}") from exc
     return getattr(args, "body", "") or ""
+
+
+def _read_verdict(path: str) -> Verdict:
+    """Load a structured verdict from its JSON document.
+
+    A file rather than flags: a verdict carries enumerated changed files,
+    per-dimension evidence, and challenge outcomes, none of which survive
+    shell quoting.
+    """
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise WorkflowError(f"cannot read evidence file {path}: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise WorkflowError(f"{path} must contain a JSON object")
+    return Verdict.from_dict(raw)
 
 
 def _read_children(path: str) -> list[dict[str, str]]:
@@ -190,6 +208,55 @@ def _build_parser() -> argparse.ArgumentParser:
     handoff.add_argument("--note", required=True)
     handoff.add_argument("--needs", default="")
     handoff.add_argument("--artifacts", default="")
+
+    # ---------------------------------------------------------- Consumer
+
+    claim = sub.add_parser(
+        "claim", help="reserve one Ready Card and open its isolated worktree"
+    )
+    claim.add_argument("issue", type=int)
+    claim.add_argument(
+        "--acting-role", required=True, choices=["dev", "architect"],
+        help="the two seats that author a delivery",
+    )
+
+    submit = sub.add_parser(
+        "submit-pr", help="open or update one Pull Request and hand off to qa"
+    )
+    submit.add_argument("issue", type=int)
+    submit.add_argument("--title", required=True)
+    submit.add_argument("--body-file", required=True)
+    submit.add_argument("--acting-role", default="dev", choices=["dev", "architect"])
+
+    verdict = sub.add_parser(
+        "verdict",
+        help="publish Quality Assurance review evidence for the current head",
+    )
+    verdict.add_argument("issue", type=int)
+    verdict.add_argument(
+        "--evidence-file", required=True, help="JSON verdict document"
+    )
+
+    # Deliberately takes no other argument. Every input to the acceptance
+    # decision is read from live GitHub state, so there is nothing for a
+    # caller to steer -- which is what makes "no agent seat chooses the merge
+    # route" a property of the interface rather than a promise in prose.
+    accept = sub.add_parser(
+        "accept",
+        help="evaluate the published verdict and execute the deterministic route",
+    )
+    accept.add_argument("issue", type=int)
+
+    reconcile = sub.add_parser(
+        "reconcile-done", help="record a confirmed merge and clean the claim"
+    )
+    reconcile.add_argument("issue", type=int)
+    reconcile.add_argument("--acting-role", default="lead", choices=ROLES)
+
+    worktrees = sub.add_parser(
+        "worktree-status", help="claims, worktrees, and presence (read-only)"
+    )
+    worktrees.add_argument("issue", type=int, nargs="?")
     return parser
 
 
@@ -240,7 +307,10 @@ def _brief_text(report: dict[str, Any]) -> None:
     print(f"Recommended next: {report['recommendation']}")
 
 
-def main(argv: list[str] | None = None, gh: Gh | None = None) -> int:
+def main(
+    argv: list[str] | None = None, gh: Gh | None = None, git: Any = None
+) -> int:
+    """Run one command. ``gh`` and ``git`` are injection points for tests."""
     parser = _build_parser()
     args = parser.parse_args(argv)
     try:
@@ -262,6 +332,7 @@ def main(argv: list[str] | None = None, gh: Gh | None = None) -> int:
         config = Config.load(args.config)
         board = Board(config, gh=gh)
         producer = Producer(config, board)
+        consumer = Consumer(config, board, git=git)
 
         if args.command == "doctor":
             _print(board.doctor())
@@ -365,6 +436,39 @@ def main(argv: list[str] | None = None, gh: Gh | None = None) -> int:
             )
             _print(result)
             return 0 if result.get("ok") else 1
+
+        elif args.command == "claim":
+            result = consumer.claim(args.issue, Role.parse(args.acting_role))
+            _print(result)
+            return 0 if result.get("ok") else 1
+
+        elif args.command == "submit-pr":
+            result = consumer.submit(
+                args.issue,
+                Role.parse(args.acting_role),
+                args.title,
+                _read_body(args),
+            )
+            _print(result)
+            return 0 if result.get("ok") else 1
+
+        elif args.command == "verdict":
+            result = consumer.verdict(args.issue, _read_verdict(args.evidence_file))
+            _print(result)
+            return 0 if result.get("ok") else 1
+
+        elif args.command == "accept":
+            result = consumer.accept(args.issue)
+            _print(result)
+            return 0 if result.get("ok") else 1
+
+        elif args.command == "reconcile-done":
+            result = consumer.reconcile(args.issue, Role.parse(args.acting_role))
+            _print(result)
+            return 0 if result.get("ok") else 1
+
+        elif args.command == "worktree-status":
+            _print(consumer.worktree_status(args.issue))
 
         else:  # pragma: no cover - argparse makes this unreachable
             parser.error(f"unknown command: {args.command}")

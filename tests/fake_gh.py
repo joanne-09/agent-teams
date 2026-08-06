@@ -91,7 +91,10 @@ def board_with(*specs):
 class FakeGh:
     """Injectable stand-in for :class:`agent_teams.github.Gh`."""
 
-    def __init__(self, *, fail_on=None, comments=None, pr_state=None, items=None):
+    def __init__(
+        self, *, fail_on=None, comments=None, pr_state=None, items=None,
+        pr_view=None, open_prs=None, auto_merge_allowed=True,
+    ):
         #: subcommand pair (e.g. "issue comment") -> message, or
         #: (message, nth) to fail only the nth occurrence. The nth form is how
         #: a failure between two identical calls -- the Status write and the
@@ -100,6 +103,24 @@ class FakeGh:
         self.comments = list(comments or [])
         self.pr_state = pr_state or {"state": "MERGED", "mergedAt": "2026-07-30T00:00:00Z"}
         self.items = items if items is not None else ITEMS
+        #: The review facts `Board.pull_request` normalises.
+        self.pr_view = pr_view if pr_view is not None else {
+            "number": 57,
+            "url": f"https://github.com/{REPO}/pull/57",
+            "headRefOid": "a" * 40,
+            "state": "OPEN",
+            "mergeable": "MERGEABLE",
+            "isDraft": False,
+            "files": [{"path": "src/parser.py"}, {"path": "tests/test_parser.py"}],
+            "statusCheckRollup": [
+                {"name": "build", "conclusion": "SUCCESS"},
+                {"name": "test", "conclusion": "SUCCESS"},
+            ],
+        }
+        #: Pull Requests already open on a head branch, so create-or-update
+        #: can be exercised both ways. Empty means "no Pull Request yet".
+        self.open_prs = list(open_prs or [])
+        self.auto_merge_allowed = auto_merge_allowed
         self.calls: list[list[str]] = []
         self._seen: dict[str, int] = {}
 
@@ -145,6 +166,12 @@ class FakeGh:
             return ""
         if head == ["api", "-X"]:  # gh api -X DELETE repos/.../git/refs/heads/...
             return ""
+        if head == ["pr", "create"]:
+            return f"https://github.com/{REPO}/pull/57"
+        if head in (["pr", "merge"], ["pr", "edit"]):
+            return ""
+        if head == ["repo", "view"]:
+            return str(self.auto_merge_allowed).casefold()
         raise AssertionError(f"unexpected gh run call: {args}")
 
     def json(self, args):
@@ -161,12 +188,55 @@ class FakeGh:
         if head == ["issue", "view"]:
             return {"comments": [{"body": body} for body in self.comments]}
         if head == ["pr", "view"]:
-            return {
-                "number": 57,
-                "url": f"https://github.com/{REPO}/pull/57",
-                **self.pr_state,
-            }
+            # Two callers with different --json field sets: pull_request()
+            # asks for the review facts, merge_state() for the merge outcome.
+            wanted = args[args.index("--json") + 1] if "--json" in args else ""
+            if "mergedAt" in wanted:
+                return {"number": self.pr_view["number"], **self.pr_state}
+            return dict(self.pr_view)
+        if head == ["pr", "list"]:
+            return list(self.open_prs)
         raise AssertionError(f"unexpected gh json call: {args}")
+
+
+class FakeGit:
+    """Injectable stand-in for :class:`agent_teams.git.Git`.
+
+    Records claim and worktree calls so a test can assert that a refusal
+    happened *before* any git work, and can arm a lost race or a worktree
+    failure on demand.
+    """
+
+    def __init__(self, *, race_lost=False, worktree_error=None):
+        self.race_lost = race_lost
+        self.worktree_error = worktree_error
+        self.calls: list[tuple] = []
+
+    def claim(self, number, title, seat, session_id=None):
+        self.calls.append(("claim", number, seat))
+        if self.race_lost:
+            from agent_teams.git import ClaimRaceLost
+            raise ClaimRaceLost(number, f"claim/{number}-x")
+        return {
+            "ok": True, "branch": f"claim/{number}-x",
+            "ref": f"refs/heads/claim/{number}-x",
+            "base_sha": "b" * 40, "claim_sha": "c" * 40, "session": "s1",
+        }
+
+    def add_worktree(self, path, branch, sha):
+        self.calls.append(("worktree", str(path)))
+        if self.worktree_error:
+            raise self.worktree_error
+        return {
+            "ok": True, "resumed": False, "worktree": str(path), "branch": branch,
+        }
+
+    def remove_worktree(self, path, force=False):
+        self.calls.append(("remove", str(path)))
+        return {"ok": True, "removed": str(path)}
+
+    def worktrees(self):
+        return []
 
 
 class SaturatingGh(FakeGh):

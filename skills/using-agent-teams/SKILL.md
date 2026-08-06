@@ -104,6 +104,18 @@ Match what the user wants to do, then bootstrap as that seat:
 | find out what is ready and hand it out | `lead` | `agent-teams:dispatching-work` |
 | look at what is waiting to be verified | `qa` | `agent-teams:inspecting-queue` |
 
+Those six are Producer routines: they shape the board and never write
+implementation code. Two Consumer routines resolve one bound Card each:
+
+| The user is asking to… | Seat | Skill |
+|---|---|---|
+| build, implement, or document one specific Card | `dev` or `architect` | `agent-teams:consuming-card` |
+| verify one delivered Pull Request against its Card | `qa` | `agent-teams:verifying-delivery` |
+
+A Consumer request always names one Card — `[board-card:#N]`, "work on 12",
+"verify #21". **If no Card is named, it is not a Consumer request**; orient
+first and find out which work is meant. Never pick a Card on the user's behalf.
+
 When a request is genuinely ambiguous, **do not interrogate the user about
 seats.** Orient first — run the briefing, then say what you think they mean and
 what you propose to do, in their words. "It sounds like this is new work, so
@@ -116,8 +128,8 @@ Some signals are **not** routing requests, however board-shaped they look:
   do not intake it;
 - a rendered kickoff prompt the user is merely showing or quoting — routing
   fires when they ask you to act, not when the token appears;
-- a request to implement a specific Card — that is Consumer work; render the
-  kickoff and stop, as below.
+- a request to implement work in general, with no Card named — that is not yet
+  Consumer work; orient, or intake it, depending on whether the work exists.
 
 And one anti-pattern to watch in yourself: **routing that becomes work.** If
 you catch this skill writing procedure inline — shaping a Card body here,
@@ -152,14 +164,16 @@ stops you.
 
 ## What this plugin will not do
 
-- **It does not implement Cards.** A Producer shapes work; a Consumer resolves
-  exactly one Card in a separate session. If asked to implement, render the
-  kickoff prompt and stop.
-- **It does not merge.** No agent seat can. Merge belongs to the human.
+- **It does not mix the two shapes in one session.** A Producer shapes the
+  board; a Consumer resolves exactly one Card. A session that has started one
+  does not switch to the other — it finishes and stops.
+- **It does not merge.** No agent seat can, and none may request a merge
+  either. An eligible delivery reaches the merge controller only through
+  deterministic acceptance policy; protected changes go to the human.
 - **It does not declare work Ready.** No agent seat can. That is the human's
-  first gate.
-- **It does not verify deliveries.** Queue inspection orders work for
-  verification; each verdict needs its own bound Consumer session.
+  gate.
+- **It does not let a reviewer choose its own outcome.** QA publishes evidence;
+  `accept` computes the route from that evidence and the live Pull Request.
 - **It does not call other plugins.** `superpowers` and `gstack` may be named
   as recommended practice, but nothing here invokes them and nothing here
   depends on them being installed.

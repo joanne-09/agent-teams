@@ -26,7 +26,7 @@ referenced by name as recommended disciplines; nothing in `skills/` or
 `scripts/` invokes them, and correctness never depends on either being
 installed.
 
-## The seven Producer workflows
+## The nine workflows
 
 | Skill | Seat | What it does |
 |---|---|---|
@@ -37,6 +37,14 @@ installed.
 | `triaging-board` | lead | Blocked work, grouped by who owes a decision |
 | `dispatching-work` | lead | Render deterministic kickoff prompts |
 | `inspecting-queue` | qa | Order the verification queue (no verdicts) |
+
+The seven above are Producer-shaped: they shape the board and never write
+implementation code. Two are Consumer-shaped and resolve exactly one Card:
+
+| Skill | Seat | What it does |
+|---|---|---|
+| `consuming-card` | dev, architect | Claim one Card, implement it in an isolated worktree, open one Pull Request |
+| `verifying-delivery` | qa | Review one delivery, publish evidence, run deterministic acceptance |
 
 ## What is intentionally absent
 
@@ -84,11 +92,23 @@ python "C:\path\to\this-plugin\scripts\producer_board.py" doctor
 options — and reports every defect it finds in one response rather than the
 first.
 
+It also reports two **acceptance preconditions** as non-fatal
+`acceptance_problems`: whether the repository has auto-merge enabled, and
+whether `required_checks` is configured. Neither is required for Producer work,
+but without both the automated merge path either fails or is vacuous — with no
+required checks, `--auto` merges immediately and nothing is retested against
+the current base. `doctor` explains them; it never creates them.
+
 ## Tuning
 
 | Key | Default | Meaning |
 |---|---|---|
 | `wip_limit` | 5 | Cards in `In Progress` + `In Review` before the briefing warns |
+| `workspace` | `../.worktrees` | Where claim worktrees live. Must resolve outside the repository tree |
+| `required_checks` | `[]` | Checks that must be green before a delivery is eligible. **Empty fails closed: nothing is ever eligible**, and every pass routes to the human lane |
+| `merge_method` | `squash` | How the controller closes an eligible Pull Request |
+| `protected_paths` | 7 categories | Globs whose change forces human review. Policy may add categories; emptying a default one is a configuration error |
+| `claim_ttl_hours` | 72 | Age past which `worktree-status` flags a claim as stale |
 | `handoff_cap` | 6 | Handoffs before a Card is routed to `(Blocked, lead)` |
 | `spec_completion` | `merged` | Whether Ready requires a merged or merely opened specification |
 
@@ -135,7 +155,20 @@ producer_board.py decompose   PARENT --spec REF --children FILE.json
 producer_board.py transition  ISSUE --to STATUS --acting-role ROLE
 producer_board.py handoff     ISSUE --from-role ROLE --to-role ROLE --note TEXT
                               [--needs TEXT] [--artifacts TEXT]
+
+producer_board.py claim       ISSUE --acting-role dev|architect
+producer_board.py submit-pr   ISSUE --title TITLE --body-file PATH [--acting-role ROLE]
+producer_board.py verdict     ISSUE --evidence-file PATH
+producer_board.py accept      ISSUE
+producer_board.py reconcile-done ISSUE [--acting-role ROLE]
+producer_board.py worktree-status [ISSUE]
 ```
+
+`accept` deliberately takes no argument but the Issue number. Every input to
+the acceptance decision is read from live GitHub state, so there is no flag
+through which a caller could steer the route — that is what makes "no agent
+seat chooses its own merge outcome" a property of the interface rather than a
+promise in prose.
 
 Every command prints one JSON envelope and exits 0, or prints
 `{"ok": false, "error": ...}` on stderr and exits 1. A multi-step mutation that

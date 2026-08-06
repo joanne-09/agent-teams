@@ -30,6 +30,32 @@ SPEC_COMPLETION_VALUES = ("merged", "opened")
 
 _REPO_PATTERN = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 
+#: How the deterministic merge controller closes an eligible Pull Request.
+MERGE_METHODS = ("squash", "merge", "rebase")
+
+#: The protected set of ARCHITECTURE.md 4.5, as repository-relative globs.
+#: Repository policy may ADD patterns or whole categories. It may not remove
+#: one: emptying a default category is a validation error, so dropping
+#: protection is a visible, deliberate edit rather than a silent omission.
+DEFAULT_PROTECTED_PATHS: Mapping[str, tuple[str, ...]] = {
+    "authority-and-policy": (
+        "scripts/agent_teams/policy.py",
+        "scripts/agent_teams/model.py",
+    ),
+    "acceptance-and-merge": (
+        "scripts/agent_teams/git.py",
+        "scripts/agent_teams/workflows.py",
+    ),
+    "github-workflows-and-credentials": (".github/workflows/**", "**/*credential*"),
+    "dependencies-and-manifests": (
+        ".claude-plugin/**", "**/package.json", "**/pyproject.toml",
+        "**/requirements*.txt",
+    ),
+    "agent-instructions": ("skills/**", "CLAUDE.md", "AGENTS.md"),
+    "security-boundaries": ("**/auth/**", "**/*secret*"),
+    "architecture-and-design": ("docs/ARCHITECTURE.md", "docs/specs/**"),
+}
+
 
 class ConfigError(AgentTeamsError):
     """The configuration is absent, unreadable, or self-inconsistent."""
@@ -51,6 +77,18 @@ class Config:
     #: Canonical Status value -> the option name this Project actually uses.
     #: Absent entries fall back to the canonical name.
     status_overrides: Mapping[str, str] = field(default_factory=dict)
+    #: Where claim worktrees live. Must resolve outside the repository tree.
+    workspace: str = "../.worktrees"
+    #: Protected category -> globs. Defaults merged in; may only grow.
+    protected_paths: Mapping[str, tuple[str, ...]] = field(
+        default_factory=lambda: dict(DEFAULT_PROTECTED_PATHS)
+    )
+    #: Checks that must conclude SUCCESS before a delivery is eligible.
+    #: Empty fails closed: nothing is ever eligible (ARCHITECTURE.md 4.5).
+    required_checks: tuple[str, ...] = ()
+    merge_method: str = "squash"
+    #: Age past which triage flags a claim as stale.
+    claim_ttl_hours: int = 72
 
     # ------------------------------------------------------------ accessors
 
@@ -91,6 +129,13 @@ class Config:
         }
         if self.status_overrides:
             payload["status_overrides"] = dict(self.status_overrides)
+        payload["workspace"] = self.workspace
+        payload["protected_paths"] = {
+            key: list(value) for key, value in self.protected_paths.items()
+        }
+        payload["required_checks"] = list(self.required_checks)
+        payload["merge_method"] = self.merge_method
+        payload["claim_ttl_hours"] = self.claim_ttl_hours
         return payload
 
     def write(self, path: Path) -> None:
@@ -184,6 +229,59 @@ class Config:
                 else:
                     overrides[key] = str(value).strip()
 
+        workspace = _non_empty(raw, "workspace", "../.worktrees", problems)
+        if not workspace.startswith(".."):
+            problems.append(
+                "workspace must resolve outside the repository tree (start it "
+                f"with '..'); got {workspace!r}. A repo-internal worktree gets "
+                "scanned by editors and confuses which checkout is canonical."
+            )
+
+        merge_method = str(raw.get("merge_method", "squash")).strip().casefold()
+        if merge_method not in MERGE_METHODS:
+            problems.append(
+                "merge_method must be one of " + ", ".join(MERGE_METHODS)
+                + f"; got {merge_method!r}"
+            )
+
+        checks_raw = raw.get("required_checks", ()) or ()
+        required_checks: tuple[str, ...] = ()
+        if isinstance(checks_raw, str) or not isinstance(checks_raw, (list, tuple)):
+            problems.append("required_checks must be a list of check names")
+        else:
+            required_checks = tuple(
+                str(name).strip() for name in checks_raw if str(name).strip()
+            )
+
+        claim_ttl_hours = _non_negative_int(
+            raw.get("claim_ttl_hours", 72), "claim_ttl_hours", problems
+        )
+
+        protected_raw = raw.get("protected_paths", {}) or {}
+        protected: dict[str, tuple[str, ...]] = {
+            key: tuple(value) for key, value in DEFAULT_PROTECTED_PATHS.items()
+        }
+        if not isinstance(protected_raw, dict):
+            problems.append("protected_paths must be a JSON object")
+        else:
+            for key, value in protected_raw.items():
+                if isinstance(value, str) or not isinstance(value, (list, tuple)):
+                    problems.append(
+                        f"protected_paths[{key!r}] must be a list of glob patterns"
+                    )
+                    continue
+                patterns = tuple(str(p).strip() for p in value if str(p).strip())
+                if key in DEFAULT_PROTECTED_PATHS and not patterns:
+                    problems.append(
+                        f"protected_paths[{key!r}] is a default protected "
+                        "category and must not be emptied; repository policy "
+                        "may add categories but must not silently remove one"
+                    )
+                    continue
+                # dict.fromkeys preserves order while dropping duplicates, so a
+                # repository re-stating a default pattern does not double it.
+                protected[key] = tuple(dict.fromkeys(protected.get(key, ()) + patterns))
+
         if problems:
             raise ConfigError(
                 "configuration is invalid:\n  - " + "\n  - ".join(problems)
@@ -202,6 +300,11 @@ class Config:
             handoff_cap=handoff_cap,
             spec_completion=spec_completion,
             status_overrides=overrides,
+            workspace=workspace,
+            protected_paths=protected,
+            required_checks=required_checks,
+            merge_method=merge_method,
+            claim_ttl_hours=claim_ttl_hours,
         )
 
     def evolve(self, **changes: Any) -> "Config":

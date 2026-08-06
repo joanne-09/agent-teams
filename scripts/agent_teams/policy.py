@@ -20,11 +20,15 @@ from __future__ import annotations
 
 from .errors import AgentTeamsError
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import Iterable, Mapping
 
-from .model import Card, Role, Status
+from .model import (
+    Acceptance, Card, REQUIRED_DIMENSIONS, Role, Status,
+    TEST_STRENGTH_DIMENSIONS, Verdict,
+)
 
 
 class PolicyError(AgentTeamsError):
@@ -268,6 +272,11 @@ ACTION_POLICY: Mapping[str, Mapping[Role, object]] = {
         Role.LEAD: _N,
         Role.HUMAN: _A,
     },
+    # Not a seat action at all. Arming automated merge is a *consequence* of
+    # an eligible acceptance result, never something a session requests. The
+    # row exists so "no seat may request it" is an assertion in the test
+    # suite rather than an absence nobody notices going missing.
+    "request_automated_merge": {role: _N for role in Role},
     "transition_card": {
         Role.ANALYST: _A,
         Role.ARCHITECT: _A,
@@ -297,7 +306,7 @@ ACTION_POLICY: Mapping[str, Mapping[Role, object]] = {
         Role.ARCHITECT: _N,
         Role.DEV: _N,
         Role.QA: _N,
-        Role.LEAD: (_R, "reconciliation only, after a confirmed human merge"),
+        Role.LEAD: (_R, "reconciliation only, after a confirmed merge"),
         Role.HUMAN: _A,
     },
 }
@@ -328,6 +337,11 @@ ACTION_REFUSAL_REASONS: Mapping[str, str] = {
         "releasing a claim deletes the claimant's branch and re-opens the "
         "readiness decision. Flag the stale claim with the evidence and let "
         "`human` run release-claim"
+    ),
+    "request_automated_merge": (
+        "merging is not a seat action. Publish a complete verdict for the "
+        "current head, then run `accept`; deterministic policy decides the "
+        "route and only an eligible result reaches the merge controller"
     ),
 }
 
@@ -370,6 +384,293 @@ def check_action(action: str, seat: Role) -> Decision:
             f"{action.replace('_', ' ')}{detail}"
         )
     return decision
+
+
+# ----------------------------------------------------------- protected paths
+
+
+def glob_to_regex(pattern: str) -> "re.Pattern[str]":
+    """Translate a path glob, including ``**``, to an anchored regex.
+
+    ``fnmatch`` has no ``**`` and treats ``*`` as spanning separators, so a
+    protected-path rule written with it would silently fail to match nested
+    files. This translator is small enough to test on its own, which is
+    exactly why it is not inlined into the matcher.
+    """
+    parts: list[str] = []
+    index = 0
+    text = str(pattern).replace("\\", "/")
+    while index < len(text):
+        char = text[index]
+        if text.startswith("**/", index):
+            parts.append("(?:.*/)?")
+            index += 3
+        elif text.startswith("**", index):
+            parts.append(".*")
+            index += 2
+        elif char == "*":
+            parts.append("[^/]*")
+            index += 1
+        elif char == "?":
+            parts.append("[^/]")
+            index += 1
+        else:
+            parts.append(re.escape(char))
+            index += 1
+    return re.compile("^" + "".join(parts) + "$")
+
+
+def path_matches(path: str, pattern: str) -> bool:
+    return bool(glob_to_regex(pattern).match(str(path).replace("\\", "/")))
+
+
+def protected_matches(
+    changed_paths: Iterable[str], protected_paths: Mapping[str, Iterable[str]]
+) -> dict[str, tuple[str, ...]]:
+    """Protected category -> the exact paths that tripped it.
+
+    The category answers *what kind of authority* the change reaches; the
+    paths answer *which files to look at*. An escalation carrying only the
+    category makes the human open the diff to find out what it meant, so both
+    are reported.
+    """
+    paths = [str(path).replace("\\", "/") for path in changed_paths]
+    matched: dict[str, set[str]] = {}
+    for category, patterns in protected_paths.items():
+        hits = {
+            path
+            for pattern in patterns
+            for path in paths
+            if path_matches(path, pattern)
+        }
+        if hits:
+            matched[category] = hits
+    return {
+        category: tuple(sorted(hits))
+        for category, hits in sorted(matched.items())
+    }
+
+
+def classify_protected(
+    changed_paths: Iterable[str], protected_paths: Mapping[str, Iterable[str]]
+) -> tuple[str, ...]:
+    """Which protected categories this change touches, sorted and unique."""
+    return tuple(protected_matches(changed_paths, protected_paths))
+
+
+# ---------------------------------------------------------------- acceptance
+
+#: Identifies the code that made an acceptance decision. Deliberately not
+#: configuration: a repository must not be able to claim a decision was made
+#: by a policy it did not run.
+ACCEPTANCE_POLICY_VERSION = "1"
+
+
+def validate_verdict(
+    verdict: Verdict, live_head_sha: str, live_changed_files: Iterable[str]
+) -> list[str]:
+    """Every reason this verdict cannot be acted on. Empty means usable.
+
+    Stage 1 of two. Reported all at once rather than first-defect-wins, so a
+    Quality Assurance session learns everything it must redo in one pass.
+
+    A refusal here is not a route. Stale or incomplete evidence is not a code
+    defect and must not push the Card into the Developer lane; the correct
+    recovery is re-reviewing the current head.
+    """
+    problems: list[str] = []
+    if verdict.head_sha != live_head_sha:
+        problems.append(
+            f"verdict reviewed head {str(verdict.head_sha)[:12]} but the Pull "
+            f"Request head is now {str(live_head_sha)[:12]}; a new commit "
+            f"invalidates the evidence. Re-review the current head."
+        )
+    if verdict.verdict != "pass":
+        return problems
+
+    missing = [d for d in REQUIRED_DIMENSIONS if d not in verdict.review_dimensions]
+    if missing:
+        problems.append(
+            "pass is missing required review dimensions: " + ", ".join(missing)
+        )
+    if verdict.blind_spots:
+        problems.append(
+            "pass leaves an unresolved blind spot: " + "; ".join(verdict.blind_spots)
+        )
+    unreviewed = sorted(
+        {str(path) for path in live_changed_files} - set(verdict.changed_files)
+    )
+    if unreviewed:
+        problems.append(
+            "pass does not enumerate every changed file; unreviewed: "
+            + ", ".join(unreviewed)
+        )
+    problems.extend(_test_strength_problems(verdict.test_strength))
+    return problems
+
+
+#: The minimum a falsification note must say to be checkable: what was broken
+#: and which named test caught it. Shorter than this is an assertion, not
+#: evidence.
+_MIN_FALSIFICATION_WORDS = 5
+
+
+def _test_strength_problems(entries: Iterable[object]) -> list[str]:
+    """Why this test-strength evidence does not establish tested behaviour.
+
+    Structured rather than free text, and deliberately so. The rule this
+    replaced searched free prose for one of six words, which meant "NO branch
+    coverage was measured" satisfied it -- the token was present. A check that
+    a token appears is exactly the error it was meant to catch: treating
+    execution as proof.
+
+    A pass must therefore carry, in machine-readable form, at least one
+    dimension beyond `line`, and at least one falsification -- a record that
+    breaking the implementation made a *named* test fail. That is the only
+    operational proof that a covered line's behaviour is asserted rather than
+    merely executed.
+    """
+    problems: list[str] = []
+    allowed = set(TEST_STRENGTH_DIMENSIONS) | {"line"}
+    parsed: list[Mapping[str, object]] = []
+
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            problems.append(
+                f"test_strength entry {entry!r} is free text. Each entry must "
+                f"be an object with `dimension` (one of: "
+                + ", ".join(sorted(allowed))
+                + ") and `evidence`, optionally `falsified_by`. Prose cannot "
+                  "be checked -- 'no branch coverage' contains 'branch'."
+            )
+            continue
+        dimension = str(entry.get("dimension", "")).strip().casefold()
+        if dimension not in allowed:
+            problems.append(
+                f"test_strength dimension {dimension or '(missing)'!r} is not "
+                f"recognised; use one of: " + ", ".join(sorted(allowed))
+            )
+            continue
+        if not str(entry.get("evidence", "")).strip():
+            problems.append(
+                f"test_strength entry for {dimension!r} records no evidence"
+            )
+        parsed.append(entry)
+
+    if not any(
+        str(e.get("dimension", "")).strip().casefold() != "line" for e in parsed
+    ):
+        problems.append(
+            "pass treats line execution as sufficient test evidence. A covered "
+            "line is a line that ran, not a line whose behaviour was asserted. "
+            "Record at least one of: " + ", ".join(TEST_STRENGTH_DIMENSIONS)
+        )
+
+    falsifications = [
+        str(e.get("falsified_by", "")).strip()
+        for e in parsed
+        if str(e.get("falsified_by", "")).strip()
+    ]
+    if not falsifications:
+        problems.append(
+            "pass records no `falsified_by`. Name one change that breaks the "
+            "implementation and the named test that caught it -- for example "
+            "'reverted the guard at parser.py:41 -> test_rejects_empty "
+            "failed'. Without it, nothing distinguishes a test that asserts "
+            "behaviour from one that merely executes the line."
+        )
+    elif not any(len(note.split()) >= _MIN_FALSIFICATION_WORDS for note in falsifications):
+        problems.append(
+            "every `falsified_by` is too short to check. It must name what was "
+            "broken and which test failed, not merely assert that something was."
+        )
+    return problems
+
+
+def evaluate_acceptance(
+    verdict: Verdict, pr_facts: Mapping[str, object], config
+) -> Acceptance:
+    """The deterministic route for one reviewed delivery.
+
+    Stage 2 of two, reached only after ``validate_verdict`` returned no
+    problems -- so the evidence is already known to be current and complete,
+    and this return type stays honestly closed over the three acceptance
+    values rather than smuggling a refusal through as a fourth.
+
+    ``config`` is duck-typed on purpose. ``policy`` sits below ``config`` in
+    the dependency order and must not import it; it reads two attributes and
+    performs no I/O of its own.
+    """
+    head = str(pr_facts.get("head_sha", ""))
+
+    def result(acceptance: str, *reasons: str) -> Acceptance:
+        return Acceptance(
+            acceptance=acceptance,
+            head_sha=head,
+            policy_version=ACCEPTANCE_POLICY_VERSION,
+            reasons=tuple(reasons),
+        )
+
+    if verdict.verdict == "fail":
+        return result(
+            "defect",
+            "Quality Assurance recorded a fail verdict: "
+            + ("; ".join(verdict.findings) or "no finding recorded"),
+        )
+    if verdict.verdict == "blocked":
+        return result(
+            "protected_change",
+            "Quality Assurance could not resolve its uncertainty: "
+            + ("; ".join(verdict.blind_spots) or "no reason recorded"),
+        )
+
+    protected = protected_matches(
+        pr_facts.get("changed_files", ()) or (), config.protected_paths
+    )
+    if protected:
+        return result(
+            "protected_change",
+            "change touches protected categories: "
+            + "; ".join(
+                f"{category} ({', '.join(paths)})"
+                for category, paths in protected.items()
+            ),
+        )
+
+    if not config.required_checks:
+        return result(
+            "protected_change",
+            "no required checks configured, so automated acceptance cannot "
+            "establish a green baseline. Configure required_checks and branch "
+            "protection, or accept this change through the human lane.",
+        )
+
+    checks = dict(pr_facts.get("checks", {}) or {})
+    unmet = [
+        name for name in config.required_checks
+        if str(checks.get(name, "")).upper() != "SUCCESS"
+    ]
+    if unmet:
+        return result(
+            "defect",
+            "required checks are not green: "
+            + ", ".join(f"{name}={checks.get(name, 'missing')}" for name in unmet),
+        )
+
+    if pr_facts.get("draft"):
+        return result("defect", "Pull Request is still a draft")
+    if not pr_facts.get("mergeable", False):
+        return result(
+            "defect", "Pull Request is not mergeable; rebase onto the base branch"
+        )
+
+    return result(
+        "eligible",
+        f"verdict pass bound to head {head[:12]}",
+        "all required review dimensions present, no unresolved blind spots",
+        "every changed file enumerated and reviewed",
+        "required checks green: " + ", ".join(config.required_checks),
+    )
 
 
 # -------------------------------------------------------- work in progress

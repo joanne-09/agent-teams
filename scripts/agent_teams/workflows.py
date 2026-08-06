@@ -15,13 +15,16 @@ from .errors import AgentTeamsError
 
 import re
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 from . import policy
 from .board import Board, BoardError, PartialHandoff
 from .config import Config
+from .git import ClaimRaceLost, Git, claim_branch, worktree_path
 from .github import GitHubError
-from .model import Card, Handoff, MutationLog, Role, Status
+from .model import (
+    Acceptance, Card, Handoff, MutationLog, PR_MARKER, Role, Status, Verdict,
+)
 
 #: Files a fresh session reloads to rebuild standing repository context.
 #: Presence is reported, contents are opened on demand by the routine -- the
@@ -966,6 +969,547 @@ _ROUTINES: dict[Role, list[str]] = {
     Role.HUMAN: ["brief", "list", "promote", "handoff"],
     Role.DEV: [],
 }
+
+
+#: ARCHITECTURE.md 9.5. The fixed body shape every governed delivery uses.
+PR_SECTIONS = (
+    "## Summary", "## Test Plan", "## Automated Verification",
+    "## Human Verification TODO", "## Retro Notes",
+)
+
+#: Phrases that make a Human Verification item decoration. An item any
+#: reviewer could write without reading the change has not identified work a
+#: human must actually do, and a list of those trains the reader to skip the
+#: section entirely.
+_FILLER = (
+    "check that it works", "verify it works", "make sure it works",
+    "check it works", "test the feature", "looks good", "n/a", "none", "tbd",
+)
+
+
+def validate_pr_body(body: str) -> list[str]:
+    """Every way this Pull Request body breaks the section 9.5 contract.
+
+    All at once, not first-defect-wins: a Consumer correcting its delivery
+    should learn everything the contract wants in one refusal.
+    """
+    problems: list[str] = []
+    text = body or ""
+
+    for section in PR_SECTIONS:
+        if section not in text:
+            problems.append(f"missing required section {section}")
+
+    if "## Automated Verification" in text:
+        segment = text.split("## Automated Verification", 1)[1]
+        segment = segment.split("\n## ", 1)[0].strip()
+        if not segment:
+            problems.append(
+                "## Automated Verification is empty; name the concrete "
+                "commands, outputs, and specialist reviews that actually ran"
+            )
+
+    # GitHub honours Closes/Fixes/Resolves, case-insensitively. Accepting only
+    # the canonical spelling would refuse a body GitHub handles correctly.
+    if not re.search(r"\b(?:closes|fixes|resolves)\s+#\d+", text, re.I):
+        problems.append(
+            "missing the `Closes #<issue>` trailer (or `Fixes`/`Resolves`); "
+            "without it GitHub will not close the Issue on merge"
+        )
+
+    if PR_MARKER not in text:
+        problems.append(
+            f"missing the {PR_MARKER} marker that identifies a governed delivery"
+        )
+
+    if "## Human Verification TODO" in text:
+        segment = text.split("## Human Verification TODO", 1)[1].split("\n## ", 1)[0]
+        for line in segment.splitlines():
+            item = line.strip().lstrip("-*").strip().casefold().rstrip(".")
+            if item and any(item == f or item.startswith(f) for f in _FILLER):
+                problems.append(
+                    f"filler Human Verification item: {line.strip()!r}. Every "
+                    f"item must require genuine human judgment"
+                )
+    return problems
+
+
+def acceptance_criteria_problems(card_body: str) -> list[str]:
+    """Acceptance criteria that are not in a terminal state.
+
+    A bare ``[ ]`` at submit time means the Card still claims work the
+    delivery did not do. ``[!]`` waives an item, but a waiver with no reason
+    is just a box nobody ticked.
+    """
+    problems: list[str] = []
+    for line in (card_body or "").splitlines():
+        stripped = line.strip()
+        if re.match(r"^[-*]\s*\[\s\]", stripped):
+            problems.append(f"acceptance criterion is still open: {stripped}")
+        elif re.match(r"^[-*]\s*\[!\]", stripped):
+            remainder = re.sub(r"^[-*]\s*\[!\]", "", stripped).strip()
+            if len(remainder.split()) < 3:
+                problems.append(
+                    f"waived acceptance criterion has no reason: {stripped}"
+                )
+    return problems
+
+
+class Consumer:
+    """One Card, one stage. The Consumer half of ARCHITECTURE.md section 7.
+
+    Every routine runs the same spine -- bind, preflight, optional claim,
+    bounded work, one durable outcome, legal transition and handoff, stop.
+    They differ in exactly two ways: whether the routine claims, and which
+    durable outcome it produces. There is one lifecycle here, not three.
+    """
+
+    def __init__(self, config: Config, board: Board, git: Any = None):
+        self.config = config
+        self.board = board
+        self.git = git if git is not None else Git(Path.cwd())
+
+    # ---------------------------------------------------------- preflight
+
+    def _bound_card(self, number: int, seat: Role, status: Status) -> Card:
+        """Refuse anything but the exact expected pair, before any mutation.
+
+        Live board state always overrides a stale dispatch snapshot
+        (ARCHITECTURE.md 3.5), which is why this reads the Card rather than
+        trusting the kickoff's stamped pair.
+        """
+        card = self.board.card(number)
+        if card.status is not status:
+            raise WorkflowError(
+                f"#{number} is {card.routing_state}; this routine requires "
+                f"({status}, {seat}). If a kickoff prompt said otherwise it is "
+                f"stale -- live board state wins."
+            )
+        if card.role is not seat:
+            raise WorkflowError(
+                f"#{number} is owned by `{card.role or '-'}`, not `{seat}`; "
+                f"re-read the board before acting"
+            )
+        return card
+
+    def _worktree_for(self, card: Card) -> Path:
+        return worktree_path(Path(self.config.workspace), card.number, card.title)
+
+    # -------------------------------------------------------------- claim
+
+    def claim(self, number: int, seat: Role) -> dict[str, Any]:
+        """Reserve one Ready Card and open its isolated worktree.
+
+        Claim first, Status second. The failure modes are asymmetric: a won
+        claim with the Card still Ready simply waits for a re-run, but a Card
+        moved to In Progress by a session that then lost the race has been
+        mutated by a session that never owned it.
+        """
+        policy.check_action("claim_card", seat)
+        card = self._bound_card(number, seat, Status.READY)
+
+        log = MutationLog()
+        try:
+            claim = self.git.claim(number, card.title, seat.value)
+        except ClaimRaceLost as exc:
+            # Not a partial failure: nothing was written, so there is nothing
+            # to recover and nothing to replay.
+            return {
+                "ok": False,
+                "race_lost": True,
+                "issue": number,
+                "branch": exc.branch,
+                "error": str(exc),
+                "next": [
+                    "Do not retry. Another session owns this Card.",
+                    "Run `dispatch` to pick up different Ready work.",
+                    "If the holder looks abandoned, triage can propose a "
+                    "release-claim for the human to run.",
+                ],
+            }
+        log.record("claim", branch=claim["branch"], claim_sha=claim["claim_sha"])
+
+        target = self._worktree_for(card)
+        try:
+            tree = self.git.add_worktree(target, claim["branch"], claim["claim_sha"])
+        except AgentTeamsError as exc:
+            return log.partial_result(
+                "worktree",
+                str(exc),
+                [
+                    f"git worktree add {target} {claim['branch']}",
+                    f'producer_board.py transition {number} --to "In Progress" '
+                    f"--acting-role {seat}",
+                ],
+            )
+        log.record("worktree", worktree=tree["worktree"], resumed=tree["resumed"])
+
+        try:
+            self.board.transition_card(number, Status.IN_PROGRESS, seat)
+        except AgentTeamsError as exc:
+            return log.partial_result(
+                "transition",
+                str(exc),
+                [
+                    f'producer_board.py transition {number} --to "In Progress" '
+                    f"--acting-role {seat}"
+                ],
+            )
+        log.record("transition")
+
+        return {
+            "ok": True,
+            "issue": number,
+            "url": card.url,
+            "title": card.title,
+            "status": Status.IN_PROGRESS.value,
+            "role": seat.value,
+            **log.artifacts,
+        }
+
+    # ------------------------------------------------------------- submit
+
+    def submit(
+        self, number: int, seat: Role, title: str, body: str
+    ) -> dict[str, Any]:
+        """Open or update exactly one Pull Request, then transition and hand off."""
+        card = self._bound_card(number, seat, Status.IN_PROGRESS)
+
+        problems = validate_pr_body(body)
+        if problems:
+            raise WorkflowError(
+                "Pull Request body does not meet the delivery contract:\n  - "
+                + "\n  - ".join(problems)
+            )
+
+        log = MutationLog()
+        url = self.board.create_or_update_pull_request(
+            number, card.title, title, body
+        )
+        log.record("pull_request", pull_request=url)
+
+        note = f"Delivery ready for independent verification: {url}"
+        recovery_handoff = (
+            f"producer_board.py handoff {number} --from-role {seat} "
+            f'--to-role qa --note "{note}"'
+        )
+
+        try:
+            self.board.transition_card(number, Status.IN_REVIEW, seat)
+        except AgentTeamsError as exc:
+            # Never replays the Pull Request creation: that step has no
+            # natural key to collide on, so a second call opens a second
+            # Pull Request for one Card.
+            return log.partial_result(
+                "transition",
+                str(exc),
+                [
+                    f'producer_board.py transition {number} --to "In Review" '
+                    f"--acting-role {seat}",
+                    recovery_handoff,
+                ],
+            )
+        log.record("transition")
+
+        try:
+            self.board.handoff_card(
+                number, seat, Role.QA, note,
+                needs="verify against the acceptance criteria, then publish a "
+                      "verdict bound to the current head",
+                artifacts=url,
+            )
+        except PartialHandoff as exc:
+            return exc.to_result(self.config.repo)
+        except AgentTeamsError as exc:
+            return log.partial_result("handoff", str(exc), [recovery_handoff])
+        log.record("handoff")
+
+        return {
+            "ok": True,
+            "issue": number,
+            "url": card.url,
+            "status": Status.IN_REVIEW.value,
+            "role": Role.QA.value,
+            **log.artifacts,
+        }
+
+    # ------------------------------------------------------------ verdict
+
+    def verdict(self, number: int, verdict: Verdict) -> dict[str, Any]:
+        """Publish review evidence for the exact current head.
+
+        Deliberately performs no transition and no handoff. A verdict is
+        evidence; the route is chosen by ``accept`` from deterministic
+        policy. That separation is what stops a reviewer selecting its own
+        outcome, and it is why this method cannot move the Card at all.
+        """
+        self._bound_card(number, Role.QA, Status.IN_REVIEW)
+        policy.check_action("write_verdict", Role.QA)
+
+        pr = self.board.pull_request(number)
+        problems = policy.validate_verdict(
+            verdict, pr["head_sha"], pr["changed_files"]
+        )
+        if problems:
+            raise WorkflowError(
+                "verdict cannot be published:\n  - " + "\n  - ".join(problems)
+            )
+
+        self.board.record_verdict(number, verdict)
+        return {
+            "ok": True,
+            "issue": number,
+            "verdict": verdict.verdict,
+            "head_sha": verdict.head_sha,
+            "pull_request": pr["url"],
+            "next": [f"producer_board.py accept {number}"],
+        }
+
+    # ------------------------------------------------------------- accept
+
+    def accept(self, number: int) -> dict[str, Any]:
+        """Evaluate one reviewed delivery and execute the deterministic route.
+
+        The caller supplies an Issue number and nothing else. Every other
+        input is read from live GitHub state and the route comes from
+        ``policy.evaluate_acceptance``, so no session can steer its own
+        outcome -- there is no argument through which it could.
+        """
+        card = self._bound_card(number, Role.QA, Status.IN_REVIEW)
+
+        verdict = self.board.latest_verdict(number)
+        if verdict is None:
+            raise WorkflowError(
+                f"#{number} has no parseable verdict. Publish one with "
+                f"`producer_board.py verdict {number} --evidence-file ...` "
+                f"before accepting."
+            )
+
+        pr = self.board.pull_request(number)
+        problems = policy.validate_verdict(
+            verdict, pr["head_sha"], pr["changed_files"]
+        )
+        if problems:
+            raise WorkflowError(
+                "cannot accept on this evidence:\n  - " + "\n  - ".join(problems)
+            )
+
+        result = policy.evaluate_acceptance(verdict, pr, self.config)
+        self.board.record_acceptance(number, result)
+
+        base = {
+            "ok": True,
+            "issue": number,
+            "url": card.url,
+            "acceptance": result.acceptance,
+            "head_sha": result.head_sha,
+            "policy_version": result.policy_version,
+            "reasons": list(result.reasons),
+            "pull_request": pr["url"],
+        }
+
+        if result.acceptance == "eligible":
+            self.board.arm_auto_merge(pr["number"], self.config.merge_method)
+
+            # Eligibility already required every configured check to be
+            # SUCCESS, so `--auto` normally merges at once. Re-read rather
+            # than assume: armed is not merged, and Done must never be
+            # reached on an assumption.
+            state = self.board.merge_state(pr["number"])
+            if str(state.get("state", "")).upper() == "MERGED":
+                return {
+                    **base,
+                    "merge": "merged",
+                    **self._reconcile_to_done(number, card, pr, state, Role.LEAD),
+                }
+
+            return {
+                **base,
+                "status": Status.IN_REVIEW.value,
+                "role": Role.QA.value,
+                "merge": "armed",
+                "next": [
+                    "GitHub merges this head once the required checks pass on "
+                    "the current base, and disarms if a new commit lands.",
+                    f"When the merge confirms: producer_board.py "
+                    f"reconcile-done {number}",
+                ],
+            }
+
+        if result.acceptance == "defect":
+            log = MutationLog()
+            note = "Verification found a defect: " + "; ".join(result.reasons)
+            recovery = [
+                f'producer_board.py transition {number} --to "In Progress" '
+                f"--acting-role qa",
+                f"producer_board.py handoff {number} --from-role qa "
+                f'--to-role dev --note "{note}"',
+            ]
+            try:
+                self.board.transition_card(number, Status.IN_PROGRESS, Role.QA)
+                log.record("transition")
+                self.board.handoff_card(
+                    number, Role.QA, Role.DEV, note,
+                    needs="correct the finding on the same branch and Pull Request",
+                    artifacts=pr["url"],
+                )
+            except PartialHandoff as exc:
+                return exc.to_result(self.config.repo)
+            except AgentTeamsError as exc:
+                return log.partial_result("route", str(exc), recovery)
+            return {
+                **base,
+                "status": Status.IN_PROGRESS.value,
+                "role": Role.DEV.value,
+            }
+
+        note = "Protected change requires human review: " + "; ".join(result.reasons)
+        try:
+            self.board.handoff_card(
+                number, Role.QA, Role.HUMAN, note,
+                needs="review the protected change and decide",
+                artifacts=pr["url"],
+            )
+        except PartialHandoff as exc:
+            return exc.to_result(self.config.repo)
+        return {
+            **base,
+            "status": Status.IN_REVIEW.value,
+            "role": Role.HUMAN.value,
+        }
+
+    # ---------------------------------------------------------- reconcile
+
+    def _reconcile_to_done(
+        self, number: int, card: Card, pr: dict[str, Any],
+        state: Mapping[str, Any], acting_role: Role,
+    ) -> dict[str, Any]:
+        """Move a merged delivery to `(Done, lead)` and clean its claim.
+
+        Shared by ``accept`` -- which completes the eligible route in one go
+        when the merge has already landed -- and ``reconcile`` for the case
+        where the platform merged later. Callers must have confirmed MERGED
+        first; this method records a merge, it never causes one.
+
+        The reconciliation is recorded as `lead` because the Tech Lead owns
+        returning completed work to the board. That is not a seat electing to
+        act: this path opens only behind a deterministic `eligible` result
+        plus a confirmed merge, and `Done` is unreachable without both.
+        """
+        log = MutationLog()
+        try:
+            self.board.transition_card(number, Status.DONE, acting_role)
+            log.record("transition")
+            if card.role is not Role.LEAD:
+                self.board.handoff_card(
+                    number, card.role or Role.QA, Role.LEAD,
+                    f"merged as {state.get('merge_commit') or 'a confirmed merge'}",
+                    artifacts=pr["url"],
+                )
+                log.record("handoff")
+        except PartialHandoff as exc:
+            return exc.to_result(self.config.repo)
+        except AgentTeamsError as exc:
+            return log.partial_result(
+                "reconcile",
+                str(exc),
+                [
+                    f"producer_board.py transition {number} --to Done "
+                    f"--acting-role {acting_role}"
+                ],
+            )
+
+        # Cleanup last, and never fatal. The Card reaching Done is the durable
+        # outcome; a worktree holding unsaved work is reported for a human to
+        # resolve rather than forced.
+        target = self._worktree_for(card)
+        try:
+            cleanup = self.git.remove_worktree(target)
+        except AgentTeamsError as exc:
+            cleanup = {
+                "ok": False,
+                "worktree": str(target),
+                "error": str(exc),
+                "recovery": [
+                    f"Inspect {target}, save anything you need, then run: "
+                    f"git worktree remove {target} --force"
+                ],
+            }
+
+        return {
+            "status": Status.DONE.value,
+            "role": Role.LEAD.value,
+            "merge_commit": state.get("merge_commit"),
+            "cleanup": cleanup,
+        }
+
+    def reconcile(self, number: int, acting_role: Role) -> dict[str, Any]:
+        """Close out a merge that landed after `accept` armed it.
+
+        `accept` completes the eligible route itself when the merge is already
+        visible. This exists for the case where the platform merged later --
+        a slow required check, or a queue.
+        """
+        policy.check_action("reconcile_done", acting_role)
+        card = self.board.card(number)
+        if card.status is not Status.IN_REVIEW:
+            raise WorkflowError(
+                f"#{number} is {card.routing_state}; reconciliation applies to "
+                f"a Card in In Review whose Pull Request has merged"
+            )
+
+        pr = self.board.pull_request(number)
+        state = self.board.merge_state(pr["number"])
+        if str(state.get("state", "")).upper() != "MERGED":
+            raise WorkflowError(
+                f"the Pull Request for #{number} is not merged (state "
+                f"{state.get('state') or 'unknown'}). Reconciliation records a "
+                f"merge that happened; it never causes one."
+            )
+
+        outcome = self._reconcile_to_done(number, card, pr, state, acting_role)
+        if not outcome.get("status"):  # partial-failure envelope
+            return outcome
+        return {"ok": True, "issue": number, "url": card.url, **outcome}
+
+    # -------------------------------------------------------- observation
+
+    def worktree_status(self, number: int | None = None) -> dict[str, Any]:
+        """Read-only claim and worktree inventory. Mutates nothing.
+
+        This is the input stale-claim detection has been waiting on: it could
+        not exist until claims did (ARCHITECTURE.md 11.7).
+        """
+        if number is not None:
+            cards = [self.board.card(number)]
+        else:
+            cards = [
+                card for card in self.board.cards()
+                if card.status is Status.IN_PROGRESS
+            ]
+        known = {
+            Path(entry["worktree"]).resolve()
+            for entry in self.git.worktrees()
+            if entry.get("worktree")
+        }
+        claims = []
+        for card in cards:
+            target = self._worktree_for(card)
+            claims.append(
+                {
+                    "issue": card.number,
+                    "title": card.title,
+                    "routing_state": card.routing_state,
+                    "branch": claim_branch(card.number, card.title),
+                    "worktree": str(target),
+                    "worktree_present": target.resolve() in known,
+                }
+            )
+        return {
+            "ok": True,
+            "claim_ttl_hours": self.config.claim_ttl_hours,
+            "claims": claims,
+        }
 
 
 def _data_quality_problem(card: Card) -> str | None:

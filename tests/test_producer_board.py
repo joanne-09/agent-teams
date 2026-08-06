@@ -22,7 +22,10 @@ from agent_teams import policy  # noqa: E402
 from agent_teams.config import Config, ConfigError  # noqa: E402
 from agent_teams.github import BoardTruncated  # noqa: E402
 from agent_teams.model import Role, Status  # noqa: E402
-from fake_gh import FIELDS, REPO, FakeGh, SaturatingGh  # noqa: E402
+from agent_teams.model import REQUIRED_DIMENSIONS, VERDICT_MARKER  # noqa: E402
+from fake_gh import (  # noqa: E402
+    FIELDS, REPO, FakeGh, FakeGit, SaturatingGh, board_with,
+)
 
 
 def config(**overrides):
@@ -69,6 +72,76 @@ class ConfigTests(unittest.TestCase):
     def test_spec_completion_defaults_to_merged(self):
         self.assertTrue(config().requires_merged_spec)
         self.assertFalse(config(spec_completion="opened").requires_merged_spec)
+
+
+class ConsumerConfigTests(unittest.TestCase):
+    """The five Consumer keys, and the one that may only grow."""
+
+    def test_defaults_are_conservative(self):
+        current = config()
+        self.assertEqual(current.workspace, "../.worktrees")
+        self.assertEqual(current.merge_method, "squash")
+        self.assertEqual(current.required_checks, ())
+        self.assertEqual(current.claim_ttl_hours, 72)
+
+    def test_defaults_cover_every_protected_category(self):
+        for category in (
+            "authority-and-policy", "acceptance-and-merge",
+            "github-workflows-and-credentials", "dependencies-and-manifests",
+            "agent-instructions", "security-boundaries",
+            "architecture-and-design",
+        ):
+            self.assertIn(category, config().protected_paths, category)
+
+    def test_repository_policy_may_add_patterns_to_a_category(self):
+        patterns = config(
+            protected_paths={"security-boundaries": ["infra/**"]}
+        ).protected_paths["security-boundaries"]
+        self.assertIn("infra/**", patterns)
+        self.assertIn("**/auth/**", patterns)  # the default survives
+
+    def test_repository_policy_may_add_a_new_category(self):
+        current = config(protected_paths={"billing": ["src/billing/**"]})
+        self.assertIn("billing", current.protected_paths)
+        self.assertIn("agent-instructions", current.protected_paths)
+
+    def test_emptying_a_default_category_is_a_validation_error(self):
+        # Section 4.5: policy may add categories, never silently remove one.
+        with self.assertRaises(ConfigError) as caught:
+            config(protected_paths={"agent-instructions": []})
+        self.assertIn("agent-instructions", str(caught.exception))
+
+    def test_adding_a_pattern_twice_does_not_duplicate_it(self):
+        patterns = config(
+            protected_paths={"agent-instructions": ["skills/**", "skills/**"]}
+        ).protected_paths["agent-instructions"]
+        self.assertEqual(len(patterns), len(set(patterns)))
+
+    def test_unknown_merge_method_is_rejected(self):
+        with self.assertRaisesRegex(ConfigError, "merge_method"):
+            config(merge_method="cherry-pick")
+
+    def test_workspace_must_resolve_outside_the_repository(self):
+        # A repo-internal worktree gets scanned by editors and confuses which
+        # checkout is canonical.
+        with self.assertRaisesRegex(ConfigError, "workspace"):
+            config(workspace=".worktrees")
+
+    def test_required_checks_normalise_to_a_tuple_of_names(self):
+        self.assertEqual(
+            config(required_checks=["build", " test ", ""]).required_checks,
+            ("build", "test"),
+        )
+
+    def test_consumer_keys_survive_a_config_round_trip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "producer.json"
+            original = config(
+                required_checks=["build"], merge_method="rebase",
+                protected_paths={"billing": ["src/billing/**"]},
+            )
+            original.write(path)
+            self.assertEqual(Config.load(path), original)
 
 
 class BoardReadTests(unittest.TestCase):
@@ -381,6 +454,102 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["mutations_performed"], [])
         self.assertEqual(gh.calls_matching("project", "item-edit"), [])
         self.assertEqual(gh.calls_matching("issue", "comment"), [])
+
+
+class ConsumerCommandTests(CliTests):
+    """Round-trips through main(), asserting the CLI envelope contract.
+
+    Subclasses CliTests to reuse its tmpdir config fixture.
+    """
+
+    def _run_git(self, *argv, gh=None, git=None):
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = producer_board.main(
+                ["--config", str(self.config_path), *argv],
+                gh=gh or FakeGh(), git=git,
+            )
+        return code, out.getvalue(), err.getvalue()
+
+    def test_claim_prints_an_ok_envelope_and_exits_zero(self):
+        code, out, _ = self._run_git(
+            "claim", "12", "--acting-role", "dev",
+            gh=FakeGh(items=board_with((12, "Implement parser", "Ready", "dev"))),
+            git=FakeGit(),
+        )
+        self.assertEqual(code, 0)
+        self.assertTrue(json.loads(out)["ok"])
+
+    def test_a_lost_race_exits_one_and_never_reports_success(self):
+        # The failure a skill is most likely to misread. It must not exit 0.
+        code, out, _ = self._run_git(
+            "claim", "12", "--acting-role", "dev",
+            gh=FakeGh(items=board_with((12, "x", "Ready", "dev"))),
+            git=FakeGit(race_lost=True),
+        )
+        self.assertEqual(code, 1)
+        payload = json.loads(out)
+        self.assertFalse(payload["ok"])
+        self.assertTrue(payload["race_lost"])
+        self.assertNotIn("partial", payload)
+
+    def test_accept_takes_only_an_issue_number(self):
+        args = producer_board._build_parser().parse_args(["accept", "21"])
+        self.assertEqual(args.command, "accept")
+        self.assertEqual(args.issue, 21)
+        # No flag exists through which a caller could steer the route.
+        for forbidden in ("merge", "acceptance", "force", "route"):
+            self.assertFalse(hasattr(args, forbidden), forbidden)
+
+    def test_there_is_no_command_that_merges_a_chosen_pull_request(self):
+        parser = producer_board._build_parser()
+        for attempt in (["merge", "57"], ["merge-pr", "57"], ["request-merge", "57"]):
+            with self.assertRaises(SystemExit, msg=str(attempt)):
+                parser.parse_args(attempt)
+
+    def test_claim_is_restricted_to_the_two_authoring_seats(self):
+        parser = producer_board._build_parser()
+        with self.assertRaises(SystemExit):
+            parser.parse_args(["claim", "12", "--acting-role", "qa"])
+
+    def test_worktree_status_is_read_only(self):
+        gh = FakeGh(items=board_with((23, "Active build", "In Progress", "dev")))
+        code, _, _ = self._run_git("worktree-status", gh=gh, git=FakeGit())
+        self.assertEqual(code, 0)
+        self.assertEqual(gh.calls_matching("project", "item-edit"), [])
+        self.assertEqual(gh.calls_matching("issue", "comment"), [])
+
+    def test_a_refusal_prints_to_stderr_and_exits_one(self):
+        gh = FakeGh(items=board_with((12, "x", "Backlog", "dev")))
+        code, out, err = self._run_git(
+            "claim", "12", "--acting-role", "dev", gh=gh, git=FakeGit()
+        )
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertFalse(json.loads(err)["ok"])
+
+    def test_accept_routes_and_exits_zero(self):
+        payload = {
+            "verdict": "pass", "card": 21, "head_sha": "a" * 40,
+            "pull_request": "p",
+            "review_dimensions": list(REQUIRED_DIMENSIONS),
+            "changed_files": ["src/parser.py", "tests/test_parser.py"],
+            "test_strength": [{"dimension": "branch", "evidence": "14/14",
+                               "falsified_by": "reverted the guard -> "
+                                               "test_rejects_empty failed"}],
+            "checks": ["unittest: 305 passed"],
+            "next_role": "qa",
+        }
+        comment = VERDICT_MARKER + "\n\n```json\n" + json.dumps(payload) + "\n```"
+        gh = FakeGh(
+            items=board_with((21, "Delivery", "In Review", "qa")), comments=[comment]
+        )
+        code, out, _ = self._run_git("accept", "21", gh=gh, git=FakeGit())
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["acceptance"], "protected_change")
+        # required_checks is empty in the default test config, so the
+        # fail-closed rule fires and nothing is armed for merge.
+        self.assertEqual(gh.calls_matching("pr", "merge"), [])
 
 
 if __name__ == "__main__":

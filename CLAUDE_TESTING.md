@@ -484,11 +484,35 @@ or remove and reinstall only
 
 - [ ] source directory is on `mvp/producer-from-scratch`;
 - [ ] `claude plugin validate .` passes;
-- [ ] `/help` shows exactly four MVP skills;
+- [ ] `/help` shows exactly nine skills;
 - [ ] analyst routes to `intaking-requirement`;
 - [ ] architect routes to `authoring-spec`;
 - [ ] Lead routes to `dispatching-work`;
+- [ ] "work on #N" routes to `consuming-card`;
+- [ ] "verify #N" routes to `verifying-delivery`;
+- [ ] a request naming no Card does NOT route to a Consumer skill;
 - [ ] no-tool prompts cause no mutations.
+
+### Consumer verification (hermetic)
+
+- [ ] `python -m unittest tests.test_git` passes -- two clones racing one Card
+      produce exactly one winner, against real git;
+- [ ] `python -m unittest tests.test_acceptance` passes -- every acceptance
+      decision-table row and every protected category;
+- [ ] `python -m unittest tests.test_consumer` passes;
+- [ ] `grep -rE "superpowers:|gstack:/" skills/` returns nothing.
+
+### Consumer verification (live, still unperformed)
+
+Needs an authenticated `gh`, a disposable repository with branch protection and
+required checks, and auto-merge enabled:
+
+- [ ] `doctor` reports no `acceptance_problems`;
+- [ ] one claim, one Pull Request, one verdict, one `accept`;
+- [ ] an eligible delivery merges and `reconcile-done` reaches `(Done, lead)`;
+- [ ] a defect returns `(In Progress, dev)` on the same Pull Request;
+- [ ] a protected-path change routes `(In Review, human)`;
+- [ ] a push after a verdict makes `accept` refuse as stale.
 
 ### Optional persistent installation
 

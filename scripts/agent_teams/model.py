@@ -15,7 +15,7 @@ from .errors import AgentTeamsError
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 
 class DomainError(AgentTeamsError, ValueError):
@@ -108,6 +108,7 @@ STATUSES: tuple[str, ...] = tuple(status.value for status in Status)
 HANDOFF_MARKER = "<!-- agent-teams:handoff -->"
 PR_MARKER = "<!-- agent-teams:pr -->"
 VERDICT_MARKER = "<!-- agent-teams:verdict -->"
+ACCEPTANCE_MARKER = "<!-- agent-teams:acceptance -->"
 
 
 def _one_line(value: Any, limit: int = 500) -> str:
@@ -188,31 +189,129 @@ class Handoff:
         return "\n".join(lines)
 
 
+#: ARCHITECTURE.md 9.6. A pass missing any of these has not reviewed the
+#: delivery, whatever its prose claims.
+REQUIRED_DIMENSIONS: tuple[str, ...] = (
+    "design", "architecture", "correctness", "edge-cases",
+    "security", "compatibility", "cross-file", "test-strength",
+)
+
+#: Line coverage is execution evidence, not behavioural proof. A pass must
+#: carry at least one of these stronger dimensions.
+TEST_STRENGTH_DIMENSIONS: tuple[str, ...] = (
+    "branch", "scenario", "mutation", "integration", "property", "negative",
+)
+
+
 @dataclass(frozen=True)
 class Verdict:
-    """A Quality Assurance result. Read by Producer queue inspection."""
+    """A Quality Assurance result: evidence, never a merge route.
+
+    Deliberately has no acceptance field and no conversion to
+    :class:`Acceptance`. The reviewer supplies evidence; deterministic policy
+    chooses the route. A field here through which QA could name its own
+    outcome would defeat that separation by construction.
+    """
 
     verdict: str
     card: int
     pull_request: str = ""
-    scope: tuple[str, ...] = ()
+    head_sha: str = ""
+    design_baseline: tuple[str, ...] = ()
+    review_dimensions: tuple[str, ...] = ()
+    changed_files: tuple[str, ...] = ()
+    design_conformance: tuple[str, ...] = ()
+    test_strength: tuple[str, ...] = ()
     checks: tuple[str, ...] = ()
     findings: tuple[str, ...] = ()
+    challenges: tuple[str, ...] = ()
+    blind_spots: tuple[str, ...] = ()
     limitations: str = ""
     next_role: Role | None = None
 
     VALUES = ("pass", "fail", "blocked")
+
+    #: Every tuple-valued field, so serialisation cannot silently miss one.
+    _SEQUENCES = (
+        "design_baseline", "review_dimensions", "changed_files",
+        "design_conformance", "test_strength", "checks", "findings",
+        "challenges", "blind_spots",
+    )
 
     def __post_init__(self) -> None:
         if self.verdict not in self.VALUES:
             raise DomainError(
                 f"verdict must be one of {', '.join(self.VALUES)}; got {self.verdict!r}"
             )
-        if not self.checks and self.verdict != "blocked":
+        if not str(self.head_sha).strip():
+            raise DomainError(
+                "a verdict must name the exact Pull Request head it reviewed; "
+                "evidence not bound to a commit cannot be checked for staleness"
+            )
+        if self.verdict == "blocked":
+            return
+        if not self.checks:
             raise DomainError(
                 "a pass or fail verdict requires at least one recorded check; "
                 "'looks good' is not a verdict"
             )
+        if self.verdict == "pass" and not self.changed_files:
+            raise DomainError(
+                "a pass must enumerate every changed file it reviewed; an "
+                "unenumerated change is an unreviewed change"
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "verdict": self.verdict,
+            "card": self.card,
+            "pull_request": self.pull_request,
+            "head_sha": self.head_sha,
+        }
+        for name in self._SEQUENCES:
+            payload[name] = list(getattr(self, name))
+        payload["limitations"] = self.limitations
+        payload["next_role"] = self.next_role.value if self.next_role else None
+        return payload
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> "Verdict":
+        return cls(
+            verdict=str(raw.get("verdict", "")),
+            card=int(raw.get("card", 0)),
+            pull_request=str(raw.get("pull_request", "")),
+            head_sha=str(raw.get("head_sha", "")),
+            limitations=str(raw.get("limitations", "")),
+            next_role=Role.parse_optional(raw.get("next_role")),
+            **{name: tuple(raw.get(name, ()) or ()) for name in cls._SEQUENCES},
+        )
+
+
+@dataclass(frozen=True)
+class Acceptance:
+    """A deterministic routing decision. Written by policy, never by a seat."""
+
+    acceptance: str
+    head_sha: str
+    policy_version: str
+    reasons: tuple[str, ...] = ()
+
+    VALUES = ("eligible", "defect", "protected_change")
+
+    def __post_init__(self) -> None:
+        if self.acceptance not in self.VALUES:
+            raise DomainError(
+                f"acceptance must be one of {', '.join(self.VALUES)}; "
+                f"got {self.acceptance!r}"
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "acceptance": self.acceptance,
+            "head_sha": self.head_sha,
+            "policy_version": self.policy_version,
+            "reasons": list(self.reasons),
+        }
 
 
 @dataclass

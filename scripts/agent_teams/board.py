@@ -13,13 +13,18 @@ from __future__ import annotations
 
 from .errors import AgentTeamsError
 
+import json
 from dataclasses import replace
 from typing import Any
 
 from . import policy
 from .config import Config
+from .git import claim_branch
 from .github import Gh, GitHubError, fetch_all_items
-from .model import Card, Handoff, Role, Status, HANDOFF_MARKER
+from .model import (
+    ACCEPTANCE_MARKER, Acceptance, Card, DomainError, HANDOFF_MARKER, Handoff,
+    Role, Status, VERDICT_MARKER, Verdict,
+)
 
 
 class BoardError(AgentTeamsError):
@@ -337,6 +342,124 @@ class Board:
             "comment": comment,
         }
 
+    # --------------------------------------------------------- pull requests
+
+    #: Everything the acceptance evaluator needs, in one round trip.
+    _PR_FIELDS = "number,url,headRefOid,state,mergeable,isDraft,files,statusCheckRollup"
+
+    def pull_request(self, number: int) -> dict[str, Any]:
+        """The linked Pull Request, normalised. Raw gh shapes stop here."""
+        raw = self.gh.json(
+            ["pr", "view", str(number), "--repo", self.config.repo,
+             "--json", self._PR_FIELDS]
+        )
+        checks = {
+            str(entry.get("name", "")): str(entry.get("conclusion", ""))
+            for entry in (raw.get("statusCheckRollup") or [])
+            if entry.get("name")
+        }
+        return {
+            "number": raw.get("number"),
+            "url": raw.get("url", ""),
+            "head_sha": str(raw.get("headRefOid", "")),
+            "state": str(raw.get("state", "")),
+            "mergeable": str(raw.get("mergeable", "")).upper() == "MERGEABLE",
+            "draft": bool(raw.get("isDraft", False)),
+            "changed_files": tuple(
+                str(entry.get("path", ""))
+                for entry in (raw.get("files") or [])
+                if entry.get("path")
+            ),
+            "checks": checks,
+        }
+
+    def create_or_update_pull_request(
+        self, number: int, card_title: str, title: str, body: str
+    ) -> str:
+        """Exactly one Pull Request per claim branch. Idempotent by branch.
+
+        One Card, one Consumer, one delivery (ARCHITECTURE.md Appendix A.1).
+        A resumed or corrected session must update the Pull Request it
+        already opened rather than opening a second one, so this keys off the
+        claim branch rather than on whether this session remembers creating
+        one.
+        """
+        branch = claim_branch(number, card_title)
+        existing = self.gh.json(
+            ["pr", "list", "--repo", self.config.repo, "--head", branch,
+             "--state", "open", "--json", "number,url"]
+        )
+        if existing:
+            self.gh.run(
+                ["pr", "edit", str(existing[0]["number"]), "--repo", self.config.repo,
+                 "--title", title, "--body", body]
+            )
+            return str(existing[0].get("url", ""))
+        return self.gh.run(
+            ["pr", "create", "--repo", self.config.repo, "--head", branch,
+             "--title", title, "--body", body]
+        ).strip()
+
+    def record_verdict(self, number: int, verdict: Verdict) -> None:
+        self.comment_on_card(number, _render_block(VERDICT_MARKER, verdict.to_dict()))
+
+    def record_acceptance(self, number: int, acceptance: Acceptance) -> None:
+        self.comment_on_card(
+            number, _render_block(ACCEPTANCE_MARKER, acceptance.to_dict())
+        )
+
+    def latest_verdict(self, number: int) -> "Verdict | None":
+        """The most recent parseable verdict, or None.
+
+        Fails open like ``handoff_count``: an unreadable or schema-invalid
+        comment reads as 'not a verdict' and the search continues to older
+        ones, rather than crashing a session that could still explain itself.
+        A missing verdict refuses the accept, which is the safe direction.
+        """
+        for body in reversed(self.comments(number)):
+            if VERDICT_MARKER not in body:
+                continue
+            payload = _parse_block(body)
+            if payload is None:
+                continue
+            try:
+                return Verdict.from_dict(payload)
+            except (DomainError, TypeError, ValueError):
+                continue
+        return None
+
+    def arm_auto_merge(self, pr_number: int, method: str) -> dict[str, Any]:
+        """Hand the merge to GitHub, which owns retesting against the base.
+
+        Not an immediate merge: `--auto` lands the reviewed head only once
+        required checks pass on the *current* base, and disarms if a new
+        commit arrives. That is the stale-base guarantee, and it belongs to
+        the platform that owns the base rather than to this code.
+        """
+        self.gh.run(
+            ["pr", "merge", str(pr_number), "--repo", self.config.repo,
+             "--auto", f"--{method}", "--delete-branch"]
+        )
+        return {"ok": True, "pull_request": pr_number, "method": method, "armed": True}
+
+    def merge_state(self, pr_number: int) -> dict[str, Any]:
+        raw = self.gh.json(
+            ["pr", "view", str(pr_number), "--repo", self.config.repo,
+             "--json", "state,mergedAt,mergeCommit"]
+        )
+        return {
+            "state": str(raw.get("state", "")),
+            "merged_at": raw.get("mergedAt"),
+            "merge_commit": (raw.get("mergeCommit") or {}).get("oid"),
+        }
+
+    def auto_merge_enabled(self) -> bool:
+        raw = self.gh.run(
+            ["repo", "view", self.config.repo, "--json", "autoMergeAllowed",
+             "--jq", ".autoMergeAllowed"]
+        )
+        return str(raw).strip().casefold() == "true"
+
     # ------------------------------------------------------------- diagnosis
 
     def doctor(self) -> dict[str, Any]:
@@ -402,8 +525,37 @@ class Board:
                 "the board is not ready:\n  - " + "\n  - ".join(problems)
             )
 
+        # Acceptance readiness is reported, not raised. A repository doing
+        # Producer-only work is perfectly usable without an automated merge
+        # path; what is not acceptable is discovering at `accept` time that
+        # the path was never going to work.
+        acceptance_problems: list[str] = []
+        if not self.config.required_checks:
+            acceptance_problems.append(
+                "required_checks is empty, so no delivery can ever be eligible "
+                "for automated acceptance; every pass will route to the human "
+                "protected-change lane. Name the checks that must be green."
+            )
+        else:
+            try:
+                if not self.auto_merge_enabled():
+                    acceptance_problems.append(
+                        f"auto-merge is not enabled on {self.config.repo}, so "
+                        f"`gh pr merge --auto` will fail. Enable it in "
+                        f"repository settings, and configure branch protection "
+                        f"with the required checks -- without protection "
+                        f"--auto merges immediately and the retest guarantee "
+                        f"is vacuous."
+                    )
+            except GitHubError as exc:
+                acceptance_problems.append(
+                    f"could not read auto-merge settings for {self.config.repo}: "
+                    f"{exc}"
+                )
+
         return {
             "ok": True,
+            "acceptance_problems": acceptance_problems,
             "repo": self.config.repo,
             "project_owner": self.config.project_owner,
             "project_number": self.config.project_number,
@@ -416,6 +568,28 @@ class Board:
             "handoff_cap": self.config.handoff_cap,
             "spec_completion": self.config.spec_completion,
         }
+
+
+def _render_block(marker: str, payload: dict[str, Any]) -> str:
+    """A human-readable marker plus one machine-parseable JSON block.
+
+    Both audiences at once: queue inspection greps the marker, the acceptance
+    evaluator parses the block, and a person reading the Issue sees neither
+    as noise.
+    """
+    return marker + "\n\n```json\n" + json.dumps(payload, indent=2) + "\n```"
+
+
+def _parse_block(body: str) -> "dict[str, Any] | None":
+    start = body.find("```json")
+    end = body.find("```", start + 7)
+    if start < 0 or end < 0:
+        return None
+    try:
+        payload = json.loads(body[start + 7 : end])
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 class PartialHandoff(AgentTeamsError):

@@ -287,16 +287,30 @@ class HandoffRenderingTests(unittest.TestCase):
 
 
 class VerdictTests(unittest.TestCase):
+    # Superseded 2026-08-06: Verdict grew the ARCHITECTURE.md 9.6 evidence
+    # contract, and head_sha became mandatory for every verdict -- evidence
+    # not bound to a commit cannot be checked for staleness. The three cases
+    # below still assert what they always did; they now supply a head so the
+    # rule under test is the one that fires. The fuller contract, including
+    # changed-file enumeration and the pass/blocked asymmetry, is covered in
+    # tests/test_acceptance.py.
+
     def test_rejects_an_unknown_verdict_value(self):
         with self.assertRaises(DomainError):
-            Verdict(verdict="probably fine", card=42, checks=("ran tests",))
+            Verdict(
+                verdict="probably fine", card=42, head_sha="a" * 40,
+                checks=("ran tests",),
+            )
 
     def test_rejects_a_bare_pass_without_evidence(self):
         with self.assertRaisesRegex(DomainError, "not a verdict"):
-            Verdict(verdict="pass", card=42)
+            Verdict(
+                verdict="pass", card=42, head_sha="a" * 40,
+                changed_files=("src/parser.py",),
+            )
 
     def test_blocked_may_have_no_checks(self):
-        Verdict(verdict="blocked", card=42)
+        Verdict(verdict="blocked", card=42, head_sha="a" * 40)
 
 
 class CardTests(unittest.TestCase):
