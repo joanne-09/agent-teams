@@ -123,8 +123,8 @@ team-of-teams are not required for either completion level.
 | Tech Lead briefing skill | Done | `skills/briefing-board/SKILL.md` |
 | Tech Lead triage skill | Done | `skills/triaging-board/SKILL.md` |
 | Quality Assurance queue inspection skill | Done | `skills/inspecting-queue/SKILL.md`; Producer-shaped, issues no verdicts |
-| Developer execution skill | Pending | Consumer-shaped; outside the Producer scope |
-| Quality Assurance engineer verification and acceptance skill | Pending | Consumer-shaped; must implement the multidimensional review and evidence contract in M5 |
+| Developer execution skill | Done | `skills/consuming-card/SKILL.md` + 3 references; carries the Architect documentation routine too |
+| Quality Assurance engineer verification and acceptance skill | Done | `skills/verifying-delivery/SKILL.md` + 3 references; eight review dimensions, pre-emit evidence gate, challenge loop, blind-spot loop |
 
 ### 4.3 Board adapter
 
@@ -147,8 +147,8 @@ team-of-teams are not required for either completion level.
 | Status transition | Done | `transition` command; authority keyed to the destination; `TransitionTests` |
 | `promote` (Backlog to Ready) | Done | Readiness gate plus two independent operations; `PromoteTests`, `PromoteFailureTests` |
 | `create-card` / `decompose` | Done | Flat implementation Cards with spec pointer and provenance; `DecomposeTests`, `DecomposeFailureTests` |
-| Card claim/worktree | Pending | Consumer-shaped; outside the Producer scope |
-| Pull Request link/verdict/acceptance/merge/reconciliation operations | Pending | Consumer-shaped; outside the delivered Producer scope |
+| Card claim/worktree | Done | `git.py`; exclusivity proven against real git (`ClaimRaceTests`), guarded worktree removal (`WorktreeTests`) |
+| Pull Request link/verdict/acceptance/merge/reconciliation operations | Done | `board.pull_request`/`record_verdict`/`record_acceptance`/`arm_auto_merge`/`merge_state`; `Consumer.{claim,submit,verdict,accept,reconcile}`. Live `gh` shapes still assumed |
 | Append-only audit log | Pending | M7; the partial-failure envelope is not a substitute |
 
 ### 4.4 Verification
@@ -224,13 +224,12 @@ M2  Domain policy + Status operations                Done
  |
 M3  Architect -> Ready vertical slice                Done except live proof
  |
-M4  Developer execution      Pending (Consumer)
+M4  Developer execution      Done except live proof
  |
-M5  QA verification + deterministic acceptance       Queue inspection done;
- |                                                   verdicts/gating pending
-M6  Tech Lead operations, WIP, recovery    Done except stale-claim
- |                                                   detection (needs claims)
-M6.5 Blocker resolution (`resolving-issues`)         Pending (needs M4 claims)
+M5  QA verification + deterministic acceptance       Done except live proof
+M6  Tech Lead operations, WIP, recovery    Done (stale-claim input
+ |                                                   shipped: worktree-status)
+M6.5 Blocker resolution (`resolving-issues`)         Pending (claims now exist)
  |
 M7  Seat-aware governance and audit                  Policy done; audit pending
  |
@@ -242,12 +241,21 @@ M8  Golden-path proof and release                    Pending (needs gh)
 M1 through M6 produce Functional Phase 1. M7 and M8 produce the governed
 target.
 
-**The Producer surface is complete.** Every Producer-shaped routine in
-`ARCHITECTURE.md` section 6 — analyst intake, architect shaping and
-readiness, Tech Lead briefing, triage and dispatch, and Quality
-Assurance queue inspection — is implemented and hermetically tested. What
-remains in M4, M5, and M8 is Consumer-shaped work plus the live-GitHub proof
-that no amount of local testing can substitute for.
+**Both surfaces are now implemented.** Every Producer-shaped routine in
+`ARCHITECTURE.md` section 6 and every Consumer-shaped routine in section 7 —
+Developer implementation, Architect documentation delivery, and Quality
+Assurance verification through deterministic acceptance and controlled merge —
+is built and hermetically tested.
+
+**What remains is the live-GitHub proof that no amount of local testing can
+substitute for.** Every `gh` response shape this code reads is still an
+assumption encoded in `tests/fake_gh.py`, and no verdict, acceptance decision,
+auto-merge arming, or reconciliation has ever run against a real repository.
+Treat M8 and the M1.1-M1.3 items as the remaining risk, not as paperwork.
+
+One exception is genuinely proven rather than assumed: claim exclusivity is
+tested against **real git** using a local bare repository as origin, because a
+fake would have agreed with the wrong implementation. See the note under M4.1.
 
 ## 7. M0 - Architecture and implementation status
 
@@ -550,7 +558,7 @@ owns creation and field assignment.
 
 ## 11. M4 - Developer execution and exclusive claim
 
-Status: **Pending**
+Status: **Done except live proof** (2026-08-06)
 
 Purpose: turn `dev` from a dispatch value into a real Consumer-shaped seat.
 
@@ -566,22 +574,35 @@ cross-platform Python/Git rather than importing the earlier shell framework.
 
 #### M4.1 Claim operation
 
-- [ ] require `(Ready, dev)`;
-- [ ] create a deterministic claim branch;
-- [ ] create an isolated worktree;
-- [ ] make remote branch acquisition the exclusivity signal;
-- [ ] return a distinct race-lost result that must not retry;
-- [ ] transition to `In Progress` only with a documented compensation order;
-- [ ] persist enough claim metadata for safe resume and cleanup;
-- [ ] add concurrency-focused tests using temporary Git remotes.
+- [x] require `(Ready, dev)` (or `(Ready, architect)` for documentation Cards);
+- [x] create a deterministic claim branch, `claim/<n>-<slug>`;
+- [x] create an isolated worktree under the configured `workspace`;
+- [x] make remote branch acquisition the exclusivity signal;
+- [x] return a distinct race-lost result that must not retry;
+- [x] transition to `In Progress` only with a documented compensation order
+      (claim first: a won claim on a still-Ready Card waits for a re-run, but a
+      Card moved by a session that then lost the race was mutated by a session
+      that never owned it);
+- [x] persist enough claim metadata for safe resume and cleanup;
+- [x] add concurrency-focused tests using temporary Git remotes.
+
+**The finding that shaped this operation.** The obvious implementation --
+compare-and-swap by pushing the base SHA with an empty-expect lease -- gives
+*two winners* in the common case. Pushing an identical SHA to an existing ref
+is `Everything up-to-date`, exit `0`; git never evaluates the lease. Both
+claimants proceed, and a coverage-only suite reports the path fully covered
+while asserting the wrong outcome. The claim pushes a unique empty commit with
+a session nonce instead. This is why the race tests run against real git rather
+than a fake: a fake would have agreed with the wrong implementation.
 
 #### M4.2 Sibling-plugin preflight
 
-- [ ] decide exact supported `superpowers` and `gstack` versions/surfaces;
-- [ ] add a non-mutating dependency check;
-- [ ] document missing-dependency behavior;
-- [ ] ensure sibling skills are invoked by namespace and procedurally when
-      runtime nesting would be unsafe.
+**Withdrawn, not delivered.** This item predates invariant 10. agent-teams
+calls no other plugin, so there is no dependency to preflight and no
+missing-dependency behaviour to document. The disciplines these siblings carry
+were adopted as derived text with attribution instead -- see `ATTRIBUTION.md`
+and `docs/skill_migration.md` sections 8 and 9. A grep for `superpowers:` or
+`gstack:/` across `skills/` returns nothing, and that absence is the proof.
 
 #### M4.3 Add Developer skill
 
@@ -623,7 +644,7 @@ Create `skills/consuming-card/SKILL.md` with:
 
 ## 12. M5 - Quality Assurance verification and deterministic acceptance
 
-Status: **Pending**
+Status: **Done except live proof** (2026-08-06)
 
 Purpose: make Quality Assurance an independent, multidimensional review stage
 that produces challenged evidence for deterministic merge eligibility rather

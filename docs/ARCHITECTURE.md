@@ -874,8 +874,10 @@ Request:
    security results, findings, limitations, and remaining blind spots.
 5. **Run deterministic eligibility policy.** The policy, not the reviewer,
    chooses the route:
-   - **eligible:** preserve `In Review`; the merge controller validates the
-     same head, required checks, and branch state, then merges;
+   - **eligible:** the merge controller validates the same head, required
+     checks, and branch state, then merges, and the delivery reconciles to
+     `Done` without human involvement. The Card holds at `In Review` only
+     while a merge is armed but not yet landed;
    - **defect:** transition `In Review -> In Progress`, hand off `qa -> dev`,
      and retain the same Issue, branch, and Pull Request for correction; or
    - **protected change:** preserve `In Review`, hand off `qa -> human`, and
@@ -1193,6 +1195,16 @@ Local worktree existence alone is not a distributed claim, because independent
 sessions and machines cannot observe it. **The remote branch is the arbitration
 surface** (§5.3).
 
+**The claim pushes a unique empty commit, never the bare base commit.** This
+was established by test, not by reading documentation, and the obvious
+implementation is wrong: pushing an identical SHA to an existing ref reports
+`Everything up-to-date` and exits `0`, so the compare-and-swap lease is never
+evaluated and *both* claimants conclude they won. Two Consumers claiming one
+Card normally branch from the same base, which makes that the common case
+rather than an exotic one. The claim commit therefore carries a session nonce,
+so two claims made on one machine within one clock second cannot produce the
+same commit object either.
+
 ### 9.8 Semantic operations, not field setters
 
 The board surface is semantic. It resolves field and option identifiers,
@@ -1204,8 +1216,8 @@ routing states no policy rule governs.
 |---|---|
 | `resolve_project`, `list_cards`, `get_card`, `create_card` | built |
 | `comment_on_card`, `transition_card`, `handoff_card` | built |
-| `claim_card`, `release_claim` | designed — Consumer milestone |
-| `link_pull_request_to_card`, `record_verdict`, `evaluate_acceptance`, `request_automated_merge`, `reconcile_done` | designed — Consumer milestone |
+| `claim_card`, `release_claim` | built |
+| `link_pull_request_to_card`, `record_verdict`, `evaluate_acceptance`, `request_automated_merge`, `reconcile_done` | built |
 
 A backend-neutral port is introduced only when a real second backend exists.
 
@@ -1232,10 +1244,10 @@ identifiers and no ad hoc GitHub commands.
 | Semantic board operations | built | `scripts/agent_teams/board.py` |
 | Workflow orchestration and partial-failure recovery | built | `scripts/agent_teams/workflows.py` |
 | Public command-line entry point | built | `scripts/producer_board.py` |
-| Consumer workflow skills | **designed** | §7; plan M4/M5 |
+| Consumer workflow skills (2) | built | `skills/{consuming-card,verifying-delivery}/` |
 | Blocker resolution skill (`resolving-issues`) | **designed** | §11.7; plan M6.5. Classifies a blocker, verifies recovery preconditions deterministically, emits fix-forward commands. Proposes only. |
-| Git claim and worktree service | **designed** | §9.7; plan M4 |
-| Pull Request contract service | **designed** | §9.5; plan M4 |
+| Git claim and worktree service | built | `scripts/agent_teams/git.py` |
+| Pull Request contract service | built | `workflows.validate_pr_body`, `board.create_or_update_pull_request` |
 | Dispatch carrier adapters beyond human launch | **designed** | §3.6 |
 | Audit and recovery log | **excluded** | Deliberately not built. The partial-failure envelope (§11.2) is not a substitute; revisit under plan M7 with evidence from a real run. |
 | Automatic Project field provisioning | **excluded** | `doctor` validates and explains; it never creates. |
@@ -1455,9 +1467,14 @@ self-resolving:
 | Decision pending | A seat or the human must decide before work can continue. | Route to that seat. If the question is really a new requirement, route to intake. |
 | Stale block | The blocker cleared and nobody moved the Card. | Propose `Blocked -> In Progress`. Proposed, never applied silently. |
 
-Two honest limits. The rung-1 bound is a **discipline carried in skill prose**,
-not a counter enforced in code; nothing today counts attempts. And stale-claim
-detection — the other half of rung 3 — cannot exist until claims do (plan M4).
+One honest limit remains. The rung-1 bound is a **discipline carried in skill
+prose**, not a counter enforced in code; nothing today counts attempts.
+
+Stale-claim detection — the other half of rung 3 — was blocked on claims
+existing and is now possible: `worktree-status` reports each In Progress Card's
+claim branch, its expected worktree, and whether that worktree is present,
+against the configured `claim_ttl_hours`. It observes; releasing a claim
+remains the human's action, because it deletes a claimant's branch.
 
 A `resolving-issues` skill is **designed, not built** (§10.1): it classifies a
 blocker against the table above, runs deterministic checks to establish which
@@ -1549,6 +1566,27 @@ implemented together.
 Decision 8 supersedes earlier references to the human holding both gates. Those
 references now mean readiness authority plus protected-change exception
 authority; routine eligible merge is no longer a human gate.
+
+**Decision 8 is implemented.** One clarification the implementation forced,
+recorded here because it reads as a contradiction otherwise:
+`merge_pull_request` — free-form merge of a caller-chosen Pull Request —
+**remains in `HARD_FLOORS` and still refuses every agent seat.** That invariant
+is not what decision 8 removes; what it removes is the mandatory human review
+of every passing delivery. The controller reaches merge through a door no seat
+can steer: arming auto-merge is a *consequence* of `evaluate_acceptance`
+returning `eligible`, not an action a session may request. `accept` takes one
+argument, an Issue number, and every other input is read from live GitHub
+state. A companion action `request_automated_merge` exists in the policy table
+refused to **every** seat, including `human`, so that "no seat may request a
+merge" is an assertion the test suite makes rather than an absence nobody
+notices going missing.
+
+Two operational preconditions this design depends on, both reported by
+`doctor` and neither creatable by it: the repository must have auto-merge
+enabled, and `required_checks` must be non-empty. An empty `required_checks`
+fails closed — no delivery is ever `eligible` — because without required checks
+`--auto` merges immediately and the retest-against-current-base guarantee is
+vacuous.
 
 ---
 

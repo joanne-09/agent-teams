@@ -254,3 +254,115 @@ Source root: `reference/board-superpowers/skills/`.
 No counterpart exists in board-superpowers, superpowers, or gstack (their
 dispatch is Mode-2 Consumer spawning — a different mechanism, recorded in
 `skill_migration.md` § 7). Nothing to audit; the skill is closed as-is.
+
+---
+
+## 8. `consuming-card` (new skill)
+
+### Source: board-superpowers `consuming-card/SKILL.md`
+
+| Item | Disposition | Where / why |
+|---|---|---|
+| Frontmatter triggers + do-NOT-use disambiguation | adapted | Our frontmatter; do-NOT-use points at the six Producer skills and `verifying-delivery` |
+| 23-node journey encoding (A1-A3, B1-B5, C1-C4, D1-D3, E1-E2, F1, G1-G5) | rejected | Project-internal node codes; our lifecycle is ARCHITECTURE 7.1 and needs no second vocabulary |
+| G4 Mode topology (Mode-1 architect-spawned / Mode-2 Producer-spawned) | rejected | Dispatch renders prompts and stops; no Producer spawns a Consumer |
+| G4 Mode-2 R-class callback protocol (4-step propose/report/evaluate/re-spawn) | rejected | Same; no subagent depth budget to manage |
+| G4 Mode-2 procedural fallback table (12 sibling rows) | rejected | No sibling mesh |
+| Required sub-skills block (6 same-plugin skills) | rejected | `producer_board.py` + `policy.py` replace all six |
+| F1 claim: card-number resolution, ambiguous -> ask | adapted | Our step 1 |
+| F1 claim: Status MUST be Ready, unmet depends-on -> stop | adapted | Our step 1; enforced in code by `_bound_card` |
+| F1 claim: `claim-card.sh` 4-step transaction | rewired | `producer_board.py claim`; claim-first compensation order and race-lost envelope are ours |
+| F1 claim: enter the worktree, do NOT return to repo root | verbatim (path adapted) | Our step 2 + `references/claim-and-worktree.md` |
+| F2 B1 plan synthesis via `superpowers:writing-plans` | rewired | Plan bounded to this Card, inline; no sibling call |
+| F2 B2 TDD cycle via `superpowers:test-driven-development` | adapted (content inlined) | `references/tdd-discipline.md` |
+| F2 B3 TDD-skip refusal | verbatim | Our step 4 refusals |
+| F2 B4 cross-card refusal | verbatim | Our step 4 refusals |
+| F2 B5 permission-boundary via classifying-actions | rejected | `policy.py` checks before the first GitHub call |
+| F2 in-flight blocker -> Blocked + comment | adapted | Our "When you are blocked", plus the what-tried / what-needed / where-the-work-is contract |
+| F3 iron law: never open a PR without the full verification chain | adapted | Our step 5 |
+| F3 C1-C4 sibling verification chain | rejected as calls; adapted as content | Independent review is `verifying-delivery`'s job; the evidence requirement is ours |
+| F3 "Common rationalizations to reject" (3 rows) | adapted | Merged into `references/tdd-discipline.md` |
+| F4 D1+D2 pre-flight: AC checkboxes terminal, bare `[ ]` forbidden | verbatim | `references/pr-contract.md`; enforced by `acceptance_criteria_problems` |
+| F4 D1: `submit-pr.sh`, auto-appended `Closes #N`, never raw `gh pr create` | rewired | `producer_board.py submit-pr`; trailer required by `validate_pr_body` |
+| F4 D3 rework: same worktree, no new branch | verbatim | Our "When QA returns a defect" |
+| F4 E1 post-merge cleanup; webhook Status flip; 5-minute lag | rewired | `reconcile-done` confirms MERGED explicitly rather than trusting a webhook |
+| F4 E2 crash path: surface partial state, heartbeat audit row, leave worktree | adapted (audit row dropped) | Blocked preserves claim and worktree |
+| G1-G3 governance (audit row per mutation, R-class propose-await, A-class gate) | rejected | `policy.py` |
+| v1.x roadmap stubs | rejected | Their maintenance backlog |
+
+### Source: board-superpowers `enforcing-pr-contract/`
+
+| Item | Disposition | Where / why |
+|---|---|---|
+| Contract A: three-section PR shape | adapted | Extended to our five sections (ARCHITECTURE 9.5) |
+| Contract A: `## Automated Verification` required and non-empty | verbatim | `validate_pr_body` |
+| Contract A: Human Verification optional but not filler | verbatim | `validate_pr_body` + `_FILLER` |
+| `references/filler-detection.md` phrase list | adapted | Our `_FILLER` tuple; phrases generalised |
+| Contract B: every AC terminal at submit | verbatim | `acceptance_criteria_problems` |
+| Contract C: auto-close keyword validation | adapted | `Closes #<issue>` required by `validate_pr_body` |
+| `references/taste.md` | rejected | House style guidance, not a contract |
+
+### Source: superpowers (4 skills)
+
+| Item | Disposition | Where / why |
+|---|---|---|
+| TDD Iron Law, delete-and-restart, no keep-as-reference | verbatim | `references/tdd-discipline.md` |
+| Red-Green-Refactor with mandatory verify-red | verbatim (Python examples) | Same |
+| TDD rationalizations table (13 rows) | adapted (7 kept) | Same; TypeScript-tooling rows dropped |
+| TDD good/bad test examples | adapted | Replaced by "name the production change that would make this fail" |
+| verification-before-completion: Iron Law + 5-step gate | verbatim | SKILL step 5 + reference |
+| verification-before-completion: claim/requires/not-sufficient table | adapted | Same; agent-delegation row kept |
+| verification-before-completion: red-flag and rationalization tables | adapted | Compressed into the evidence section |
+| using-git-worktrees: never work at repo root; worktrees outside the tree; rationale | adapted | `references/claim-and-worktree.md` |
+| using-git-worktrees: native-tool-first detection, ignore check | rejected | Our worktree path is computed from Card identity by `claim` |
+| finishing-a-development-branch: cleanup-after-merge discipline | adapted | `reconcile-done` + removal guards |
+
+---
+
+## 9. `verifying-delivery` (new skill)
+
+### Source: gstack `/review`
+
+| Item | Disposition | Where / why |
+|---|---|---|
+| Pre-emit verification gate (quote the lines, or the finding is suppressed) | verbatim | `references/evidence-and-challenge.md`; the highest-value adoption in this migration |
+| Confidence calibration 1-10, below 7 caveated, 3-4 to appendix | adapted | Same; 3-4 routes to `limitations` |
+| Specialist dispatch by domain, parallel, independent checklists | adapted | `references/review-dimensions.md`, as bounded passes |
+| Finding deduplication + confidence boost on multi-pass confirmation | verbatim | Same |
+| Red-team conditional (200+ line diffs, or a critical finding exists) | verbatim | SKILL step 6 |
+| Scope-drift detection (delivered vs stated intent) | verbatim | SKILL step 3 |
+| Plan-completion audit: DONE / PARTIAL / NOT DONE / CHANGED / UNVERIFIABLE | adapted | Retargeted from plan files to Card acceptance criteria |
+| Critical safety pass (SQL injection, races, LLM trust boundaries, shell injection, enum completeness) | adapted | Folded into the `security` and `correctness` dimensions |
+| Platform / base-branch detection, branch validation | rejected | `_bound_card` + `Board.pull_request` own this |
+| **Fix-first triage: AUTO-FIX mechanical items, batch ASK items** | **rejected** | 7.4 forbids QA touching production code. A reviewer that fixes removes the finding from the record along with the defect, and no independent evidence of either survives |
+| Test stub generation (specialists propose skeletons) | rejected | Writing tests is the Developer's delivery |
+| Adversarial review via Codex | rejected | No Codex surface on this branch |
+| Greptile comment classification and reply routing | rejected | No such integration |
+| Telemetry, `cross_project_learnings`, `artifacts_sync_mode` | rejected | Out-of-band data flow no consuming repo opts into by installing a board plugin |
+| `checkpoint_mode` continuous auto-commits | rejected | A reviewer that commits is a reviewer that writes code |
+| `explain_level`, `question_tuning` | rejected | Carrier tuning, not review discipline |
+| PR quality score 0-10; output structure (scope check, P0-P3, GATE PASS/FAIL) | adapted / partially rejected | Severity and evidence structure adopted into the verdict; the score is never an acceptance input |
+
+### Source: gstack `/qa`
+
+| Item | Disposition | Where / why |
+|---|---|---|
+| "Repro is everything" - every issue needs at least one screenshot | verbatim | SKILL step 7 |
+| Verify before documenting (retry once to confirm) | verbatim | Same |
+| Never include credentials; write `[REDACTED]` | verbatim | Same |
+| Check the console after every interaction | verbatim | Same |
+| Test as a user; never read source first | verbatim | Same |
+| Tier selection (`--quick` / standard / `--exhaustive`) | rejected | Severity is a verdict field, not a run mode |
+| Fix loop (locate -> fix -> atomic commit -> re-test -> classify) | **rejected** | Same reason as fix-first triage |
+| Health score rubric (weighted categories, severity deductions) | rejected | Never an acceptance input |
+| WTF-likelihood self-regulation, 50-fix hard cap | rejected | Only meaningful if QA fixes, which it does not |
+| `.gstack/qa-reports/` output tree, `baseline.json` | rejected | Our evidence lives on the Pull Request and the Issue |
+| Framework-specific notes (Next.js, Rails, WordPress, SPA) | rejected | Consuming-repo specific |
+
+### Source: superpowers + board-superpowers
+
+| Item | Disposition | Where / why |
+|---|---|---|
+| `verification-before-completion`: evidence before claims | adapted | `references/evidence-and-challenge.md` closing section |
+
+> **Corrected 2026-08-06.** Rows for `reviewing-pr-queue` and `requesting-code-review` were removed: those sources were cited without being read, and nothing in `verifying-delivery` derives from them. See ATTRIBUTION.md > Provenance labels > "Not used, and previously over-claimed".

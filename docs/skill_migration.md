@@ -40,6 +40,8 @@ migration. Licensing and per-file derivation markers live in
 | `inspecting-queue` | board-superpowers `reviewing-pr-queue` (observations only) | **Done** (2026-08-06) |
 | `authoring-spec` | board-superpowers `decomposing-into-milestones` | **Done** (2026-08-06) |
 | `dispatching-work` | none — no counterpart; hardened from our own live-test findings | **Done** (2026-08-06) |
+| `consuming-card` | board-superpowers `consuming-card` + `enforcing-pr-contract`; superpowers TDD/verification/worktrees | **Done** (2026-08-06, new skill) |
+| `verifying-delivery` | gstack `/review` + `/qa`; superpowers `requesting-code-review`; board-superpowers `reviewing-pr-queue` | **Done** (2026-08-06, new skill) |
 
 ---
 
@@ -368,3 +370,148 @@ their Mode-2 callback protocol (subagent proposes → reports → Producer
 evaluates against overrides → re-spawns with the approved action) is the
 design to adapt, together with their warning that the dance is expensive and
 overnight-dispatch cards should be mostly auto-class.
+
+---
+
+## 8. `consuming-card` (2026-08-06) — new skill
+
+Sources: `reference/board-superpowers/skills/consuming-card/` (SKILL.md, read in full;
+its `references/stage-*.md` were NOT consulted) and `enforcing-pr-contract/`
+(SKILL.md + `references/filler-detection.md`); superpowers 6.2.0
+`test-driven-development`, `verification-before-completion`, and
+`using-git-worktrees`. (`finishing-a-development-branch` was cited in an
+earlier revision and is not a source -- it was read only after this skill was
+written.) New: SKILL.md 173
+lines + three references (290 lines).
+
+### Adopted
+
+- **Four-stage spine** (claim → implement → verify → submit) from their F1-F4,
+  flattened to our one Consumer lifecycle (ARCHITECTURE §7.1) so the Developer
+  and Architect-documentation routines share it rather than duplicating it.
+- **TDD Iron Law and Red-Green-Refactor** verbatim in force: no production code
+  without a failing test, mandatory verify-red, delete-and-restart on
+  code-first, "delete means delete" including the keep-as-reference escape.
+  Their rationalizations table adopted near-verbatim, retargeted to Python.
+- **Evidence-before-claims gate** from `verification-before-completion`: the
+  five-step gate function and the claim/requires/not-sufficient table,
+  including "linter passed is not tests pass" and "an agent reporting success
+  is not verification".
+- **Two refusal reflexes** from their B3/B4: no TDD bypass because a change
+  feels obvious, no edits to files this Card does not own.
+- **PR three-section contract** extended to our five sections, plus their
+  filler-detection list for Human Verification items and the
+  acceptance-criteria terminal-state rule (`[x]` or `[!]<reason>`; bare `[ ]`
+  refuses).
+- **Worktree isolation discipline** from `using-git-worktrees`: never work at
+  the repo root, worktrees outside the repo tree, and their rationale (editors
+  and file watchers scan repo-internal worktrees).
+
+### Rewired
+
+- Their `claim-card.sh` and `submit-pr.sh` become `producer_board.py claim` and
+  `submit-pr`; the result envelope, partial-failure recovery, and race-lost
+  handling are ours.
+- Their post-merge webhook assumption ("card Status flips to Done; surface lag
+  after 5 min") becomes explicit confirmation via `reconcile-done`, which
+  refuses unless the Pull Request is actually MERGED.
+- Their branch naming `claim/<kanban-id>-<key-slug>-<title-slug>` collapses to
+  `claim/<n>-<slug>`; we have one board per repository, so the kanban id has
+  nothing to disambiguate.
+
+### Rejected
+
+- **Fix-first / auto-fix behaviour** — not present in their Consumer, but
+  present in gstack `/review`, which their C1 chain invokes. See section 9.
+- **Audit rows** (`auditing-actions`, the two-entry propose/resolve rule) and
+  the **`classifying-actions` A/R/N autonomy matrix** — `policy.py` refuses in
+  code before any GitHub call, which is stronger than prose governance and
+  needs no BYO database.
+- **Mode-2 subagent callback protocol** (the 4-step propose → report →
+  evaluate → re-spawn dance) — our dispatch renders kickoff prompts and stops;
+  no Producer spawns a Consumer, so there is no depth-1 budget to manage.
+- **Every runtime sibling invocation** — their C1-C4 handoffs call
+  `superpowers:*` and `gstack:/*` by namespace. Invariant 10: a grep for those
+  prefixes across `skills/` must return nothing.
+- **`composing-siblings` machinery** and the procedural-fallback table — no
+  sibling mesh to be compatible with.
+- **`gstack:/codex` cross-platform review** (their C2) — no Codex surface on
+  this branch.
+
+### Kept from ours
+
+The `[expected:(Status, Role)]` staleness check, live-board-wins, the
+race-lost-is-not-retried rule, the partial-failure envelope with its
+never-replay-creation warning, the escalation ladder, the human gates, and the
+`"ok": true` reporting rule. None exist in the sources.
+
+---
+
+## 9. `verifying-delivery` (2026-08-06) — new skill, the first gstack migration
+
+Sources: gstack `/review/SKILL.md` and `/qa/SKILL.md` (fetched from
+github.com/garrytan/gstack, MIT confirmed at source); superpowers
+`verification-before-completion`. (`requesting-code-review` and
+board-superpowers `reviewing-pr-queue` were cited in an earlier revision and
+are not sources -- see ATTRIBUTION.md > Provenance labels.) New:
+SKILL.md 175 lines + three references (310 lines).
+
+This is the migration `inspecting-queue` deliberately deferred to: that skill
+surveys and orders, and merging gstack's judging half into it would have
+collapsed the survey/judge independence the qa design rests on.
+
+### Adopted from gstack `/review`
+
+- **Pre-emit verification gate** — the highest-value rule adopted in this whole
+  migration. A finding must quote the specific code lines motivating it or it
+  is suppressed, not softened. Their framing (unverified findings drop in
+  confidence and are held out of the main output) kept intact.
+- **Confidence calibration 1-10**, with their thresholds: below 7 carries a
+  caveat, 3-4 moves to an appendix — ours routes 3-4 to `limitations`.
+- **Specialist dispatch by dimension**, deduplication across passes, and
+  confidence-boosting when multiple passes confirm the same issue. Reframed:
+  passes are evidence producers, never nested authorities.
+- **Conditional red-team pass** on diffs of roughly 200+ lines or when a
+  critical finding exists, with their framing that its job is finding what the
+  first review missed rather than re-reviewing.
+- **Scope-drift detection** — delivered versus stated intent, in both
+  directions.
+- **Plan-completion audit vocabulary** — `DONE` / `PARTIAL` / `NOT DONE` /
+  `CHANGED` / `UNVERIFIABLE`, retargeted from their plan files to our Card
+  acceptance criteria.
+
+### Adopted from gstack `/qa`
+
+Browser-verification discipline for interface Cards: repro is everything, every
+issue carries a screenshot, verify before documenting, never record
+credentials, check the console after every interaction, and test as a user
+before reading the source.
+
+### Rejected — and this one is the headline
+
+- **Fix-first triage** (their step 7: AUTO-FIX mechanical items immediately,
+  batch ASK items for approval). ARCHITECTURE §7.4 forbids QA touching
+  production code, and for a reason their design does not have to face: a
+  reviewer that fixes what it found removes the finding from the record along
+  with the defect, and no independent evidence of either survives. Our QA
+  reports; the Developer fixes; the finding stays on the Pull Request.
+- **Telemetry, `cross_project_learnings`, `artifacts_sync_mode`** — out-of-band
+  data flow no consuming repository opts into by installing a board plugin.
+- **Health score and PR quality score as authority** — useful as reported
+  evidence, never as an acceptance input. `evaluate_acceptance` reads the
+  decision table, not a score. A numeric gate would be exactly the "one
+  language-model verdict as merge authority" the research rejected.
+- **Greptile third-party comment resolution** — no such integration here.
+- **`checkpoint_mode` auto-commits** — a reviewer that commits is a reviewer
+  that writes code.
+- **Their verdict shape** — ours is the ARCHITECTURE §9.6 contract, validated
+  in `model.py` and re-validated against the live Pull Request by `accept`.
+
+### Kept from ours
+
+The verdict/acceptance split as two types neither of which converts into the
+other, exact-head-SHA binding, the empty-`blind_spots` requirement for a pass,
+the changed-file enumeration check against the live diff, the
+line-coverage-is-not-test-strength rule, and the boundary that QA never selects
+its own route. None of these exist in any source: gstack's reviewer reports to
+a human who decides, and that is precisely the gate decision 8 replaces.

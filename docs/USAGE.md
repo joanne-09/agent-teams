@@ -125,8 +125,10 @@ All seven skills should appear in the `agent-teams:` namespace.
 Everything below is something you *say*, not a command you memorise. The seat
 and skill named after each example are what the plugin picks — shown so you can
 tell whether it read you correctly, not so you have to drive it yourself. The
-mandatory human command is the readiness gate in §3.4; after M5, §3.8 requires
-human action only for protected changes.
+mandatory human command is the readiness gate in §3.4. Beyond that, human
+action is required only for protected changes - an eligible delivery reaches
+merge through deterministic acceptance, and a defect goes back to the
+Developer, neither of which waits on you.
 
 ### 3.1 Get oriented — the default, and available whenever you want it
 
@@ -364,8 +366,13 @@ In `.agent-teams/config.json`:
   as recommended practice; correctness never depends on either being installed.
 - **It does not create Project fields.** `doctor` validates and explains.
 - **It does not start sessions.** Dispatch renders prompts; a carrier starts them.
-- **It does not merge.** Ever, for any agent seat, under any configuration.
-- **It does not implement Cards.** No Consumer seat is built yet.
+- **No agent seat merges, and none may request a merge.** An eligible delivery
+  reaches the merge controller only through deterministic acceptance policy;
+  protected or ambiguous changes route to you.
+- **It does not let a reviewer choose its own outcome.** QA publishes evidence;
+  `accept` computes the route from that evidence plus the live Pull Request.
+- **It does not clean up work it has not confirmed merged.** A worktree with
+  uncommitted changes refuses removal and is reported instead.
 
 ---
 
@@ -390,4 +397,25 @@ producer_board.py decompose <parent> --spec <ref> --children <file.json>
 producer_board.py transition <issue> --to <status> --acting-role <seat>
 producer_board.py handoff <issue> --from-role <seat> --to-role <seat> \
     --note N [--needs N] [--artifacts A]
+producer_board.py release-claim <issue> --branch <branch> [--note N]
+
+# Consumer: one Card, one session
+producer_board.py claim <issue> --acting-role dev|architect
+producer_board.py submit-pr <issue> --title T --body-file F [--acting-role dev]
+producer_board.py verdict <issue> --evidence-file F
+producer_board.py accept <issue>
+producer_board.py reconcile-done <issue> [--acting-role lead]
+producer_board.py worktree-status [<issue>]
 ```
+
+`accept` returns exactly one of three routes, and the reviewer does not pick
+which:
+
+| Route | Board result | What you do |
+|---|---|---|
+| `eligible` | `In Review` -> merged -> `(Done, lead)` | Nothing. Eligibility already required the checks to be green, so the merge normally lands at once and `accept` completes the route. If the platform merges later, the Card waits until `reconcile-done` records it |
+| `defect` | `(In Progress, dev)`, same branch and Pull Request | Nothing. A Developer session corrects it |
+| `protected_change` | `(In Review, human)` | **Your decision.** The reasons name the exact protected files or unresolved judgment |
+
+If `accept` refuses instead of routing, the evidence is stale or incomplete -
+QA re-reviews the current head, and nothing on the board moved.
