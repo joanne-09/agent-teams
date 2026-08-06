@@ -163,3 +163,94 @@ Source root: `reference/board-superpowers/skills/`.
 | Separate audit entries per mutation | adapted | The command's single envelope records all steps (`completed` list) |
 | Suspended-card review (3 rules) | rejected | No `suspended` label in our model |
 | Not-covered list + v1.x deferral rationale | adapted | Our Boundaries; deferral rationale ("staying narrow keeps it fast") kept in spirit |
+
+---
+
+## 4. `authoring-spec` (from `decomposing-into-milestones`)
+
+### Source: `decomposing-into-milestones/SKILL.md`
+
+| Item | Disposition | Where / why |
+|---|---|---|
+| Frontmatter triggers ("split into cards", "break into milestones", 拆-phrasings) | adapted | English triggers merged into our description; the Chinese phrasings route through intent matching anyway |
+| `argument-hint` / artifact-path arguments | rejected | Our input is the merged spec, not an artifact argument |
+| Overview: discipline-skill framing, gates as refusal conditions | verbatim in spirit | Our Job 3 preamble + `references/decomposition-gates.md` intro |
+| "Composes sibling skills; composition is permanent" | rejected | The anti-invariant of our design |
+| When-to-use / when-NOT (single-card edits, pure refactors, pre-decomposed batches) | adapted | Thin-spec rule in Job 3; single-card is Job 2; pure-refactor exemption folded into V-letter note (architect counts as customer) |
+| Mermaid decision tree | rejected | Diagram of the pipeline we adapted; prose carries it |
+| The Iron Law | verbatim | decomposition-gates.md § The Iron Law |
+| Step 1 ingest (file / dir / stdin modes, 50-file cap, EOF paste protocol, <30-line bounce) | rejected except the thin-artifact rule | Carrier mechanics; "spec with no distinct capabilities = single Card" kept in Job 3 |
+| Step 1 optional `gstack:/plan-eng-review` arch lock | rejected | Architecture validation is this seat's own job |
+| Step 2 identify capabilities (1.5-2× overshoot heuristic) | rejected | Process detail below our altitude; the gates catch what matters |
+| Step 3 vertical-slicing gate (4 anti-patterns as refusals) | verbatim | decomposition-gates.md § Vertical slicing (all 5 mistakes incl. solution-over-requirements) |
+| Step 4 INVEST gate (per-letter refusals) | verbatim | decomposition-gates.md § INVEST |
+| Step 5 size calibration + L-ceiling split rule | verbatim | decomposition-gates.md § Size calibration |
+| Step 6 dep graph (hard / soft / depended-on-by; ASCII rendering) | adapted | decomposition-gates.md § Dependencies; rendering detail dropped |
+| Step 7 synthesize batch (bodies + outline narrative + batch summary; no per-card prompts) | adapted | Our children-JSON flow is the batch artifact; single-message discipline inherent |
+| Step 8 batch propose → ack → create → audit (action_id 1, creator-trace, transition to Ready) | rejected | `decompose` command owns creation + partial reporting; **Ready-at-creation violates the human gate** — ours land `(Backlog, human)` |
+| Common Rationalizations table (7 rows) | verbatim in substance | Rows folded into the gates' refuse-when lines and the Iron Law; the "INVEST is for human teams" answer is the AI-recalibration section |
+| Red Flags — STOP list (title phrases, trailing wire-up, unilateral split, spike ratio; INVEST letter flags) | verbatim | decomposition-gates.md red-flag phrases + per-letter refusal criteria |
+| Verification checklist (7 items) | adapted | decomposition-gates.md § Checklist; schema row replaced by our body conventions, Ready replaced by `(Backlog, human)` |
+| "How mutating actions are handled" governance sequence | rejected | `policy.py` + `decompose` envelope |
+| Required sub-skills block | rejected | No skill mesh |
+| Failure modes: artifact too short / no clear capabilities | adapted | Thin-spec rule; "do NOT force a decomposition through fog" kept in spirit |
+| Failure modes: INVEST loop >3 / reslice loop >3 escalation | verbatim in substance | decomposition-gates.md § Escalation + Job 3 closing rule |
+| Failure modes: dep cycle refuses batch | verbatim | decomposition-gates.md § Dependencies |
+| Failure modes: batch >10 soft-warn | verbatim | decomposition-gates.md § Escalation |
+| Failure modes: partial `gh issue create` | adapted | `decompose` already reports created/failed + duplicate warning (pre-existing ours) |
+| Failure modes: pre-existing card with same title | rejected | Our intake dedupe rule covers the class at the earlier boundary |
+| Worked-example pointer | rejected | See oauth-walkthrough row below |
+
+### Source: `references/invest-checklist.md`
+
+| Item | Disposition | Where / why |
+|---|---|---|
+| Wake source citation + refusal-conditions framing | verbatim | decomposition-gates.md header + § INVEST |
+| Per-letter Wake quotes + refusal conditions + operationalizations | adapted (refusal criteria and key nuances verbatim; quotes compressed) | decomposition-gates.md § INVEST — kept: declared-coupling escape valve (I), token-promising-a-conversation + scope-fixed-details-negotiable (N), architect-counts-as-customer (V), spike-vs-TBD (E), E+S-are-one-gate, verification-capacity ceiling (S), feeling-words + operationalized non-functionals (T) |
+| Pairwise independence walk ("could B be claimed before A is Done?") | adapted | Folded into the I refusal line |
+| Reframe playbook table | verbatim | decomposition-gates.md § Reframe playbook |
+| "Two or more letters fail = structural" | verbatim | Same section, closing line |
+| AI-orchestration reframe table + no-canonical-source caveat | adapted (compressed to the two letters that actually shift) | decomposition-gates.md § AI-orchestration recalibration, marked as source's original framing |
+
+### Source: `references/decomposition-patterns.md`
+
+| Item | Disposition | Where / why |
+|---|---|---|
+| Cohn source citations + Hamburger/Lawrence non-canon caveat | adapted | Header cites Cohn; the non-canon community supplements were never carried, nothing to caveat |
+| Upward pointer / walking-skeleton enforcement note | adapted | Walking-skeleton lives in intake's shape-judgment.md; the layer-only/wire-up refusals enforce it here |
+| SPIDR: all five axes with use-when / refuse-when | verbatim in substance (examples compressed to one per axis) | decomposition-gates.md § SPIDR |
+| Five splitting mistakes (incl. #3 solution-over-requirements, missing from the main-skill table) | verbatim | decomposition-gates.md § Vertical slicing |
+| Business pattern catalog (9-row shape → axis table) | near-verbatim | decomposition-gates.md § Shape catalog |
+| Worked-example pointer | rejected | See oauth-walkthrough row |
+
+### Source: `references/size-calibration.md`
+
+| Item | Disposition | Where / why |
+|---|---|---|
+| 4-bin table + no-XL/no-points/no-hours | verbatim | decomposition-gates.md § Size calibration |
+| Ceiling rule + review-fatigue rationale | verbatim (compressed) | Same section |
+| Little's Law / batch-size math (Reinertsen, Anderson) | rejected | Rationale prose; one-line citation kept, full argument in the reference clone |
+| Fowler #NoEstimates exegesis | rejected | Same; the operative conclusion (coarse bins, no points) is the table itself |
+| AI-cadence reframe (verification-capacity bottleneck; what stays platform-agnostic) | adapted | decomposition-gates.md § AI-orchestration recalibration |
+| 100x time/scope acceleration + very-large-cohesive-PR allowance | rejected | Contradicts our one-Card-one-PR ceiling discipline; noted here so the divergence is conscious |
+| Calibration drift signs (30% XS / 30% L / mean-LOC bands) | verbatim | decomposition-gates.md § Size calibration, closing paragraph |
+
+### Source: `references/card-schema.md`
+
+| Item | Disposition | Where / why |
+|---|---|---|
+| Entire file (their converged body schema, thin-pointer block, audit-trail marker) | rejected | Our Card body conventions are established in intake/decompose; their markers belong to their governance |
+
+### Source: `references/oauth-walkthrough.md`
+
+| Item | Disposition | Where / why |
+|---|---|---|
+| Entire file (5-card OAuth worked example) | rejected (user decision 2026-08-06) | Keeps the skill bounded; the example remains available in the reference clone if a training artifact is ever wanted |
+
+---
+
+## 5. `dispatching-work` — no source
+
+No counterpart exists in board-superpowers, superpowers, or gstack (their
+dispatch is Mode-2 Consumer spawning — a different mechanism, recorded in
+`skill_migration.md` § 7). Nothing to audit; the skill is closed as-is.

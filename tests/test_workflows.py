@@ -384,6 +384,15 @@ class DispatchTests(unittest.TestCase):
         team.dispatch()
         self.assertEqual(gh.calls_matching("project", "item-edit"), [])
 
+    def test_kickoff_states_the_expected_pair_for_staleness_checks(self):
+        # The receiving session compares this against the live board; a
+        # mismatch means the kickoff is stale and must not be worked from.
+        team, _ = producer()
+        prompt = next(e["prompt"] for e in team.dispatch() if e["number"] == 12)
+        self.assertIn("[expected:(Ready, dev)]", prompt)
+        queue_prompt = team.verification_queue()["queue"][0]["kickoff_prompt"]
+        self.assertIn("[expected:(In Review, qa)]", queue_prompt)
+
 
 class ReleaseClaimTests(unittest.TestCase):
     """Recovery for abandoned claims: branch delete -> Ready -> comment."""

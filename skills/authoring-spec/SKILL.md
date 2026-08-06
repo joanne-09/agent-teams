@@ -1,7 +1,12 @@
 ---
 name: authoring-spec
-description: Shape an architect-owned GitHub Issue into a durable specification, then either send it to the human readiness gate or decompose it into flat implementation Cards. Use for [role:architect], "author the spec", "make this ready", "decompose this", architecture decisions, contracts, or implementation-facing plans.
+description: Shape an architect-owned GitHub Issue into a durable specification, then either send it to the human readiness gate or decompose it into flat implementation Cards. Use for [role:architect], "author the spec", "make this ready", "decompose this", "split into cards", "break this into milestones", architecture decisions, contracts, or implementation-facing plans.
 ---
+
+<!-- The decomposition gates (INVEST, vertical slicing, SPIDR, sizing) are
+     derived from board-superpowers `decomposing-into-milestones` (MIT,
+     (c) 2026 PanQiWei, github.com/PanQiWei/board-superpowers), adapted to
+     the agent-teams flow. See ATTRIBUTION.md. -->
 
 # Shaping and specifying work
 
@@ -80,8 +85,34 @@ work around it — it is one of the two human gates the whole design rests on.
 
 ## Job 3 — decompose (Producer-shaped)
 
-When the specification has several independently shippable slices, write the
-children to a JSON file and create them in one pass:
+When the specification has several independently shippable slices, gate every
+candidate child before creating anything. The two gates are **refusal
+conditions** — a child that fails is reframed, resliced, or split, never waved
+through:
+
+- **INVEST** (Wake 2003): Independent (coupling declared as `depends-on`,
+  never silent) · Negotiable (post-conditions, not a procedural recipe) ·
+  Valuable (merging it alone changes observable state) · Estimable (no "TBD",
+  no "figure out"; unknowns become a spike) · Small (within the size ceiling) ·
+  Testable (no "works well", no bare "tests pass").
+- **Vertical slicing** (Cohn): no layer-only children, no trailing
+  "wire-it-up" card, no spike overload, no all-rules-upfront first card. A
+  title containing "frontend", "backend", "schema", or "wire up" fails on
+  sight. When a gate fires, reslice along a SPIDR axis (Spike / Paths /
+  Interfaces / Data / Rules).
+
+The full gate tables — per-letter refusal criteria, the reframe playbook, the
+SPIDR axes with their refuse-when conditions, the XS/S/M/L size bins and the
+~500-LOC verification ceiling, the shape catalog, and the pre-`decompose`
+checklist — are in `references/decomposition-gates.md`. Read it before
+writing the children file.
+
+If one candidate fails the same gate three times, it is structurally wrong —
+usually not a card at all. Stop and surface it rather than reframing a fourth
+time. A spec with no distinct capabilities is a single Card: do not force a
+split.
+
+Then write the children to a JSON file and create them in one pass:
 
 ```json
 [

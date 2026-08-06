@@ -38,8 +38,8 @@ migration. Licensing and per-file derivation markers live in
 | `triaging-board` | board-superpowers `triaging-board` | **Done** (2026-08-06, incl. new `release-claim` CLI command) |
 | `using-agent-teams` | board-superpowers `using-board-superpowers` (fragments) | **Done** (2026-08-06) |
 | `inspecting-queue` | board-superpowers `reviewing-pr-queue` (observations only) | **Done** (2026-08-06) |
-| `authoring-spec` | set aside for now | — |
-| `dispatching-work` | set aside for now (no counterpart exists) | — |
+| `authoring-spec` | board-superpowers `decomposing-into-milestones` | **Done** (2026-08-06) |
+| `dispatching-work` | none — no counterpart; hardened from our own live-test findings | **Done** (2026-08-06) |
 
 ---
 
@@ -279,3 +279,92 @@ future `verifying-delivery` Consumer skill, where they belong.
 
 Everything else, including the independence argument itself, which the
 source does not have.
+
+---
+
+## 6. `authoring-spec` (2026-08-06)
+
+Source: `reference/board-superpowers/skills/decomposing-into-milestones/`
+(SKILL.md 287 lines + 5 reference files, 801 lines). Ours: SKILL.md 136 → 172
+lines + new `references/decomposition-gates.md` (~180 lines). All adoption
+lands in Job 3 (decompose); Jobs 1-2 and the gate sections are untouched.
+
+### Adopted
+
+- **The Iron Law and both gates as refusal conditions**: the INVEST 6-letter
+  gate (Wake 2003 wording — per-letter refusal criteria, the
+  declared-coupling escape valve, negotiable-means-details-not-scope, spikes
+  legitimate / "TBD" not, E+S as one gate) and Cohn's splitting mistakes
+  (layer-only, trailing wire-up, solution-over-requirements, spike overload,
+  premature rules) with the red-flag title phrases.
+- **Reframe playbook** (verbatim table) and the **AI-orchestration
+  recalibration** (verification-capacity ceiling; marked as the source's
+  original framing, not canon).
+- **SPIDR axes** with use-when / refuse-when pairs, and the **shape catalog**
+  (capability shape → starting axis → typical card count, near-verbatim).
+- **Size calibration**: XS/S/M/L bins, the ~500-LOC / 15-file ceiling with
+  its review-fatigue rationale, no-XL/no-points/no-hours, drift signs.
+- **Dependency notation** (hard / soft / depended-on-by; cycles refuse the
+  batch) — still a body convention pending Joanne's schema blessing.
+- **Escalation rules**: 3 failed reframes = structurally wrong; 3 failed
+  reslices = human strategy decision; batch >~10 = say so first; thin spec =
+  single Card, do not force a split.
+- **Pre-`decompose` checklist**, retargeted to `(Backlog, human)`.
+
+### Rejected
+
+- **Ready-at-creation** (their Step 8 creates cards then immediately
+  transitions them to Ready) — ours land at `(Backlog, human)`; the human
+  promotes each child individually.
+- **Step 8 governance machinery** (action_id resolution, classify/audit
+  dispatch, creator-trace prepending) — `producer_board.py decompose` owns
+  batch creation, partial-failure reporting, and provenance.
+- **Artifact-ingest mechanics** (file/dir/stdin modes, 50-file cap, EOF
+  paste protocol) — carrier mechanics; our input is the merged spec.
+- **Sibling calls** (`superpowers:writing-plans`, `gstack:/plan-eng-review`,
+  `superpowers:brainstorming` fallback) and the mermaid decision tree.
+- **`references/card-schema.md`** — their body schema; ours is established.
+- **`references/oauth-walkthrough.md`** (5-card worked example) — skipped by
+  user decision to keep the skill bounded; available in the reference clone.
+- **Sizing rationale prose** (Little's Law math, Fowler #NoEstimates
+  exegesis) — kept as one-line rationale; the full argument stays in the
+  reference clone.
+
+### Kept from ours
+
+The three-jobs-one-per-session structure, the send-back-to-analyst move, the
+readiness-gate section (`spec_completion=merged`), children at
+`(Backlog, human)` with flat provenance, and all four boundaries.
+
+---
+
+## 7. `dispatching-work` (2026-08-06) — no source; hardened from live-test findings
+
+No counterpart exists in any of the three sources. board-superpowers'
+"dispatch" is a different mechanism entirely: the Producer spawns a Consumer
+subagent (their Mode-2), with a 4-step R-class callback protocol for actions
+the subagent may not take autonomously. Ours deliberately renders kickoff
+prompts and stops — "prompt rendered", never "session started" — with
+deterministic ordering (configured seat order, then Card number).
+
+Three additions, all grounded in our own live-test observations rather than
+any source:
+
+- **Expected-pair stamp in the kickoff** (code: `workflows._kickoff`): every
+  rendered prompt now carries `[expected:(<Status>, <Role>)]`, making the
+  router's existing "stale kickoff — say so and stop" rule executable by the
+  receiving session. One new test (145 total). This is also the preflight
+  input the future Consumer lifecycle validates (ARCHITECTURE §7.1).
+- **Carrier-handoff section** (prose): kickoffs are inert without the plugin
+  loaded (`--plugin-dir` — the first live-test "routing failure" was exactly
+  this launch mistake); paste verbatim; one prompt per session (one Card =
+  one Consumer = one PR); re-render rather than pasting aged prompts.
+- **Named inconsistent-pair case** (prose): the observed `(Ready, qa)` silent
+  kickoff — a Ready Card in a seat that consumes `(In Review, qa)` is a
+  data-quality observation, not a dispatchable entry.
+
+**Recorded for the future**: if a carrier ever auto-starts Consumer sessions,
+their Mode-2 callback protocol (subagent proposes → reports → Producer
+evaluates against overrides → re-spawns with the approved action) is the
+design to adapt, together with their warning that the dance is expensive and
+overnight-dispatch cards should be mostly auto-class.

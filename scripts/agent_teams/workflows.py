@@ -979,10 +979,19 @@ def _data_quality_problem(card: Card) -> str | None:
 
 
 def _kickoff(seat: Role | None, card: Card) -> str:
-    """A carrier-neutral prompt. Rendering one is not starting a session."""
+    """A carrier-neutral prompt. Rendering one is not starting a session.
+
+    The expected ``(Status, Role)`` pair is stamped into the prompt so the
+    receiving session has something to compare against the live board -- a
+    kickoff whose pair no longer matches is stale, and the session should say
+    so and stop rather than work from it.
+    """
     role = seat.value if seat else "?"
+    status = card.status.value if card.status else "?"
     return (
         f"[role:{role}] [board-card:#{card.number}] "
-        f'Work on "{card.title}". Read the Card and its comments first, and do '
-        f"not change another Card."
+        f"[expected:({status}, {role})] "
+        f'Work on "{card.title}". Read the Card and its comments first, verify '
+        f"the Card still matches the expected pair, and do not change another "
+        f"Card."
     )
