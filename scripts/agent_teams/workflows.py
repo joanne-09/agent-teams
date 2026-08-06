@@ -828,6 +828,113 @@ class Producer:
             ),
         }
 
+    def release_claim(
+        self,
+        number: int,
+        branch: str,
+        acting_role: Role = Role.HUMAN,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        """Release an abandoned claim: delete its branch, return the Card to Ready.
+
+        Triage detects a stale claim and proposes this; running it is the
+        human's, because the branch delete discards the claimant's lock and
+        putting the Card back through Ready is the readiness decision again.
+        The Card must actually be In Progress -- release-claim recovers
+        abandoned work; it is not a side door past `promote`.
+
+        Mutation order: branch delete -> Status -> comment. The branch goes
+        first because the failure modes are asymmetric: a Ready Card whose dead
+        branch survives collides with the next claimant, while an In Progress
+        Card with no branch just waits for this command to be re-run.
+        """
+        policy.check_action("release_claim", acting_role)
+        branch = str(branch or "").strip()
+        if not branch:
+            raise WorkflowError("release-claim requires --branch <claim-branch>")
+        if branch in ("main", "master") or branch.startswith("refs/"):
+            raise WorkflowError(
+                f"refusing to delete {branch!r}; name the Card's claim branch, "
+                f"never a mainline"
+            )
+        card = self.board.card(number)
+        if card.status is not Status.IN_PROGRESS:
+            raise WorkflowError(
+                f"Issue #{number} is "
+                f"{card.status.value if card.status else 'without a Status'}, not "
+                f"In Progress. release-claim recovers abandoned claims only; for "
+                f"the readiness gate use promote, which checks the specification."
+            )
+
+        log = MutationLog()
+        try:
+            self.board.gh.run(
+                ["api", "-X", "DELETE",
+                 f"repos/{self.config.repo}/git/refs/heads/{branch}"]
+            )
+        except GitHubError as exc:
+            return log.partial_result(
+                "branch_deleted", str(exc),
+                [
+                    "Nothing changed. If the branch is already gone, verify the "
+                    "name against the Card's handoff comments; otherwise resolve "
+                    "the error and re-run release-claim.",
+                ],
+            )
+        log.record("branch_deleted", branch=branch, issue=number)
+
+        try:
+            self.board.transition_card(number, Status.READY, acting_role)
+        except (GitHubError, BoardError, policy.PolicyError) as exc:
+            return log.partial_result(
+                "status_set", str(exc),
+                [
+                    f"Branch {branch!r} is deleted but Issue #{number} is still "
+                    f"In Progress -- it looks claimed and no longer is.",
+                    f"  producer_board.py transition {number} --to Ready "
+                    f"--acting-role {acting_role}",
+                    "Then post the release comment from the 'comment' field.",
+                ],
+            )
+        log.record("status_set", status=Status.READY.value)
+
+        comment = (
+            f"Claim released by `{acting_role}`: branch `{branch}` deleted and "
+            f"the Card returned to Ready for re-claim. "
+            + (reason or "The claim was stale with no recorded progress.")
+        )
+        try:
+            self.board.comment_on_card(number, comment)
+        except GitHubError as exc:
+            return log.partial_result(
+                "release_comment", str(exc),
+                [
+                    "Branch and Status are already correct; do not change them.",
+                    f"  gh issue comment {number} --repo {self.config.repo} "
+                    f"--body-file <file>",
+                    "The comment body is in the 'comment' field of this result.",
+                ],
+            ) | {"comment": comment}
+        log.record("release_comment")
+
+        result = {
+            "ok": True,
+            "issue": number,
+            "url": card.url,
+            "branch_deleted": branch,
+            "status": self.config.status_name(Status.READY),
+            "role": card.role.value if card.role else None,
+            "completed": log.completed,
+            "comment": comment,
+        }
+        if card.role not in self.config.dispatch_role_values:
+            result["note"] = (
+                f"Card Role is `{card.role.value if card.role else '(none)'}`, "
+                f"which is not a dispatchable seat -- hand it to one or nothing "
+                f"will pick it up."
+            )
+        return result
+
     def handoff(
         self,
         number: int,

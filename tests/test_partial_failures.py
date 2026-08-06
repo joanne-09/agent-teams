@@ -157,6 +157,54 @@ class PromoteFailureTests(unittest.TestCase):
         self.assertIn("Nothing changed", " ".join(outcome["recovery"]))
 
 
+class ReleaseClaimFailureTests(unittest.TestCase):
+    """Mutation order: branch delete -> Status -> comment. Card #23 is the
+    shared fixture's active build at (In Progress, dev)."""
+
+    BRANCH = "claim/23-active-build"
+
+    def test_branch_delete_failure_changes_nothing(self):
+        gh = FakeGh(fail_on={"api -X": "delete refused"})
+        result, _ = producer(gh)
+        outcome = result.release_claim(23, self.BRANCH, Role.HUMAN)
+        self.assertFalse(outcome["ok"])
+        self.assertFalse(outcome["partial"])
+        self.assertEqual(outcome["completed"], [])
+        self.assertEqual(outcome["failed"], "branch_deleted")
+        self.assertIn("Nothing changed", " ".join(outcome["recovery"]))
+        self.assertEqual(gh.calls_matching("project", "item-edit"), [])
+
+    def test_status_failure_names_the_lockless_in_progress_card(self):
+        gh = FakeGh(fail_on={"project item-edit": "field write refused"})
+        result, _ = producer(gh)
+        outcome = result.release_claim(23, self.BRANCH, Role.HUMAN)
+        self.assertFalse(outcome["ok"])
+        self.assertTrue(outcome["partial"])
+        self.assertEqual(outcome["completed"], ["branch_deleted"])
+        self.assertEqual(outcome["failed"], "status_set")
+        recovery = " ".join(outcome["recovery"])
+        self.assertIn("looks claimed and no longer is", recovery)
+        self.assertIn("transition 23 --to Ready", recovery)
+
+    def test_comment_failure_keeps_the_body_for_replay(self):
+        gh = FakeGh(fail_on={"issue comment": "comment rejected"})
+        result, _ = producer(gh)
+        outcome = result.release_claim(23, self.BRANCH, Role.HUMAN)
+        self.assertEqual(outcome["completed"], ["branch_deleted", "status_set"])
+        self.assertEqual(outcome["failed"], "release_comment")
+        recovery = " ".join(outcome["recovery"])
+        self.assertIn("do not change them", recovery)
+        self.assertIn(self.BRANCH, outcome["comment"])
+
+    def test_no_rollback_is_ever_claimed(self):
+        gh = FakeGh(fail_on={"project item-edit": "field write refused"})
+        result, _ = producer(gh)
+        outcome = result.release_claim(23, self.BRANCH, Role.HUMAN)
+        serialised = repr(outcome).casefold()
+        for forbidden in ("rolled back", "rollback", "reverted", "undone"):
+            self.assertNotIn(forbidden, serialised)
+
+
 class DecomposeFailureTests(unittest.TestCase):
     def test_partial_creation_warns_about_duplicates_on_retry(self):
         # Second child's Issue creation fails.

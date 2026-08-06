@@ -307,6 +307,27 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual([card["number"] for card in json.loads(out)], [9])
 
+    def test_release_claim_round_trip(self):
+        code, out, _ = self._run(
+            "release-claim", "23", "--branch", "claim/23-active-build",
+            "--note", "No commits in 8 days; claimant notified on day 3.",
+        )
+        self.assertEqual(code, 0)
+        payload = json.loads(out)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["branch_deleted"], "claim/23-active-build")
+        self.assertEqual(payload["status"], "Ready")
+
+    def test_release_claim_refuses_every_agent_seat(self):
+        code, _, err = self._run(
+            "release-claim", "23", "--branch", "claim/23-active-build",
+            "--acting-role", "lead",
+        )
+        self.assertEqual(code, 1)
+        payload = json.loads(err)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["refusal"], "ActionForbidden")
+
     def test_refusal_exits_non_zero_with_a_json_error(self):
         code, _, err = self._run(
             "handoff", "12", "--from-role", "dev", "--to-role", "human",

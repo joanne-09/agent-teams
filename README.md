@@ -130,6 +130,7 @@ producer_board.py intake      --title TITLE (--body BODY | --body-file PATH)
 producer_board.py create-card --title TITLE (--body BODY | --body-file PATH)
                               [--status STATUS] [--role ROLE] [--acting-role ROLE]
 producer_board.py promote     ISSUE --spec REF [--acting-role ROLE] [--note TEXT]
+producer_board.py release-claim ISSUE --branch BRANCH [--acting-role ROLE] [--note TEXT]
 producer_board.py decompose   PARENT --spec REF --children FILE.json
 producer_board.py transition  ISSUE --to STATUS --acting-role ROLE
 producer_board.py handoff     ISSUE --from-role ROLE --to-role ROLE --note TEXT
@@ -152,7 +153,7 @@ scripts/agent_teams/
   github.py                 gh invocation, pagination, error classification
   board.py                  semantic board operations
   workflows.py              transactions with partial-failure recovery
-tests/                      123 tests, no network
+tests/                      144 tests, no network
 ```
 
 `policy.py` imports nothing that touches the network, which is why every

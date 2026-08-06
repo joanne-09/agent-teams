@@ -3,6 +3,11 @@ name: inspecting-queue
 description: Inspect and order the Quality Assurance verification queue and render one kickoff prompt per delivery awaiting a verdict. Use for [role:qa] plus queue, backlog, or "what needs verifying"; never for issuing a verdict on a delivery.
 ---
 
+<!-- The data-quality observation guards are derived from board-superpowers
+     `reviewing-pr-queue` (MIT, (c) 2026 PanQiWei,
+     github.com/PanQiWei/board-superpowers), adapted to the agent-teams flow.
+     See ATTRIBUTION.md. -->
+
 # Inspecting the verification queue
 
 A Producer-shaped routine that surveys deliveries awaiting independent
@@ -37,6 +42,21 @@ Flag anything that would waste a verification session:
 - the Pull Request body has no `## Automated Verification` content;
 - acceptance criteria on the Card are still unchecked with no reason;
 - the delivery handoff comment does not say what to verify.
+
+Some findings are **observations to report, never judgments to act on** —
+surface them and leave every field alone:
+
+- **a draft Pull Request** — list it separately as "draft, not in scope" and
+  do not order it for verification; a draft is a delivery that has not been
+  submitted yet;
+- **an out-of-band delivery** — the Pull Request's head branch does not match
+  the branch the Card's handoff comments name; say so, without judging the
+  work inside it;
+- **a Status mismatch** — a Pull Request whose linked Card is not at
+  `(In Review, qa)`; surface it for triage, and do not transition the Card
+  from here;
+- **an unreadable Card body** — never infer acceptance-criteria state from
+  the Pull Request text; report that the Card could not be read.
 
 4. Report the ordered queue. For each Card give the number, title, Pull
    Request, what verification it appears to need, and the kickoff prompt.

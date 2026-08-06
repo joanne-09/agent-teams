@@ -385,5 +385,62 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(gh.calls_matching("project", "item-edit"), [])
 
 
+class ReleaseClaimTests(unittest.TestCase):
+    """Recovery for abandoned claims: branch delete -> Ready -> comment."""
+
+    def test_release_deletes_the_branch_then_readies_then_comments(self):
+        team, gh = producer()
+        outcome = team.release_claim(23, "claim/23-active-build", Role.HUMAN)
+        self.assertTrue(outcome["ok"])
+        self.assertEqual(
+            outcome["completed"],
+            ["branch_deleted", "status_set", "release_comment"],
+        )
+        deletes = gh.calls_matching("api", "-X")
+        self.assertEqual(len(deletes), 1)
+        self.assertIn(f"repos/{REPO}/git/refs/heads/claim/23-active-build", deletes[0])
+        edits = gh.calls_matching("project", "item-edit")
+        self.assertEqual(len(edits), 1)
+        self.assertIn("STATUS_READY", edits[0])
+        self.assertEqual(len(gh.calls_matching("issue", "comment")), 1)
+        self.assertIn("claim/23-active-build", outcome["comment"])
+
+    def test_every_agent_seat_is_refused_before_any_call(self):
+        for seat in (Role.ANALYST, Role.ARCHITECT, Role.DEV, Role.QA, Role.LEAD):
+            with self.subTest(seat=seat):
+                team, gh = producer()
+                with self.assertRaises(policy.ActionForbidden):
+                    team.release_claim(23, "claim/23-active-build", seat)
+                self.assertEqual(gh.calls, [])
+
+    def test_refuses_a_card_that_is_not_in_progress(self):
+        # Backlog -> Ready via release-claim would bypass the promote spec
+        # gate; Ready -> Ready would be a no-op lie. Both refuse.
+        team, gh = producer()
+        with self.assertRaisesRegex(WorkflowError, "recovers abandoned claims"):
+            team.release_claim(12, "claim/12-implement-parser", Role.HUMAN)
+        self.assertEqual(gh.calls_matching("api", "-X"), [])
+        self.assertEqual(gh.calls_matching("project", "item-edit"), [])
+
+    def test_refuses_to_delete_a_mainline_branch(self):
+        team, gh = producer()
+        with self.assertRaisesRegex(WorkflowError, "never a mainline"):
+            team.release_claim(23, "main", Role.HUMAN)
+        self.assertEqual(gh.calls, [])
+
+    def test_requires_a_branch_name(self):
+        team, gh = producer()
+        with self.assertRaisesRegex(WorkflowError, "--branch"):
+            team.release_claim(23, "   ", Role.HUMAN)
+        self.assertEqual(gh.calls, [])
+
+    def test_flags_a_released_card_no_seat_will_dispatch(self):
+        gh = FakeGh(items=board_with((30, "Orphaned build", "In Progress", "human")))
+        team, _ = producer(gh)
+        outcome = team.release_claim(30, "claim/30-orphaned-build", Role.HUMAN)
+        self.assertTrue(outcome["ok"])
+        self.assertIn("not a dispatchable seat", outcome["note"])
+
+
 if __name__ == "__main__":
     unittest.main()

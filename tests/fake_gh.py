@@ -143,6 +143,8 @@ class FakeGh:
             return f"https://github.com/{REPO}/issues/42"
         if head in (["project", "item-edit"], ["issue", "comment"]):
             return ""
+        if head == ["api", "-X"]:  # gh api -X DELETE repos/.../git/refs/heads/...
+            return ""
         raise AssertionError(f"unexpected gh run call: {args}")
 
     def json(self, args):

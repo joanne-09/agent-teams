@@ -190,6 +190,20 @@ class ActionPolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(policy.ActionForbidden, "human"):
             policy.check_action("promote_to_ready", Role.ARCHITECT)
 
+    def test_only_the_human_may_release_a_claim(self):
+        # Release deletes the claimant's branch and re-opens the readiness
+        # decision, so it is closed to every artificial intelligence seat the
+        # same way promote is.
+        for seat in (Role.ANALYST, Role.ARCHITECT, Role.DEV, Role.QA, Role.LEAD):
+            with self.subTest(seat=seat):
+                with self.assertRaises(policy.ActionForbidden):
+                    policy.check_action("release_claim", seat)
+        self.assertTrue(policy.check_action("release_claim", Role.HUMAN).permitted)
+
+    def test_the_release_refusal_teaches_the_route(self):
+        with self.assertRaisesRegex(policy.ActionForbidden, "human"):
+            policy.check_action("release_claim", Role.LEAD)
+
     def test_only_qa_writes_verdicts(self):
         for role in (Role.ANALYST, Role.ARCHITECT, Role.DEV, Role.LEAD):
             with self.assertRaises(policy.ActionForbidden):

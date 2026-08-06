@@ -3,11 +3,27 @@ name: using-agent-teams
 description: Entry point for an agent-teams Producer session over a GitHub engineering board. Runs the mandatory read-only bootstrap, gives the user an orientation on the current project state and what to do next, and selects the right seat and routine from what the user asked for. Use at the start of any session involving the board, a new requirement, specifications, decomposition, board health, blocked work, dispatch, or the verification queue.
 ---
 
+<!-- The state-on-disk table, non-signals list, and router anti-pattern are
+     derived from board-superpowers `using-board-superpowers` (MIT, (c) 2026
+     PanQiWei, github.com/PanQiWei/board-superpowers), adapted to the
+     agent-teams flow. See ATTRIBUTION.md. -->
+
 # Using agent-teams
 
 Operate a Producer workflow over GitHub Issues in one GitHub Project. The
 Project is durable truth; this conversation is disposable. Assume the next
 session remembers nothing you were told.
+
+Everything durable lives in five places — nothing of record lives in the
+conversation:
+
+| Where | What lives there |
+|---|---|
+| GitHub Project fields | routing state: the `(Status, Role)` pair per Card |
+| GitHub Issues | Card scope, acceptance criteria, the handoff-comment trail |
+| Git branches | claims and work in flight |
+| Pull Requests | deliveries, specification documents, the merge gate |
+| `.agent-teams/config.json` | board coordinates, caps, and gate policy |
 
 ## How a user talks to this plugin
 
@@ -93,6 +109,20 @@ seats.** Orient first — run the briefing, then say what you think they mean an
 what you propose to do, in their words. "It sounds like this is new work, so
 I'll shape it into a Card — is that right?" is a good question. "Which seat are
 you?" is not.
+
+Some signals are **not** routing requests, however board-shaped they look:
+
+- a general programming or git question with no board intent — answer it,
+  do not intake it;
+- a rendered kickoff prompt the user is merely showing or quoting — routing
+  fires when they ask you to act, not when the token appears;
+- a request to implement a specific Card — that is Consumer work; render the
+  kickoff and stop, as below.
+
+And one anti-pattern to watch in yourself: **routing that becomes work.** If
+you catch this skill writing procedure inline — shaping a Card body here,
+drafting a spec here — stop. This skill routes and orients; every procedure
+belongs to the skill that owns it.
 
 ## Never act as the human
 

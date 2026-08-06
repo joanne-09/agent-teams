@@ -241,6 +241,17 @@ ACTION_POLICY: Mapping[str, Mapping[Role, object]] = {
         Role.LEAD: _N,
         Role.HUMAN: _A,
     },
+    # Releasing an abandoned claim deletes the claimant's branch and puts the
+    # Card back through Ready, so it is the readiness decision again plus a
+    # destructive git operation. Triage detects and proposes; the human runs it.
+    "release_claim": {
+        Role.ANALYST: _N,
+        Role.ARCHITECT: _N,
+        Role.DEV: _N,
+        Role.QA: _N,
+        Role.LEAD: _N,
+        Role.HUMAN: _A,
+    },
     "write_verdict": {
         Role.ANALYST: _N,
         Role.ARCHITECT: _N,
@@ -312,6 +323,11 @@ ACTION_REFUSAL_REASONS: Mapping[str, str] = {
     "promote_to_ready": (
         "readiness is the human lifecycle gate. Hand the Card to `human` with "
         "the specification and let them approve it into Ready"
+    ),
+    "release_claim": (
+        "releasing a claim deletes the claimant's branch and re-opens the "
+        "readiness decision. Flag the stale claim with the evidence and let "
+        "`human` run release-claim"
     ),
 }
 

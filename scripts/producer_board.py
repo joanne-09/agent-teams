@@ -165,6 +165,19 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     decompose.add_argument("--acting-role", default="architect", choices=ROLES)
 
+    release = sub.add_parser(
+        "release-claim",
+        help="human recovery gate: delete an abandoned claim branch and return "
+        "the Card to Ready for re-claim",
+    )
+    release.add_argument("issue", type=int)
+    release.add_argument(
+        "--branch", required=True,
+        help="the remote claim branch to delete (as named in the Card's handoffs)",
+    )
+    release.add_argument("--acting-role", default="human", choices=ROLES)
+    release.add_argument("--note", default="")
+
     transition = sub.add_parser("transition", help="move a Card's Status")
     transition.add_argument("issue", type=int)
     transition.add_argument("--to", required=True, choices=STATUSES, dest="to_status")
@@ -318,6 +331,16 @@ def main(argv: list[str] | None = None, gh: Gh | None = None) -> int:
                 _read_children(args.children),
                 args.spec,
                 Role.parse(args.acting_role),
+            )
+            _print(result)
+            return 0 if result.get("ok") else 1
+
+        elif args.command == "release-claim":
+            result = producer.release_claim(
+                args.issue,
+                args.branch,
+                Role.parse(args.acting_role),
+                reason=args.note,
             )
             _print(result)
             return 0 if result.get("ok") else 1
