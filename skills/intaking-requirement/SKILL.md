@@ -5,8 +5,11 @@ description: Convert a new product or engineering requirement into a Backlog Git
 
 <!-- Portions of the shape-judgment, spec-awareness, and decline sections are
      derived from board-superpowers `intaking-requirement` (MIT, (c) 2026
-     PanQiWei, github.com/PanQiWei/board-superpowers), adapted to the
-     agent-teams flow. See ATTRIBUTION.md. -->
+     PanQiWei, github.com/PanQiWei/board-superpowers). The clarification loop
+     (step 4 + references/clarifying-requirements.md) is derived from
+     superpowers `brainstorming` (MIT, (c) 2025 Jesse Vincent,
+     github.com/obra/superpowers). Both adapted to the agent-teams flow.
+     See ATTRIBUTION.md. -->
 
 # Intaking a requirement
 
@@ -42,9 +45,30 @@ then hand it to the seat whose job the next decision is.
    When the call is not obvious, read `references/shape-judgment.md` for the
    full trigger tables, the ">5 chunks" rationale, and the cross-Card
    dependency mechanisms the architect will use after decomposition.
-4. Ask only what would otherwise make the Card materially wrong. One or two
-   questions, not an interview — an unclear Card can be returned to you later,
-   and that path exists precisely so intake does not have to be perfect.
+4. Clarify until the Card can be written honestly. This is the analyst's core
+   job — an under-asked requirement becomes a spec the architect cannot write.
+   The method:
+   - Ask questions **one at a time — only one question per message**. If a
+     topic needs more exploration, break it into multiple questions.
+   - Prefer multiple-choice questions when possible, but open-ended is fine
+     too.
+   - Focus on understanding: **purpose, constraints, success criteria.**
+   - Quality words are not requirements. "Good", "popular", "safe", "fast"
+     must leave the conversation either operationalized (measurable, a third
+     person could check it) or parked as an open question with a named owner.
+
+   Stop when — not after a fixed number of questions — both hold: the
+   acceptance criteria you are about to write could be checked by a third
+   person, and no requirement in the body could be interpreted two different
+   ways. The human can end the loop at any time ("enough, file it") — file
+   with what you have and record the early stop in the Card's notes.
+
+   Do not drift into design: purpose, constraints, and success criteria are
+   analyst territory; approaches, trade-offs, and architecture belong to the
+   architect. Record "how should we build it" answers as open questions.
+
+   Read `references/clarifying-requirements.md` for the question protocol,
+   the operationalization table, and the termination checklist.
 5. Spec awareness. Every Card already passes through the architect and the
    readiness gate before implementation, so there is no separate spec-first
    gate here. Two cases still change how you write the body:

@@ -4,7 +4,7 @@
 
 **Stack**: Claude Code plugin / Python 3.12 standard library / GitHub CLI / GitHub Projects v2 / Git / Slidev
 
-**Last updated**: 2026-08-07 by session 6
+**Last updated**: 2026-08-07 — session 6, both tracks (Joanne's side: Consumer implementation; Lee's side: skill-content migration, `release-claim`, live verification)
 
 ---
 
@@ -52,11 +52,14 @@ The earlier full implementation is a **separate sibling repository**, `../agent-
 - **The remote claim branch is the mutual-exclusion primitive**, and the claim pushes a *unique empty commit* rather than the base SHA — see Hard-won Discoveries, this is the single most important implementation detail on the branch.
 - **Semantic operations only.** No `set_card_field`, and no CLI flag through which a caller could steer an acceptance route.
 - **Authority is checked before the first GitHub call**, so a refusal costs nothing and leaves no partial state.
-- **Status and Role are orthogonal.** A handoff changes Role and writes context; it never silently changes Status.
-- **Honest partial failure.** Multi-step mutations return `{ok:false, partial:true, completed:[...], failed:..., recovery:[...]}`. Creation steps are never replayed.
+- **Status and Role are orthogonal.** A handoff changes Role and writes context; it never silently changes Status. When both must move, that is two operations.
+- **Honest partial failure.** Multi-step mutations return `{ok:false, partial:true, completed:[...], failed:..., recovery:[...]}`. Creation steps are never replayed; nothing ever claims a rollback that did not run.
 - **One human gate plus one exception lane, now implemented.** `promote_to_ready` refuses every agent seat including `lead`. `merge_pull_request` — free-form merge of a caller-chosen Pull Request — **remains in `policy.HARD_FLOORS`**; decision 8 did not remove it. A companion action `request_automated_merge` is refused to *all six* seats including `human`, so "no seat may request a merge" is an assertion rather than an absence.
-- **Verdict and acceptance are separate types**, neither convertible into the other. QA writes `Verdict`; policy writes `Acceptance`. That separation is structural, not prose.
+- **Verdict and acceptance are separate types**, neither convertible into the other. QA writes `Verdict` (`pass`/`fail`/`blocked`, bound to the exact head SHA); policy writes `Acceptance` (`eligible`/`defect`/`protected_change`); QA cannot select its own route. That separation is structural, not prose.
 - **Protected changes name files, not just categories.** Seven default categories, configurable; policy may add but emptying a default category is a configuration error.
+- **agent-teams calls no other plugin.** Skill content is derived locally with attribution; nothing is called at runtime and correctness never depends on a sibling being installed.
+- **All seven Producer skills carry derived open-source content** (session 6, Lee's side): procedures adapted from board-superpowers (MIT); the analyst clarification loop derived from superpowers `brainstorming` after PM feedback. Skills gained per-skill `references/` files; `ATTRIBUTION.md` holds the notices; `docs/skill_migration.md` records adopted/rewired/rejected per skill; `docs/skill_migration_audit.md` proves per-item coverage. `grep -rn "superpowers:|gstack:/" skills/` must stay empty.
+- **`release-claim` is a human-only recovery gate** (session 6, Lee's side): deletes an abandoned claim branch and returns the Card `In Progress -> Ready` with a release comment, in that order (asymmetric failure modes). `policy.py` refuses every agent seat; the Card must actually be In Progress so the command is not a side door past `promote`. Kickoff prompts stamp `[expected:(Status, Role)]` so a receiving session can detect a stale kickoff.
 
 ---
 
@@ -114,11 +117,13 @@ Live board tests need a disposable repository and Project with all six `Status` 
 
 ## Progress
 
-Both surfaces implemented and hermetically tested. **No live GitHub behaviour has ever been exercised** — that is the whole of the remaining risk.
+Both surfaces implemented and hermetically tested. **Consumer code has never touched a live board** — that is the main remaining risk. The Producer surface has been live-verified on Lee's side (live board reads, refusals, headless probes, and the full 毒油地圖 Producer run of 2026-08-06/07).
 
 | Milestone | Status | Notes |
 |---|---|---|
-| Producer surface | Done | Seven skills, hermetically tested |
+| Producer surface | Done | Seven skills, hermetically tested; live-verified on Lee's side |
+| Skill-content migration (all 7 Producer skills) | Done | Lee's side: derived from board-superpowers (MIT) with attribution; clarification loop from superpowers `brainstorming`; per-item coverage audit in `docs/skill_migration_audit.md` |
+| `release-claim` human recovery gate | Done | Lee's side: policy row + CLI + 14 tests; refusal paths exercised live |
 | Developer Consumer (M4) | Done except live proof | Claim/worktree/one-PR delivery; exclusivity proven against real git |
 | QA Consumer (M5.1–M5.3) | Done except live proof | `verifying-delivery`, verdict contract, eight review dimensions, evidence gate, challenge and blind-spot loops |
 | Deterministic acceptance and merge (M5.4–M5.5) | Done except live proof | Acceptance decision table, exact-SHA invalidation, protected classification, auto-merge arming, reconciliation |
@@ -126,8 +131,8 @@ Both surfaces implemented and hermetically tested. **No live GitHub behaviour ha
 | Attribution accuracy | Done | Four unread citations removed; per-element labels added |
 | Plugin manifest re-validation | Done | Warning-free on the nine-skill layout |
 | Test-strength enforcement | Partial | Structured `falsified_by` contract enforced; no mutation-testing infrastructure of our own |
-| Live disposable Project test | **Pending** | `gh` unauthenticated; nothing below the fake has ever run |
-| Test from unrelated repository | Pending | Never performed |
+| Live Producer cycle (intake → spec → decompose → promote) | Done | Lee's side, 2026-08-06/07: 毒油地圖 run — #12 intake with clarification loop, spec PR #13 merged, children #14–#16, #14 promoted |
+| Live Consumer cycle (claim → PR → verdict → accept) | **Pending** | Nothing below the fake `gh` has run for the Consumer half |
 | Shadow-mode calibration | Pending | No precision/recall evidence before removing routine human review |
 
 ---
@@ -157,7 +162,7 @@ Both surfaces implemented and hermetically tested. **No live GitHub behaviour ha
 
 ## Test Status
 
-`python -m unittest discover -s tests -p "test_*.py"` — **344 passed**, ~40s, no network. Run on the current HEAD (`6024d9a`) at the end of session 6.
+`python -m unittest discover -s tests -p "test_*.py"` — **344 passed**, ~40s, no network. Run on HEAD `6024d9a` at the end of session 6 (Joanne's side).
 
 Split: `test_consumer` 77, `test_acceptance` 68, `test_producer_board` 56, `test_workflows` 48, `test_policy` 43, `test_git` 23, `test_partial_failures` 16.
 
@@ -171,10 +176,16 @@ What the suite genuinely proves:
 
 What it does not prove:
 
-- **Any live `gh` behaviour.** Pull Request view/checks/merge shapes are assumptions encoded in `tests/fake_gh.py`.
+- **Any live `gh` behaviour for the Consumer half.** Pull Request view/checks/merge shapes are assumptions encoded in `tests/fake_gh.py`.
 - That auto-merge, reconciliation, or the protected-change lane work against GitHub.
 - That a `falsified_by` claim is *true* — only that it is present and specific enough to check.
 
+Live verification (Lee's environment — macOS, `gh` authenticated as Windmill10):
+
+- **Live board (github.com/users/Windmill10/projects/4)**: `doctor` green (all 12 options post-rename); `brief`/`list`/`dispatch` live reads correct; `release-claim` refused live for an agent seat and for a not-In-Progress card, both before any GitHub call.
+- **Headless skill probes** (`claude -p` from `agent-teams-test` with `--plugin-dir`): (1) "brief me" — fixed report template rendered exactly, human queue led, never-act-as-human held, and the skill's recommendation ladder **overrode the code's wrong "board is clear" string**; (2) roadmap-level intake — the shape gate refused to file with no board mutation. Bonus: three accidental auth-failure runs each obeyed the read-failure rule (verbatim error, no synthesized state, clean stop).
+- **Full live Producer run (2026-08-06/07, 毒油地圖)**: intake with the new clarification loop produced #12; architect session (with its own background research agent) produced spec PR #13; human gate caught a `Closes #12` auto-close keyword in the PR body (skill hardened in response); decompose produced #14–#16 at `(Backlog, human)` honoring the walking-skeleton hint and a human-supplied-dataset prerequisite; human promoted #14 to `(Ready, dev)`.
+- Probe harness note: nested headless sessions need the test repo's `.claude/settings.json` (`sandbox.enabled: false`) or `gh` misreports sandbox keychain/network blocks as "token invalid".
 ---
 
 ## Known Issues & Deferred Debt
@@ -188,11 +199,15 @@ What it does not prove:
 - **No automatic field provisioning, WIP enforcement, or audit store** — `doctor` validates, `brief` reports, GitHub artifacts are the trail.
 - **Specification-gate gaps remain** — an unverified non-PR spec pointer is accepted.
 - **`../.worktrees` is shared** between development worktrees and Consumer claim worktrees.
+- **`workflows._recommend` lacks a readiness-queue rung** (found by live testing, Lee's side) — with Cards at `(Backlog, human)` it says "the board is clear"; the merge queue is checked but the promote queue is not, and the brief payload has no `awaiting_readiness` field. The briefing skill's prose ladder masks it in practice, but the JSON field actively misleads. Small fix: add the rung ranked first, expose the queue, one test.
+- **Three notation/contract items need Joanne's blessing** (Lee's side): the `depends-on (soft): #N` body convention referenced in intake/authoring-spec references; the `[expected:(Status, Role)]` kickoff stamp as the Consumer preflight input; and the `release_claim` policy action (her Consumer work landed after these — confirm she accepts them rather than assuming).
+- **Board hygiene observed live**: #4 is Done with no Role (harmless). Whether a parent Card closes when its children ship remains an open reconcile-design question (#12 is the live case now).
 
 ---
 
 ## Open Decisions
 
+- **Human-intervention count is too high (Lee's live-run finding, 2026-08-07)** — the first full loop (#14: intake → spec → decompose → promote → dispatch → dev → QA fail → defect → fix → QA pass → merge → Done) required five human command points: merge the spec PR, `promote`, merge the implementation PR, `reconcile-done`, plus carrier duties (launching every seat's session and pasting kickoffs). Operating it, this feels like too many steps and too much command surface; the target is **at most 2–3 interventions, each a simple command**. Consolidation candidates, none decided: (a) fold spec-PR merge + `promote` into one approval command (promote is already refused until the spec is merged, so the two are sequenced anyway — one command could merge then promote); (b) fold implementation merge + `reconcile-done` into one command, or auto-reconcile once the merge is detected — reconcile is bookkeeping with no judgment content, the strongest automation candidate; (c) on a repo with CI + branch protection the routine implementation merge already disappears (auto-merge armed by acceptance), which alone brings a clean run down to spec-approval + promote; (d) the carrier cost (session launches + kickoff pasting) is the other felt burden — a launcher wrapper around `dispatch` output would cut it without touching the no-autonomous-spawning decision. Target end shape: answer intake questions, one readiness approval, one merge decision only when policy escalates.
 - **The skill-direction slide versus invariant 10** — `slides/2026-08-06-weekly.md` says agent-teams will *reuse* skills from board-superpowers, superpowers, and gstack, and its presenter note says "we did not finish the integration". What shipped is *derivation with attribution*; invariant 10 forbids runtime calls. Options: soften the slide to "adopt/derive", or amend invariant 10 and Appendix A.1 to permit runtime composition. **Needs**: a decision on whether correctness may depend on a sibling plugin being installed. This is the one substantive gap between the deck and the code.
 - **Shadow-rollout exit criteria** — the PR sample, seeded-defect suite, precision/recall targets, false-negative budget, and rollback trigger before routine human review is trusted to be gone. Nothing here is calibrated.
 - **Mutation-testing infrastructure** — whether to adopt a tool so `falsified_by` can be machine-checked rather than attested.
@@ -219,37 +234,33 @@ What it does not prove:
 
 ## Blockers / Waiting On
 
-- **Authenticated live GitHub verification** — `gh` is installed but not logged in. Action needed: the user runs `gh auth login` and `gh auth refresh -s project`, then creates a disposable repository and Project. Everything below the fake is unproven until this happens.
-- **A disposable repository configured for acceptance** — needs auto-merge enabled, branch protection with required checks, and matching `required_checks` in config. Without these the merge path cannot be exercised meaningfully.
+- **Authenticated live GitHub verification for the Consumer half** — on Joanne's Windows environment `gh` is installed but not logged in; on Lee's macOS side `gh` is authenticated (Windmill10) and the live 毒油地圖 board is available. The Consumer live test can run on Lee's side against `agent-teams-test`.
+- **A repository configured for acceptance** — the merge path needs auto-merge enabled, branch protection with required checks, and matching `required_checks` in config. `agent-teams-test` does not have these yet; without them nothing is ever `eligible` (fails closed).
 - **The skill-direction decision** — see Open Decisions. Blocks nothing technically, but the deck and the architecture currently say different things.
-- **Remote synchronization** — `mvp/producer-from-scratch` is in sync with origin as of this session. Nothing should be pushed without the user's instruction.
+- **Remote synchronization** — Joanne's tip `9c75666` pulled and merged with Lee's local session work (conflict resolution recorded in this file). Nothing should be pushed without the user's instruction.
 
 ---
 
 ## Current State
 
-Repository: `C:\Users\User\Documents\intern\ITRI\agent-teams-project\agent-teams`.
+Branch `mvp/producer-from-scratch` is at `9c75666` upstream (Joanne's slides update on top of `6024d9a` `feat: finish consumer (qa, dev) implementation`), with Lee's session work merged locally on top — clarification loop in `intaking-requirement`, the authoring-spec closing-keyword rule, and this conflict resolution — **uncommitted as of this update**. Joanne's session-6 commits are `6d77238` (docs) and `6024d9a` (implementation, skills, tests); the assistant commit `35c1d6e` added the design spec and plan.
 
-Branch `mvp/producer-from-scratch` is at `6024d9a` (`feat: finish consumer (qa, dev) implementation`), **working tree clean**, and **in sync with `origin/mvp/producer-from-scratch`**. The user committed session 6's work as two commits under their own identity — `6d77238` (docs) and `6024d9a` (implementation, skills, tests) — and pushed. The assistant's one commit on this branch is `35c1d6e`, which added the design spec and implementation plan.
+The Consumer half is implemented end to end and hermetically green: **344 tests pass**, manifest validation warning-free, sibling invariant holds. Nine skills, seven functional modules, six new CLI commands (`claim`, `submit-pr`, `verdict`, `accept`, `reconcile-done`, `worktree-status`). Her development worktree and the `feat/consumer-flow` branch were deleted at the user's request; the 17-task reasoning survives in `docs/specs/`, `docs/plans/`, `ATTRIBUTION.md`, and code comments.
 
-The Consumer half is implemented end to end and hermetically green: **344 tests pass**, manifest validation is warning-free, and the sibling invariant holds. Nine skills, seven functional modules, six new CLI commands (`claim`, `submit-pr`, `verdict`, `accept`, `reconcile-done`, `worktree-status`).
-
-The development worktree used during the session was moved onto this branch and **deleted at the user's request**, along with the `feat/consumer-flow` branch. The per-commit history of the 17-task implementation is therefore gone; the reasoning survives in `docs/specs/`, `docs/plans/`, `ATTRIBUTION.md`, and code comments.
-
-`gh` remains unauthenticated. No live Project, repository mutation, Pull Request review, auto-merge, or reconciliation has ever run. No process is running.
+The live demo board (Lee's side) holds the 毒油地圖 run: #12 `(Backlog, architect)` — spec'd via merged PR #13, decomposed; #14 walking skeleton at `(Ready, dev)` — promoted by the human with a reviewed 3-record dataset attached as an issue comment; #15/#16 at `(Backlog, human)`; #4 Done (Snake). Retired: #1, #7, #9–#11. **The Consumer half has never touched a live board — #14 is the intended first live Consumer test.**
 
 ---
 
 ## Next Steps
 
-1. Decide the skill-direction question in Open Decisions — either edit `slides/2026-08-06-weekly.md` "2 — We Changed the Skill Direction" to say *derive/adopt* rather than *reuse*, or amend `docs/ARCHITECTURE.md` invariant 10 and Appendix A.1. Do not leave the deck and the architecture contradicting each other.
-2. Run `gh auth login` and `gh auth refresh -s project`, then create a disposable repository and Project with all six `Status` and six `Role` options.
-3. Enable auto-merge on that repository, add branch protection with at least one required check, and set `required_checks` in `.agent-teams/config.json`. Confirm with `producer_board.py doctor` that `acceptance_problems` is empty.
-4. Verify the assumed `gh` shapes against reality: run `gh pr view --json number,url,headRefOid,state,mergeable,isDraft,files,statusCheckRollup` on a real Pull Request and compare field-for-field with `tests/fake_gh.py`. Correct `board.pull_request` and the fixtures for any mismatch **before** trusting anything downstream.
-5. Run one live Producer cycle — intake, architect spec, promote, dispatch — closing the M1.1–M1.3 gaps that predate this session.
-6. Run one live Consumer cycle: `claim`, implement, `submit-pr`, then `verdict` and `accept`. Exercise all three routes deliberately — an eligible pass, a `fail` verdict returning the Card to `dev`, and a change touching `scripts/agent_teams/policy.py` to force `protected_change`.
-7. Prove the two race behaviours live: two sessions claiming one Card, and a push landing after a verdict so `accept` refuses as stale.
-8. Only then consider shadow-mode calibration against historical and seeded-defect Pull Requests, and publish precision/recall before treating automated acceptance as trustworthy.
+0. Near-term leftovers (Lee's side): fix `workflows._recommend`'s missing readiness rung (+ `awaiting_readiness` in the brief payload, + test); settle the three Joanne-blessing items (soft-depends notation, expected-pair preflight contract, `release_claim` policy row); update the weekly deck's run table and screenshots to the 毒油地圖 numbers (#12–#16) after the run completes.
+1. Decide the skill-direction question in Open Decisions — either edit the deck to say *derive/adopt* rather than *reuse*, or amend `docs/ARCHITECTURE.md` invariant 10 and Appendix A.1. Do not leave the deck and the architecture contradicting each other.
+2. ~~Run one live Producer cycle~~ — done on Lee's side (毒油地圖: intake #12 → spec PR #13 merged → decompose #14–#16 → promote #14). Dispatch is the remaining Producer step.
+3. Verify the assumed `gh` shapes against reality: run `gh pr view --json number,url,headRefOid,state,mergeable,isDraft,files,statusCheckRollup` on a real Pull Request and compare field-for-field with `tests/fake_gh.py`. Correct `board.pull_request` and the fixtures for any mismatch **before** trusting anything downstream.
+4. For the acceptance path: enable auto-merge on `agent-teams-test`, add branch protection with at least one required check, and set `required_checks` in `.agent-teams/config.json`. Confirm with `producer_board.py doctor` that `acceptance_problems` is empty.
+5. Run one live Consumer cycle on #14: `claim`, implement, `submit-pr`, then `verdict` and `accept`. Exercise all three routes deliberately — an eligible pass, a `fail` verdict returning the Card to `dev`, and a change touching `scripts/agent_teams/policy.py` to force `protected_change`.
+6. Prove the two race behaviours live: two sessions claiming one Card, and a push landing after a verdict so `accept` refuses as stale.
+7. Only then consider shadow-mode calibration against historical and seeded-defect Pull Requests, and publish precision/recall before treating automated acceptance as trustworthy.
 
 ---
 
@@ -263,7 +274,7 @@ No additional plugin or skill runtime is required or desired. Compatible open `S
 
 <!-- newest entry at top -->
 
-### 2026-08-07 — Session 6
+### 2026-08-07 — Session 6 (Joanne's side)
 
 Implemented the entire Consumer half — the milestone every prior session had deferred — from an approved spec and a 17-task plan, executed inline with a red-green-commit cycle per task. Added `scripts/agent_teams/git.py` (claim compare-and-swap, guarded worktrees), the `Verdict`/`Acceptance` contracts, protected-path classification, `validate_verdict` and `evaluate_acceptance` in the still-network-free policy layer, Pull Request operations and auto-merge arming on the board, a `Consumer` class with `claim`/`submit`/`verdict`/`accept`/`reconcile`/`worktree_status`, six CLI commands, and two new skills. Tests 145 → 344.
 
@@ -272,6 +283,16 @@ The session's key discovery came from testing the claim primitive rather than re
 Three rounds of correction followed, each prompted by the user. First, checking the implementation against `slides/2026-08-06-weekly.md` — treated as the authoritative contract — found the eligible route stopping at "armed" instead of completing to `Done`, and protected changes naming categories instead of files; both fixed. Second, an audit of my own attribution found four sources cited without being read, and that over-claim had concealed a real defect: `validate_pr_body` accepted only `Closes #N` where Contract C and GitHub accept `Fixes` and `Resolves` too. Third, the test-strength rule turned out to be a substring search that accepted "NO branch coverage was measured"; `test_strength` is now structured with a required `falsified_by` naming what was broken and which test caught it.
 
 The user committed the work as `6d77238` and `6024d9a` and pushed; the development worktree and its branch were deleted at their request. `gh` is still unauthenticated, so **nothing below the fake `gh` has ever run** — that remains the whole of the risk. One substantive contradiction is left open and untouched: the deck says the plugin will *reuse* sibling skills, while what shipped is derivation and invariant 10 forbids runtime calls.
+
+---
+
+### 2026-08-06 — Session 6 (Lee's side)
+
+- **Skill-content migration, all seven Producer skills.** Cloned obra/superpowers into `reference/`, inventoried it plus gstack (local checkout) and board-superpowers with three parallel research passes; verdict: derive locally with attribution, never depend at runtime (all three MIT). Migrated `intaking-requirement` (shape judgment, spec awareness, decline policy), `briefing-board` (fixed template, recommendation ladder, stale-claim check, read-failure rules, card-scoped re-entry), `triaging-board` (stale-claim sweep, external-dependency class, evidence rules), `using-agent-teams` (state table, non-signals, router anti-pattern), `inspecting-queue` (report-never-act observation guards), `authoring-spec` (INVEST + vertical-slicing refusal gates, SPIDR, XS/S/M/L ceiling), and hardened `dispatching-work` from live-test findings. A coverage pass restored over-compressed load-bearing text into per-skill `references/` files; `docs/skill_migration_audit.md` proves per-item disposition of every source section, including conscious rejections (their Ready-at-intake, lead-executed release, very-large-cohesive-PR allowance).
+- **`release-claim`** added end to end: policy action (human-only, teaching refusal), CLI command with branch-first mutation order and partial-failure envelope, guards (must be In Progress; mainlines refused), 14 new tests. Kickoff prompts now stamp `[expected:(Status, Role)]`. Tests 130 → 145.
+- **Live verification**: doctor green post-rename; live reads; release-claim refusals live; two headless `claude -p` skill probes passed — the briefing probe rendered the new template and overrode the code's wrong recommendation, the roadmap-intake probe refused to file with no board mutation. Found the `_recommend` readiness-rung defect. Probe harness requires `sandbox.enabled: false` in `agent-teams-test/.claude/settings.json` (gh misreports sandbox blocks as invalid tokens).
+- **Slides**: weekly deck restructured as sibling files in one Slidev project (`2026-08-06-weekly.md`, run via `npm run dev:weekly`); two sections written (updated workflow honoring the not-yet-shipped caveat; demo with image placeholders); the user committed and pushed slides (`1b403c8`), Joanne refined the QA-workflow slides on top (`787a720`).
+- PM reply for last week's meeting sent (items 1–9); flagged to clarify that 「引入 skills」 means deriving definitions, not installing plugins.
 
 ---
 

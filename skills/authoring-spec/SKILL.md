@@ -57,7 +57,12 @@ When the specification is itself a repository deliverable:
 3. Write the smallest durable artifact that removes implementation
    ambiguity — behaviour, boundaries, acceptance criteria, unresolved risks.
 4. Verify the diff is docs-only.
-5. Open one Pull Request linking the Issue.
+5. Open one Pull Request referencing the Issue in the body as
+   `Spec for #<number>` — **never with a GitHub closing keyword**
+   (`Closes`/`Fixes`/`Resolves #<number>`). The Card outlives its
+   specification: a closing keyword makes the merge close the Card
+   mid-lifecycle, while it still has the gate and implementation ahead of it.
+   Closing keywords belong to implementation Pull Requests only.
 6. **Stop.** Do not promote and do not decompose in this session.
 
 ## Job 2 — send one shaped Card to the readiness gate (Producer-shaped)
@@ -163,5 +168,8 @@ durable.
 - **Do not mark work Ready without a specification reference.** There is
   nothing to implement against.
 - **Do not merge**, including the specification Pull Request. No seat here can.
+- **Do not put closing keywords in a specification Pull Request.** The human
+  gate should only have to click merge — never to first edit the body to
+  keep the Card alive.
 - Do not invent parent/child Card semantics. The board is flat; provenance
   lives in the child body and the parent's summary comment.

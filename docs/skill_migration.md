@@ -42,6 +42,7 @@ migration. Licensing and per-file derivation markers live in
 | `dispatching-work` | none — no counterpart; hardened from our own live-test findings | **Done** (2026-08-06) |
 | `consuming-card` | board-superpowers `consuming-card` + `enforcing-pr-contract`; superpowers TDD/verification/worktrees | **Done** (2026-08-06, new skill) |
 | `verifying-delivery` | gstack `/review` + `/qa`; superpowers `requesting-code-review`; board-superpowers `reviewing-pr-queue` | **Done** (2026-08-06, new skill) |
+| `intaking-requirement` (2nd pass: clarification loop) | superpowers `brainstorming` (elicitation phase only) | **Done** (2026-08-06) |
 
 ---
 
@@ -338,6 +339,16 @@ The three-jobs-one-per-session structure, the send-back-to-analyst move, the
 readiness-gate section (`spec_completion=merged`), children at
 `(Backlog, human)` with flat provenance, and all four boundaries.
 
+### Live-test addendum (2026-08-06, oil-map run)
+
+Job 1 step 5 said "Open one Pull Request linking the Issue"; the architect
+linked it with `Closes #12`, which would have auto-closed the Card on merge —
+mid-lifecycle, with the gate and implementation still ahead. Caught at the
+human merge gate. Step 5 now mandates `Spec for #<number>` and forbids
+closing keywords in spec Pull Requests (they belong to implementation PRs
+only), with a matching boundary line: the human gate should only have to
+click merge.
+
 ---
 
 ## 7. `dispatching-work` (2026-08-06) — no source; hardened from live-test findings
@@ -515,3 +526,68 @@ the changed-file enumeration check against the live diff, the
 line-coverage-is-not-test-strength rule, and the boundary that QA never selects
 its own route. None of these exist in any source: gstack's reviewer reports to
 a human who decides, and that is precisely the gate decision 8 replaces.
+
+---
+
+## 10. `intaking-requirement` second pass — clarification loop (2026-08-06)
+
+Source: `reference/superpowers/skills/brainstorming/SKILL.md` (obra/superpowers,
+MIT, (c) 2025 Jesse Vincent) — the requirement-elicitation phase only. The
+first superpowers-derived content in a *Producer* skill (superpowers'
+engineering discipline otherwise lands in the dev Consumer skill — see §8).
+
+**Trigger**: PM feedback that the analyst under-clarifies — a live intake of
+the dashboard requirement asked only two questions, leaving quality words
+("熱門"/popular) unoperationalized for the architect. The original cap
+("one or two questions, not an interview") was inherited reasoning from a
+context we do not share: board-superpowers' intake could stay shallow because
+it routed design sharpening out to `superpowers:brainstorming` and looped the
+sharpened artifact back. We removed those routes in migration #1 but left the
+conversation without a procedure. This pass supplies it — from the same skill
+board-superpowers itself routes to.
+
+### Adopted (wording kept close to the source)
+
+- **One question per message** — "only one question per message; if a topic
+  needs more exploration, break it into multiple questions."
+- **Multiple choice preferred**, open-ended fine.
+- **Purpose / constraints / success criteria** as the elicitation frame.
+- **Context before questions** (their "explore project context" step, retargeted
+  to board + repo docs).
+- **Scope before detail** (their "assess scope before detailed questions",
+  composed with our existing shape-judgment step 3).
+- **Ambiguity check as termination criterion** (from their spec self-review):
+  stop when no requirement could be read two ways and the acceptance criteria
+  are third-person checkable — not after a fixed question count.
+
+### Rewired
+
+- Elicitation only. Their skill continues into design (propose 2-3 approaches
+  → present design → design doc → `writing-plans`); ours stops at a clear
+  problem statement — design is the architect seat's pipeline.
+- Their scope-flag outcome routes to decomposition help; ours feeds the
+  existing shape-judgment table.
+- New: the operationalization table for quality words ("popular", "safe",
+  "fast" → measurable or owned open question) — our framing of their
+  "vague requirements" placeholder scan, extended for data-backed work
+  (source, freshness, granularity, license).
+
+### Rejected
+
+- **HARD-GATE and the design-approval flow** — gates implementation on an
+  approved design; our promote gate owns that, and design is not the analyst's.
+- **Approach proposals, design-doc writing, `writing-plans` handoff, spec
+  self-review as a whole** — architect territory (authoring-spec).
+- **Visual companion** — browser machinery we do not ship.
+- **Bringing the skill in whole** (runtime dependency or verbatim copy) was
+  considered and rejected: its checklist mandates the full clarify→design→plan
+  flow in one session (dissolving the analyst/architect boundary), and its
+  "MUST use before any creative work" description would hijack routing from
+  `intaking-requirement`.
+
+### Kept from ours
+
+The returned-Card loop — reframed: it backstops what questioning could not
+have caught, and is no longer the rationale for asking little. The
+don't-pre-decide-design rule, the shape-judgment table, and all four
+invariants are unchanged.
