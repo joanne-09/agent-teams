@@ -211,6 +211,57 @@ class Git:
             "worktree": str(path), "branch": branch,
         }
 
+    def publish_delivery(self, path: Path, branch: str) -> dict[str, Any]:
+        """Push the worktree's commits so the Pull Request holds the real work.
+
+        The Pull Request is built from the remote claim branch, never from
+        this machine's worktree -- a delivery that was committed but not
+        pushed reads as an empty diff to every reviewer, while the submitting
+        session honestly believes it shipped (observed live on card #14).
+
+        A dirty worktree is refused outright rather than auto-committed:
+        deciding what belongs in the delivery is the Consumer's job, and
+        pushing around uncommitted work would silently leave it out.
+
+        A path this repository does not know as a worktree is not an error:
+        the branch may have been pushed from another machine, and the empty-
+        diff guard in ``submit`` still stands between that and a hollow
+        delivery.
+        """
+        path = Path(path)
+        if path.resolve() not in self._known_worktrees():
+            return {
+                "ok": True, "pushed": False,
+                "note": f"no worktree at {path} on this machine; relying on "
+                        f"the remote branch as already pushed",
+            }
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=str(path), capture_output=True, text=True,
+        )
+        if status.returncode != 0:
+            raise GitError(f"cannot read worktree status: {status.stderr.strip()}")
+        if status.stdout.strip():
+            raise GitError(
+                f"{path} has uncommitted or untracked changes:\n"
+                f"{status.stdout.strip()}\n"
+                f"Commit what belongs in the delivery (or discard the rest "
+                f"deliberately), then submit again."
+            )
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(path), capture_output=True, text=True,
+        )
+        if head.returncode != 0:
+            raise GitError(f"cannot read worktree HEAD: {head.stderr.strip()}")
+        pushed = subprocess.run(
+            ["git", "push", "origin", f"HEAD:refs/heads/{branch}"],
+            cwd=str(path), capture_output=True, text=True,
+        )
+        if pushed.returncode != 0:
+            raise GitError(f"delivery push failed: {pushed.stderr.strip()}")
+        return {"ok": True, "pushed": True, "head_sha": head.stdout.strip()}
+
     def remove_worktree(self, path: Path, force: bool = False) -> dict[str, Any]:
         """Remove a worktree only when doing so destroys nothing.
 

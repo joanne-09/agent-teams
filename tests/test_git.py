@@ -233,3 +233,64 @@ class WorktreeTests(_OriginFixture, unittest.TestCase):
         git, target = self._claimed()
         paths = {Path(e["worktree"]).resolve() for e in git.worktrees() if "worktree" in e}
         self.assertIn(target.resolve(), paths)
+
+
+class PublishDeliveryTests(_OriginFixture, unittest.TestCase):
+    """The delivery the reviewer sees is the remote branch, nothing else.
+
+    Proven against real git because the failure that motivates this method
+    was invisible to every fake: a session that commits in its worktree and
+    opens a Pull Request without pushing believes, honestly, that it shipped
+    (live: card #14 / PR #17, a 450-line implementation reviewed as an
+    empty diff).
+    """
+
+    BRANCH = "claim/42-implement-parser"
+
+    def _claimed(self, name="a"):
+        git = self._clone(name)
+        claim = git.claim(42, "Implement parser", "dev", f"session-{name}")
+        target = self.tmp / "wt" / "claim-42"
+        git.add_worktree(target, claim["branch"], claim["claim_sha"])
+        return git, target
+
+    def _remote_head(self):
+        return _git(self.tmp, "--git-dir", str(self.origin),
+                    "rev-parse", f"refs/heads/{self.BRANCH}")
+
+    def test_publish_pushes_the_worktree_commits(self):
+        git, target = self._claimed()
+        (target / "impl.py").write_text("work\n", encoding="utf-8")
+        _git(target, "add", ".")
+        _git(target, "commit", "-qm", "implement")
+        result = git.publish_delivery(target, self.BRANCH)
+        self.assertTrue(result["pushed"])
+        self.assertEqual(self._remote_head(), result["head_sha"])
+
+    def test_a_dirty_worktree_is_refused_and_the_remote_is_untouched(self):
+        # Auto-committing would decide what belongs in the delivery on the
+        # Consumer's behalf; pushing around it would silently leave it out.
+        git, target = self._claimed()
+        before = self._remote_head()
+        (target / "impl.py").write_text("uncommitted\n", encoding="utf-8")
+        with self.assertRaises(GitError):
+            git.publish_delivery(target, self.BRANCH)
+        self.assertEqual(self._remote_head(), before)
+
+    def test_publishing_with_nothing_new_succeeds_as_a_noop(self):
+        # Only the claim commit exists: the push is up-to-date and fine at
+        # the git layer. Catching the empty *diff* is submit's job, from
+        # GitHub's own view of the Pull Request.
+        git, target = self._claimed()
+        result = git.publish_delivery(target, self.BRANCH)
+        self.assertTrue(result["pushed"])
+        self.assertEqual(self._remote_head(), result["head_sha"])
+
+    def test_a_path_that_is_not_a_worktree_reports_not_pushed(self):
+        # The branch may have been pushed from another machine; the absence
+        # of a local worktree is not an error, and the empty-diff guard in
+        # submit still stands between that and a hollow delivery.
+        git, _ = self._claimed()
+        result = git.publish_delivery(self.tmp / "elsewhere", self.BRANCH)
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["pushed"])

@@ -1183,10 +1183,37 @@ class Consumer:
             )
 
         log = MutationLog()
+
+        # The Pull Request is built from the remote branch; publishing the
+        # delivery therefore includes pushing it. A dirty worktree or a
+        # failed push refuses here, before any board mutation.
+        published = self.git.publish_delivery(
+            self._worktree_for(card), claim_branch(number, card.title)
+        )
+        if published.get("pushed"):
+            log.record("push", head_sha=published.get("head_sha"))
+
         url = self.board.create_or_update_pull_request(
             number, card.title, title, body
         )
         log.record("pull_request", pull_request=url)
+
+        pr = self.board.pull_request(number, card.title)
+        if not pr["changed_files"]:
+            # The Pull Request exists but delivers nothing: base and head
+            # are identical on the remote. Refuse the handoff -- QA reviews
+            # deliveries, not empty diffs.
+            return log.partial_result(
+                "delivery",
+                "the Pull Request diff is empty: origin has no file changes "
+                "on the claim branch. Commit the implementation in the "
+                "worktree, then run submit-pr again -- it updates this same "
+                "Pull Request.",
+                [
+                    f"producer_board.py submit-pr {number} --title ... "
+                    f"--body-file ...",
+                ],
+            )
 
         note = f"Delivery ready for independent verification: {url}"
         recovery_handoff = (
@@ -1243,10 +1270,10 @@ class Consumer:
         policy. That separation is what stops a reviewer selecting its own
         outcome, and it is why this method cannot move the Card at all.
         """
-        self._bound_card(number, Role.QA, Status.IN_REVIEW)
+        card = self._bound_card(number, Role.QA, Status.IN_REVIEW)
         policy.check_action("write_verdict", Role.QA)
 
-        pr = self.board.pull_request(number)
+        pr = self.board.pull_request(number, card.title)
         problems = policy.validate_verdict(
             verdict, pr["head_sha"], pr["changed_files"]
         )
@@ -1285,7 +1312,7 @@ class Consumer:
                 f"before accepting."
             )
 
-        pr = self.board.pull_request(number)
+        pr = self.board.pull_request(number, card.title)
         problems = policy.validate_verdict(
             verdict, pr["head_sha"], pr["changed_files"]
         )
@@ -1458,7 +1485,7 @@ class Consumer:
                 f"a Card in In Review whose Pull Request has merged"
             )
 
-        pr = self.board.pull_request(number)
+        pr = self.board.pull_request(number, card.title)
         state = self.board.merge_state(pr["number"])
         if str(state.get("state", "")).upper() != "MERGED":
             raise WorkflowError(

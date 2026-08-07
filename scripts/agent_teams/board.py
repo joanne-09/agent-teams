@@ -347,11 +347,18 @@ class Board:
     #: Everything the acceptance evaluator needs, in one round trip.
     _PR_FIELDS = "number,url,headRefOid,state,mergeable,isDraft,files,statusCheckRollup"
 
-    def pull_request(self, number: int) -> dict[str, Any]:
-        """The linked Pull Request, normalised. Raw gh shapes stop here."""
+    def pull_request(self, number: int, card_title: str) -> dict[str, Any]:
+        """The Card's Pull Request, normalised. Raw gh shapes stop here.
+
+        Resolved by claim branch, never by number: Issues and Pull Requests
+        share one numbering sequence, so the Pull Request number drifts from
+        the Card number whenever anything else was created in between. The
+        claim branch is the stable link (the same key
+        ``create_or_update_pull_request`` writes under).
+        """
         raw = self.gh.json(
-            ["pr", "view", str(number), "--repo", self.config.repo,
-             "--json", self._PR_FIELDS]
+            ["pr", "view", claim_branch(number, card_title),
+             "--repo", self.config.repo, "--json", self._PR_FIELDS]
         )
         checks = {
             str(entry.get("name", "")): str(entry.get("conclusion", ""))

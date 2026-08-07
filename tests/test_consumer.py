@@ -257,11 +257,11 @@ class AcceptanceCriteriaTests(unittest.TestCase):
 
 
 class SubmitTests(unittest.TestCase):
-    def _consumer(self, items, config=None, **gh_kwargs):
+    def _consumer(self, items, config=None, git=None, **gh_kwargs):
         from agent_teams.workflows import Consumer
         config = config or a_config()
         gh = FakeGh(items=items, **gh_kwargs)
-        return Consumer(config, Board(config, gh=gh), git=FakeGit()), gh
+        return Consumer(config, Board(config, gh=gh), git=git or FakeGit()), gh
 
     def test_submit_opens_one_pull_request_then_transitions_and_hands_off(self):
         consumer, gh = self._consumer(
@@ -307,6 +307,43 @@ class SubmitTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertTrue(result["partial"])
 
+    def test_submit_publishes_the_worktree_to_the_claim_branch(self):
+        # The Pull Request is built from the remote branch; a delivery that
+        # was committed locally but never pushed reads as an empty diff to
+        # every reviewer (observed live on card #14 / PR #17).
+        git = FakeGit()
+        consumer, gh = self._consumer(
+            board_with((23, "Active build", "In Progress", "dev")), git=git
+        )
+        result = consumer.submit(23, Role.DEV, "feat: parser", GOOD_PR_BODY)
+        self.assertTrue(result["ok"])
+        self.assertIn(("publish", str(consumer._worktree_for(
+            consumer.board.card(23))), "claim/23-active-build"), git.calls)
+
+    def test_a_dirty_worktree_is_refused_before_any_github_mutation(self):
+        from agent_teams.git import GitError
+        git = FakeGit(publish_error=GitError("uncommitted changes"))
+        consumer, gh = self._consumer(
+            board_with((23, "Active build", "In Progress", "dev")), git=git
+        )
+        with self.assertRaises(GitError):
+            consumer.submit(23, Role.DEV, "feat: parser", GOOD_PR_BODY)
+        self.assertEqual(gh.calls_matching("pr", "create"), [])
+        self.assertEqual(gh.calls_matching("project", "item-edit"), [])
+
+    def test_an_empty_delivery_is_refused_before_any_transition(self):
+        # Base and head identical on the remote: the Pull Request exists but
+        # delivers nothing. QA reviews deliveries, not empty diffs.
+        consumer, gh = self._consumer(
+            board_with((23, "Active build", "In Progress", "dev")),
+        )
+        gh.pr_view = {**gh.pr_view, "files": []}
+        result = consumer.submit(23, Role.DEV, "feat: parser", GOOD_PR_BODY)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["failed"], "delivery")
+        self.assertEqual(gh.calls_matching("project", "item-edit"), [])
+        self.assertEqual(gh.calls_matching("issue", "comment"), [])
+
     def test_recovery_never_replays_the_pull_request_creation(self):
         # Creation is not idempotent; replaying the routine would open a
         # second Pull Request for one Card.
@@ -326,21 +363,30 @@ class PullRequestReadTests(unittest.TestCase):
         self.board = Board(a_config(), gh=self.gh)
 
     def test_pull_request_normalises_head_files_and_checks(self):
-        pr = self.board.pull_request(21)
+        pr = self.board.pull_request(21, "Delivery awaiting verdict")
         self.assertEqual(pr["head_sha"], "a" * 40)
         self.assertEqual(pr["changed_files"], ("src/parser.py", "tests/test_parser.py"))
         self.assertEqual(pr["checks"], {"build": "SUCCESS", "test": "SUCCESS"})
         self.assertTrue(pr["mergeable"])
         self.assertFalse(pr["draft"])
 
+    def test_the_pull_request_is_resolved_by_claim_branch_not_by_number(self):
+        # Issues and Pull Requests share one numbering sequence, so the PR
+        # number drifts from the Card number whenever anything else was
+        # created in between (live: card #14's delivery was PR #17). The
+        # claim branch is the only stable link.
+        self.board.pull_request(21, "Delivery awaiting verdict")
+        view = self.gh.calls_matching("pr", "view")[0]
+        self.assertEqual(view[2], "claim/21-delivery-awaiting-verdict")
+
     def test_raw_github_shapes_never_escape_the_board(self):
-        pr = self.board.pull_request(21)
+        pr = self.board.pull_request(21, "Delivery awaiting verdict")
         for leaked in ("headRefOid", "statusCheckRollup", "isDraft", "files"):
             self.assertNotIn(leaked, pr)
 
     def test_a_conflicting_pull_request_reads_as_not_mergeable(self):
         self.gh.pr_view = {**self.gh.pr_view, "mergeable": "CONFLICTING"}
-        self.assertFalse(self.board.pull_request(21)["mergeable"])
+        self.assertFalse(self.board.pull_request(21, "Delivery awaiting verdict")["mergeable"])
 
     def test_an_unnamed_check_is_dropped_rather_than_keyed_on_empty(self):
         self.gh.pr_view = {
@@ -348,7 +394,7 @@ class PullRequestReadTests(unittest.TestCase):
             "statusCheckRollup": [{"conclusion": "SUCCESS"}, {"name": "build",
                                                               "conclusion": "SUCCESS"}],
         }
-        self.assertEqual(self.board.pull_request(21)["checks"], {"build": "SUCCESS"})
+        self.assertEqual(self.board.pull_request(21, "Delivery awaiting verdict")["checks"], {"build": "SUCCESS"})
 
 
 class VerdictRecordingTests(unittest.TestCase):

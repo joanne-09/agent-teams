@@ -207,9 +207,10 @@ class FakeGit:
     failure on demand.
     """
 
-    def __init__(self, *, race_lost=False, worktree_error=None):
+    def __init__(self, *, race_lost=False, worktree_error=None, publish_error=None):
         self.race_lost = race_lost
         self.worktree_error = worktree_error
+        self.publish_error = publish_error
         self.calls: list[tuple] = []
 
     def claim(self, number, title, seat, session_id=None):
@@ -230,6 +231,12 @@ class FakeGit:
         return {
             "ok": True, "resumed": False, "worktree": str(path), "branch": branch,
         }
+
+    def publish_delivery(self, path, branch):
+        self.calls.append(("publish", str(path), branch))
+        if self.publish_error:
+            raise self.publish_error
+        return {"ok": True, "pushed": True, "head_sha": "d" * 40}
 
     def remove_worktree(self, path, force=False):
         self.calls.append(("remove", str(path)))

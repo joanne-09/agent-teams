@@ -116,9 +116,12 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" submit-pr N \
   --title "feat: ..." --body-file pr-body.md --acting-role dev
 ```
 
-This opens or updates **exactly one** Pull Request for the claim branch,
-transitions `In Progress -> In Review`, and hands off to `qa`. A resumed
-session updates the existing Pull Request rather than opening a second.
+This pushes the worktree's commits to the claim branch, opens or updates
+**exactly one** Pull Request for it, transitions `In Progress -> In Review`,
+and hands off to `qa`. A resumed session updates the existing Pull Request
+rather than opening a second. It refuses a dirty worktree (commit what
+belongs in the delivery first) and refuses an empty delivery (a Pull Request
+whose diff is empty means the implementation never reached the remote).
 
 Then **stop**. Do not merge. Do not pick up another Card.
 
