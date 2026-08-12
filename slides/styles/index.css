@@ -742,5 +742,30 @@ div.citations.cols2 ul { columns: 2; column-gap: 1.5rem; }
 .ladder > .rung > span { color: var(--fg-dim); font-size: 0.79rem; line-height: 1.4; }
 .ladder code { font-size: 0.72rem !important; text-align: right; }
 
+/* Demo step badge — top-right corner of each Part 2 slide: which run-table
+   step the page corresponds to, plus seat / skill / prompt origin. */
+.step-badge {
+  position: absolute;
+  top: 1.15rem;
+  right: 3.4rem;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-align: right;
+}
+.step-badge b { color: var(--accent); font-weight: 500; }
+
+/* Screenshot with a compact text panel beside it — used where the raw
+   terminal capture is too dense to read at slide scale, so the load-bearing
+   lines are lifted into crisp text and the capture stays as evidence. */
+.shot-split { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; margin-top: 0.2rem; }
+.shot-split img { max-height: 20.5rem; max-width: 100%; border: 1px solid var(--line); border-radius: 4px; }
+/* ul.qa-list, not .qa-list: `.dense ul` matches at higher specificity and
+   would otherwise override the compact size back up to body scale. */
+ul.qa-list { margin: 0 !important; padding-left: 1rem; font-size: 0.82rem !important; line-height: 1.5 !important; }
+ul.qa-list li { margin-bottom: 0.3rem !important; }
+ul.qa-list b { color: var(--accent); font-weight: 500; }
+
 .slidev-v-click-target { transition: opacity 0.3s ease; }
 :root { --slidev-theme-primary: var(--accent); }
