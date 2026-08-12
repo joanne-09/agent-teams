@@ -4,7 +4,7 @@
 
 **Stack**: Claude Code plugin / Python 3.12 standard library / GitHub CLI / GitHub Projects v2 / Git / Slidev
 
-**Last updated**: 2026-08-12 — session 8 lazy-loading handoff
+**Last updated**: 2026-08-13 — session 9 first live automation run (Lee's side)
 
 ---
 
@@ -120,7 +120,7 @@ bbf1335. Before this handoff update, the worktree was clean.
 | Lazy workflow loading | Done | Worker preloads no workflow bodies and invokes exactly one selected skill |
 | Focused clarification | Done | clarifying-card handles returned existing Cards; intake creates only new Cards |
 | Runtime source reuse decision | Done | Source procedures are adapted locally and attributed; no sibling plugin installation required |
-| Live Consumer and merge proof | Pending | Consumer and automated acceptance still have no end-to-end live GitHub proof |
+| Live Consumer and merge proof | **Done** (Lee's side, 08-12) | Full live run on the real board: eligible auto-merge, defect/exception lane, exact-head re-verification, automatic reconciliation — see session 9 |
 | Demo annotation package | Pending | Team-lead feedback requests annotated slides, node screenshots, and a Word record of intake questions |
 
 ---
@@ -175,8 +175,8 @@ auto-merge and protected QA work end to end.
 
 - **Lazy loading lacks a live child trace** (agents/agent-teams-worker.md) — tests prove the frontmatter and planner markers, but no headless Claude run has yet shown that one worker invokes exactly one skill and no unrelated body.
 - **Readiness can be displayed from a stale spec record** (scripts/agent_teams/workflows.py, next_actions) — finalization safely refuses a changed or missing exact commit, but the planner can still ask the human to move Status to Ready before detecting that staleness.
-- **Live GitHub JSON shapes are assumed** (tests/fake_gh.py) — Pull Request views, checks, changed files, mergeability, and auto-merge capability need field-for-field live verification.
-- **Consumer acceptance has no live proof** — auto-merge, delayed reconciliation, and the protected-change exception lane have only fake-GitHub coverage.
+- **Live GitHub JSON shapes: one corrected, rest behaved but unaudited** (tests/fake_gh.py) — the 08-12 live run surfaced and fixed the first real mismatch (`gh repo view` has no `autoMergeAllowed` JSON field on gh 2.97.0; `auto_merge_enabled()` now reads REST `allow_auto_merge`, fake updated — commit 6dd0289). PR view/checks/merge shapes worked live end to end but have not been compared field-for-field.
+- **Consumer acceptance live proof: eligible and defect routes proven live (08-12); `protected_change` route still fake-only** — no live delivery has yet touched a protected path.
 - **The demo package is behind the code** (slides/) — team-lead feedback asks for clear GitHub-versus-agent-teams annotations, generated-versus-handwritten Card labels, skill provenance per prompt, a dedicated merge-logic slide, screenshots of every end-to-end node, and a Word document containing the analyst questions.
 - **falsified_by remains attested evidence** (scripts/agent_teams/policy.py) — the schema requires a specific mutation and named failing test but cannot prove the mutation was executed.
 - **Handoff remains partially non-atomic** (scripts/agent_teams/board.py) — Role changes before the comment posts; PartialHandoff preserves fix-forward material.
@@ -189,7 +189,7 @@ auto-merge and protected QA work end to end.
 
 - **Live-rollout exit criteria** — decide the Pull Request sample, seeded-defect set, precision/recall target, false-negative budget, and rollback trigger before trusting automated acceptance outside shadow mode.
 - **Mutation-testing infrastructure** — decide whether to add a tool that can verify QA falsification claims instead of only validating their structure.
-- **Parent Card closure** — decide whether and when a decomposed parent becomes Done after all children ship; live Card #12 remains the concrete case.
+- **Parent Card closure** — decide whether and when a decomposed parent becomes Done after all children ship; live Card #18 is now the concrete case (#19/#20 Done, #21 held, parent still `(Backlog, architect)`).
 - **Demo scope and audience** — decide whether the next deck update targets the requested internal colleague-sharing package only or also prepares for the broader meeting.
 
 Settled this session: workflow skills remain locally adapted and attributed
@@ -219,8 +219,8 @@ deterministic validation and Role handoff.
 
 No local implementation blocker.
 
-- **Live Consumer proof** — waiting on an authenticated disposable repository with branch protection, at least one required check, repository auto-merge, and matching required_checks configuration.
-- **Lazy-loading runtime proof** — waiting on a safe headless Claude/plugin run that captures which Skill body the bounded worker loads.
+- ~~**Live Consumer proof**~~ — resolved 08-12: `agent-teams-test` now has branch protection (strict, required check `test` via `.github/workflows/ci.yml`), repository auto-merge, and `required_checks` in config; `doctor` reports empty `acceptance_problems`; the live run exercised the whole tail.
+- ~~**Lazy-loading runtime proof**~~ — resolved 08-12: each live worker's kickoff named exactly one `[skill:...]` and per-worker transcripts (session `subagents/` directory in Lee's `~/.claude-team` config) show one Skill invocation per worker.
 - **Demo assets and annotations** — waiting on execution of the requested slide, screenshot, and Word-document work; the feedback itself is already captured in this handoff.
 - **Push or further commits** — require explicit user instruction. Do not commit, push, create another branch, or create a worktree automatically.
 
@@ -228,13 +228,11 @@ No local implementation blocker.
 
 ## Current State
 
-The direct checkout is on mvp/producer-from-scratch at bbf1335, a merge commit
-above 6f6851a (lazy skill split) and cf4f681 (automation flow). Those commits
-were present before this handoff update; this assistant created no commit.
-
-Before editing HANDOFF.md, the worktree was clean. After this update,
-HANDOFF.md is the only expected uncommitted file. No branch, worktree, Pull
-Request, service, monitor, or subagent is currently running.
+The direct checkout is on mvp/producer-from-scratch at 6dd0289 (the live-shape
+auto-merge fix, Lee's side) on top of 61a9b35 (Joanne's 08-13 weekly deck +
+handoff) and bbf1335. Uncommitted: this HANDOFF update, the rewritten Part 2 of
+slides/2026-08-13-weekly.md, and slides/images/2026-08-13/ placeholders.
+Nothing pushed without the user's instruction.
 
 The shipped workflow has ten focused skills. The current session uses
 dispatching-work and next-actions; each bounded worker receives one routine and
@@ -243,17 +241,18 @@ mutates one Card stage, and stops. The mandatory human action is only changing
 a specified architect-finished Card Status to Ready. Human QA is conditional
 for protected or genuinely ambiguous changes.
 
-Focused validation is green. Full hermetic automation coverage was green before
-the lazy split, but the lazy worker still needs a real Claude trace and the
-Consumer/merge path still needs a live GitHub proof.
+Focused validation is green and the full suite passed 397/397 on this merged
+tree (Lee's side, 08-12). The lazy worker and the Consumer/merge path both now
+have live proof from the 08-12 run; the protected-change route remains the one
+acceptance lane without a live firing.
 
 ---
 
 ## Next Steps
 
-1. Run one safe headless Claude/plugin dispatch against a fixture Card and capture evidence that agent-teams-worker invokes only the action's qualified skill.
+1. ~~Lazy-loading runtime evidence~~ — done live 08-12 (see session 9); optionally archive the worker transcripts as durable evidence.
 2. Tighten Producer.next_actions so a Backlog human Card is shown as a readiness gate only when check_spec_gate confirms the recorded exact commit is still current; add the focused stale-record test.
-3. Verify real GitHub CLI Pull Request and check JSON against tests/fake_gh.py in a disposable repository, then exercise eligible, defect, and protected-change routes.
+3. ~~Live eligible and defect routes~~ — done 08-12. Remaining: exercise the `protected_change` route live (a delivery touching e.g. `scripts/agent_teams/policy.py` or `.github/`), and optionally compare PR JSON field-for-field against tests/fake_gh.py.
 4. Update the demo materials from the team-lead feedback: annotate GitHub versus agent-teams behavior, identify generated versus handwritten Cards, label prompt-to-skill provenance, isolate merge logic, capture each end-to-end node, and produce the requested Word question record.
 5. Review this HANDOFF.md diff and commit or push only when the user explicitly asks.
 
@@ -272,6 +271,18 @@ decision accepts sibling plugins as runtime dependencies.
 ## Session Log
 
 <!-- newest entry at top -->
+
+### 2026-08-12 → 08-13 — Session 9 (Lee's side — first live automation run)
+
+**The automation extension ran live, end to end, on the real board** (repo `Windmill10/agent-teams-test`, project 4). Human surface for the whole run: **two `promote` commands plus one exception sign-off** — the 08-07 "five human command points" finding is resolved in practice, not just in code.
+
+Setup first: retired the first oil-map run recoverably (removal commit `7b22d9b`; issues #12/#15/#16 closed and archived — closed-issue history stayed visible, see below), then configured acceptance: CI workflow with required check `test` (`c8d0f09`), branch protection (strict), repository auto-merge, `required_checks: ["test"]` in config. `doctor` then surfaced the branch's **first live-shape bug** — real gh 2.97.0 has no `autoMergeAllowed` JSON field on `repo view`; `auto_merge_enabled()` now reads REST `allow_auto_merge` and the fake matches the verified shape (`6dd0289`). `acceptance_problems` empty afterwards; 397/397 tests green.
+
+The run (one `cc_team` session, tmux "demo"): intake **found the retired run in git history** and asked rerun-vs-fresh before assuming; fresh clarification re-scoped the data source mid-loop (a parallel research pass re-confirmed no national machine-readable violation dataset exists; the seed became the ongoing 2026 中聯油脂 苯駢芘 case) → #18. The coordinator spawned the architect as an in-session worker: spec committed **directly to main** (`298f36a`, no PR), decompose → #19/#20/#21 with dependency order; the architect declined to assert a penalty amount it could not source (left `未公開`). Human `promote 19` (no `--spec` flag — the Card carries the spec record). Dev worker: claim → worktree → PR #22, **honestly flagging a CI risk in its retro**. The required check failed — a real bug in our own `ci.yml` (`node --test test/` treats the path as a module; bare `node --test` is correct). The coordinator root-caused it with a four-variant evidence table, predicted it would block #20/#21, and **stopped for human sign-off before touching shared CI config** — the exception lane's first live firing, on exactly the right class of change. One-line fix `c0daf1a`; dev resumed and updated the branch (strict re-test), QA **re-verified the exact new head** (stale-evidence rule exercised live), acceptance `eligible` → auto-merge `5722496` → #19 Done, reconciled automatically. `promote 20` then ran the whole loop hands-off to Done (PR #23). **#21 is deliberately held at the gate as the live-demo card.**
+
+Also proven live: lazy loading (each worker kickoff named exactly one `[skill:...]`; full per-worker transcripts under the session's `subagents/` directory), WIP-aware `next-actions`, resume-after-fix, `[expected:(Status, Role)]` stamps surviving into worker prompts. Weekly deck: Part 2 of `slides/2026-08-13-weekly.md` replaced with the new run (11 slides; `images/2026-08-13/` holds grey placeholders awaiting the user's screenshots — same filenames, drop-in); Part 1 untouched (Joanne's). Root-level `HANDOFF.md` updated separately.
+
+---
 
 ### 2026-08-12 — Session 8
 
