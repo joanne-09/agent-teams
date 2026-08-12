@@ -1,0 +1,4 @@
+interface:
+  display_name: "Clarify Returned Card"
+  short_description: "Resolve one returned Card without recreating it"
+  default_prompt: "Use $clarifying-card to resolve the named question on this existing Card and return it to architecture."

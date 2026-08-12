@@ -105,11 +105,17 @@ For each `kind: spawn`, it starts a foreground bounded
 `agent-teams:agent-teams-worker` subagent and supplies the returned one-Card
 prompt directly. You do not open another session or paste anything.
 
+The worker has the Skill tool but no `skills:` preload list. Every spawn
+action carries exactly one `skill: agent-teams:<routine>` value and matching
+prompt marker. The worker invokes that skill on demand; unrelated intake,
+architecture, development, triage, and QA bodies never enter that child
+context.
+
 The coordinator supports these stages:
 
 | Live state | Automatic action |
 |---|---|
-| `(Backlog, analyst)` | Spawn bounded requirement clarification |
+| `(Backlog, analyst)` | Load only `clarifying-card`; resolve the existing Card |
 | `(Backlog, architect)` | Spawn direct specification/shaping |
 | `(Ready, human)` | Validate the spec record and hand to dev automatically |
 | `(Ready, dev|architect)` | Spawn claim and delivery |

@@ -20,10 +20,13 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" next-actions
 2. Handle every returned `action`:
 
 - `kind: spawn`: invoke the foreground `agent-teams:agent-teams-worker`
-  subagent with the returned `prompt` verbatim. If that plugin agent is not
-  exposed by the carrier, invoke the carrier's general-purpose child agent with
-  the same prompt. This fallback still happens inside the current session; it
-  is never handed to the human.
+  subagent with the returned `prompt` verbatim. The action's `skill` field
+  is the one qualified workflow skill the worker must invoke on demand through
+  its Skill tool; no other workflow bodies are preloaded. If that plugin agent
+  is not exposed by the carrier, invoke the carrier's general-purpose child
+  agent with the same prompt and explicitly load only that `skill`. This
+  fallback still happens inside the current session; it is never handed to the
+  human.
 - `kind: controller` or `kind: reconcile`: invoke the plugin CLI with the
   returned `argv`, prefixed by
   `python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py"`. These are

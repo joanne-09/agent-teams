@@ -28,7 +28,7 @@ The earlier full implementation is a **separate sibling repository**, `../agent-
 
 - **This repository is the plugin.** Consuming repositories only hold `.agent-teams/config.json`.
 - **Claude-only surface.** `.claude-plugin/plugin.json` names `agent-teams` v0.2.0; local marketplace is `agent-teams-local`. No Codex manifest on this branch.
-- **Nine skills — seven Producer, two Consumer.** `using-agent-teams` runs the mandatory read-only bootstrap, then **infers the seat and routine from the user's plain-language intent** — a person never names a seat. Producer: `intaking-requirement` (analyst), `authoring-spec` (architect), `briefing-board` / `triaging-board` / `dispatching-work` (lead), `inspecting-queue` (qa). Consumer: `consuming-card` (dev and architect-documentation routines), `verifying-delivery` (qa).
+- **Ten focused skills — eight Producer, two Consumer.** `using-agent-teams` is the small entry router. Producer routines are `intaking-requirement` and focused `clarifying-card` (analyst), `authoring-spec` (architect), `briefing-board` / `triaging-board` / `dispatching-work` (lead), and `inspecting-queue` (qa). Consumer routines are `consuming-card` (dev and architect-documentation) and `verifying-delivery` (qa). The worker preloads none of them; each planned stage invokes exactly one on demand.
 - **One plugin worker agent plus deterministic planning.** `Producer.next_actions` emits typed `spawn`, `controller`, `monitor`, and `reconcile` actions. `dispatching-work` executes them in the user's current session; no person opens a second session or copies a kickoff prompt. Workers cannot spawn grandchildren.
 - **Product specs go directly to Git.** `publish-spec` stages only one `docs/*.md` path, commits and pushes it on the current branch, then records its exact last-changing commit on the Card. No spec PR, branch, worktree, or merge gate exists. Decomposed children inherit the structured spec record in their Issue bodies.
 - **A Consumer request must name a Card.** `[board-card:#N]`, "work on 12", "verify #21". Without one it is not a Consumer request — orient first. The router never picks a Card on the user's behalf.
@@ -171,7 +171,7 @@ Both surfaces implemented and hermetically tested. **Consumer code has never tou
 | `tests/test_consumer.py` | **New** | Consumer transactions against the fakes |
 | `tests/fake_gh.py` | Active / **assumption risk** | Fake `gh` and `FakeGit`. Every Pull Request JSON shape here is assumed, never verified |
 | `ATTRIBUTION.md` | **Active** | Provenance labels and the correction record |
-| `CLAUDE_TESTING.md` | Active | Updated for nine skills; the live Consumer procedure is written but unperformed |
+| `CLAUDE_TESTING.md` | Active | Updated for ten focused skills and lazy worker loading |
 
 ---
 
@@ -333,7 +333,7 @@ No additional plugin or skill runtime is required or desired. Compatible open `S
 Implemented the automation extension directly on
 `mvp/producer-from-scratch`, uncommitted: direct current-branch product specs,
 typed WIP-aware next actions, one bounded plugin worker, same-session
-coordination, returned-Card clarification, two human gates, monitored auto-merge,
+coordination, returned-Card clarification, one Ready gate plus conditional QA, monitored auto-merge,
 and automatic reconciliation. Audit-driven fixes made decomposed children
 promotable and retries idempotent, closed generic Done bypasses, and added
 GitHub exact-head merge protection. Focused 241-test and full 385-test suites

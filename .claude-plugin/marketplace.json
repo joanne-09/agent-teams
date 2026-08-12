@@ -8,7 +8,7 @@
     {
       "name": "agent-teams",
       "source": "./",
-      "description": "Automated GitHub-Project engineering workflow with bounded subagents and two human gates.",
+      "description": "Automated GitHub-Project workflow with lazy-loaded subagents, one Ready gate, and exceptional human QA.",
       "version": "0.2.0"
     }
   ]

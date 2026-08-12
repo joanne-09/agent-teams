@@ -107,13 +107,19 @@ Inside Claude:
 
 Search for `agent-teams`.
 
-You should find exactly these four MVP skills:
+You should find these ten focused skills:
 
 ```text
 /agent-teams:using-agent-teams
 /agent-teams:intaking-requirement
 /agent-teams:authoring-spec
 /agent-teams:dispatching-work
+/agent-teams:clarifying-card
+/agent-teams:briefing-board
+/agent-teams:triaging-board
+/agent-teams:inspecting-queue
+/agent-teams:consuming-card
+/agent-teams:verifying-delivery
 ```
 
 You can also type:
@@ -124,7 +130,7 @@ You can also type:
 
 and use Claude Code's completion menu.
 
-If these four commands appear, the plugin has loaded.
+If these ten skills appear, the plugin has loaded.
 
 ## 4. Test the router without tools or mutations
 
@@ -507,15 +513,19 @@ or remove and reinstall only
 
 - [ ] source directory is on `mvp/producer-from-scratch`;
 - [ ] `claude plugin validate .` passes;
-- [ ] `/help` shows exactly nine skills;
+- [ ] `/help` shows exactly ten skills;
 - [ ] analyst routes to `intaking-requirement`;
 - [ ] architect routes to `authoring-spec`;
+- [ ] a returned `(Backlog, analyst)` Card routes to `clarifying-card`;
 - [ ] Lead routes to `dispatching-work`;
 - [ ] "work on #N" routes to `consuming-card`;
 - [ ] "verify #N" routes to `verifying-delivery`;
 - [ ] a request naming no Card does NOT route to a Consumer skill;
 - [ ] no-tool prompts cause no mutations.
 
+
+- [ ] worker frontmatter has the `Skill` tool and no `skills:` preload list;
+- [ ] every spawn action names exactly one qualified `skill`;
 ### Consumer verification (hermetic)
 
 - [ ] `python -m unittest tests.test_git` passes -- two clones racing one Card

@@ -1,26 +1,25 @@
 ---
 name: agent-teams-worker
 description: Execute exactly one bounded agent-teams Card stage selected by the coordinating session. Use only when dispatched with a board Card, expected routing pair, and named routine.
-tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
+tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch, Skill
 maxTurns: 200
-skills:
-  - agent-teams:using-agent-teams
-  - agent-teams:intaking-requirement
-  - agent-teams:authoring-spec
-  - agent-teams:consuming-card
-  - agent-teams:triaging-board
-  - agent-teams:verifying-delivery
 ---
 
 # agent-teams bounded worker
 
-Execute the one Card stage in the dispatch prompt. Bootstrap first and compare
-the expected `(Status, Role)` pair with the live board before every mutation.
-Live GitHub state wins.
+The dispatch prompt contains one `[routine:<name>]` and one
+`[skill:agent-teams:<name>]` marker. Before doing task work, invoke exactly
+that qualified skill through the Skill tool. No workflow skill is preloaded:
+the selected routine loads on demand, and its deeper references load only when
+their stated condition applies. Do not load the entry router or unrelated
+workflow skills.
 
-Use the named routine. Mutate only the bound Card and its governed artifacts.
-Persist every outcome to GitHub and stop at the stage boundary. Do not choose a
-second Card, do not act as `human`, and do not spawn another agent.
+Execute the one Card stage in the dispatch prompt. Follow the selected skill's
+bootstrap, compare the expected `(Status, Role)` pair with the live board
+before every mutation, and let live GitHub state win. Mutate only the bound
+Card and its governed artifacts. Persist every outcome to GitHub and stop at
+the stage boundary. Do not choose a second Card, act as `human`, or spawn
+another agent.
 
 When the routine is `authoring-spec`, write the specification directly below
 `docs/` in the current checkout and run `publish-spec`. Create no branch,

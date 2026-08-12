@@ -142,7 +142,7 @@ def _build_parser() -> argparse.ArgumentParser:
     dispatch.add_argument("--format", choices=("text", "json"), default="text")
 
     next_actions = sub.add_parser(
-        "next-actions", help="plan runnable subagent stages and the two human gates"
+        "next-actions", help="plan runnable stages and allowed human boundaries"
     )
     next_actions.add_argument("issue", type=int, nargs="?")
 

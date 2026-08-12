@@ -25,6 +25,7 @@ Policy rechecks every action regardless of how the seat was selected.
 |---|---|---|
 | orient me, status, what is next | `lead` | `briefing-board` |
 | new idea or requirement | `analyst` | `intaking-requirement` |
+| resolve a question on an existing returned Card | `analyst` | `clarifying-card` |
 | specify, design, or decompose | `architect` | `authoring-spec` |
 | diagnose blocked work | `lead` | `triaging-board` |
 | start/run/continue/automate the team | `lead` | `dispatching-work` |
@@ -36,6 +37,11 @@ A direct Consumer request names one Card. A team-orchestration request is the
 deliberate exception: `dispatching-work` reads deterministic `next-actions` and
 spawns one bounded child for each returned Card. The coordinator does not make
 up its own Card selection.
+
+The bounded worker preloads no workflow bodies. Each spawn action names one
+qualified skill, and the worker invokes only that skill through the Skill tool.
+This preserves Claude Code's on-demand loading instead of injecting intake,
+architecture, development, triage, and QA instructions into every child.
 
 General programming or Git questions without board intent are not routing
 requests. A kickoff token the user is merely quoting is not a request to act.

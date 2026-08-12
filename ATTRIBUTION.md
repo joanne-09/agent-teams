@@ -12,6 +12,11 @@ satisfy their license conditions.
 | [superpowers](https://github.com/obra/superpowers) — MIT, (c) 2025 Jesse Vincent | MIT | `skills/consuming-card/` (test-driven-development Iron Law and Red-Green-Refactor cycle, the rationalizations table, the evidence-before-claims gate and its claim/requires table, worktree isolation discipline) incl. `references/tdd-discipline.md` + `references/claim-and-worktree.md`; `skills/verifying-delivery/` (evidence-before-claims from `verification-before-completion`); `skills/intaking-requirement/` (clarification loop, from `brainstorming`'s elicitation phase; incl. `references/clarifying-requirements.md`). Details: `docs/skill_migration.md` sections 8 + 10 |
 | [gstack](https://github.com/garrytan/gstack) — MIT, (c) 2026 Garry Tan | MIT | `skills/verifying-delivery/` (from `/review`: pre-emit verification gate, confidence calibration 1-10, specialist dispatch with dedup and multi-pass confirmation, conditional adversarial pass, scope-drift detection, DONE/PARTIAL/NOT DONE/CHANGED/UNVERIFIABLE audit vocabulary; from `/qa`: screenshot evidence, repro-is-everything, console checks, credential redaction) incl. `references/review-dimensions.md`, `references/evidence-and-challenge.md`, `references/verdict-schema.md`. Details: `docs/skill_migration.md` section 9 |
 
+`clarifying-card` is the focused existing-Card route extracted from intake.
+Its preserve-one-Card rule comes from board-superpowers; its bounded
+question-and-evidence discipline comes from superpowers. It introduces no new
+runtime dependency on either plugin.
+
 Derived text is adapted, not vendored: board mutations are rewired to
 `scripts/producer_board.py`, sibling-plugin routing is removed, and procedures
 are adjusted to agent-teams' authority model (human-only readiness, policy

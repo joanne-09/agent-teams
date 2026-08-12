@@ -12,7 +12,8 @@ Done. A person never has to copy a kickoff prompt into another session.
 
 ## Human attention
 
-There are only two human boundaries:
+There is one mandatory human boundary and one conditional exception
+boundary:
 
 1. **Readiness:** after reviewing the committed specification, move the Card
    Status from `Backlog` to `Ready`. The coordinator validates the exact
@@ -36,14 +37,11 @@ producer_board.py publish-spec 12 --path docs/specs/card-12-export.md
 
 The command creates no branch, worktree, or Pull Request. It refuses unrelated
 checkout changes, stages only the requested specification, and records its exact
-path and commit on the Card. The human later runs only:
-
-```text
-producer_board.py promote 12
-```
-
-`promote` retrieves and verifies the recorded Git artifact; the human does not
-merge or paste a specification reference.
+path and commit on the Card. After the architect hands the Card to the human,
+the human changes only the Project Status from `Backlog` to `Ready`. The
+coordinator retrieves and verifies the recorded Git artifact and hands the Card
+to dev; the human does not run a command, merge, or paste a specification
+reference.
 
 ## Skills and worker
 
@@ -51,6 +49,7 @@ merge or paste a specification reference.
 |---|---|
 | `using-agent-teams` | Bootstrap, orientation, and plain-language routing |
 | `intaking-requirement` | Clarify one requirement and hand it to architecture |
+| `clarifying-card` | Resolve one question on an existing returned Card |
 | `authoring-spec` | Write a direct Git spec and shape implementation Cards |
 | `briefing-board` | Whole-team state and human gates |
 | `triaging-board` | Diagnose blocked and stale work |
@@ -60,8 +59,29 @@ merge or paste a specification reference.
 | `verifying-delivery` | Independently review one exact PR head and accept it |
 
 `agents/agent-teams-worker.md` is the flat, bounded child used by the
-coordinator. It handles exactly one Card and one stage and cannot spawn a child
-of its own.
+coordinator. It preloads no workflow skill. Each `next-actions` spawn names
+one qualified skill, the worker invokes only that skill through Claude Code's
+Skill tool, and any deeper reference loads only when its condition applies.
+The worker handles exactly one Card and one stage and cannot spawn a child of
+its own.
+
+## Reuse plus agent-teams architecture
+
+This plugin does not replace good engineering disciplines with one monolithic
+"team skill." It keeps them as focused, attributed procedures and adds a small
+governance/orchestration layer:
+
+| Reused discipline | Source | agent-teams addition |
+|---|---|---|
+| Requirement shaping, board triage, vertical decomposition | board-superpowers | `(Status, Role)` routing and the Ready gate |
+| Clarification, TDD, worktree isolation, evidence before claims | superpowers | durable claim/resume and one-Card execution |
+| Review passes, challenge/falsification, browser evidence | gstack | structured exact-head verdict and deterministic acceptance |
+
+The source procedures are adapted locally and attributed in
+`ATTRIBUTION.md`, so the plugin remains usable without requiring three other
+plugins to be installed. The adaptation is deliberately narrow: board
+mutations go through `producer_board.py`, agent seats cannot cross the human
+gate, and QA evidence cannot choose its own merge route.
 
 ## Requirements
 

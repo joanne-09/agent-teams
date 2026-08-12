@@ -1241,7 +1241,7 @@ identifiers and no ad hoc GitHub commands.
 | Component | State | Where |
 |---|---|---|
 | Entry router and session binder | built | `skills/using-agent-teams/` |
-| Producer workflow skills (6) | built | `skills/{intaking-requirement,authoring-spec,briefing-board,triaging-board,dispatching-work,inspecting-queue}/` |
+| Producer workflow skills (7) | built | `skills/{intaking-requirement,clarifying-card,authoring-spec,briefing-board,triaging-board,dispatching-work,inspecting-queue}/` |
 | Domain model — validated Role, Status, Card, Handoff, Verdict | built | `scripts/agent_teams/model.py` |
 | Domain policy and authority | built | `scripts/agent_teams/policy.py` |
 | Configuration and validation | built | `scripts/agent_teams/config.py` |
@@ -1257,19 +1257,55 @@ identifiers and no ad hoc GitHub commands.
 | Audit and recovery log | **excluded** | Deliberately not built. The partial-failure envelope (§11.2) is not a substitute; revisit under plan M7 with evidence from a real run. |
 | Automatic Project field provisioning | **excluded** | `doctor` validates and explains; it never creates. |
 | Multiple board backends | **excluded** | §9.8. |
-| Sibling-plugin skill composition | **excluded** | See below. |
+| Runtime sibling-plugin dependency | **excluded** | Reused procedures are adapted locally; see below. |
 
-**agent-teams calls no other plugin.** Nothing in `skills/` or `scripts/`
-references `superpowers`, `gstack`, or any other plugin, and correctness never
-depends on one being installed. Test-driven development, planning, review,
-browser quality assurance, security review, and branch finishing remain the
-disciplines this design expects a Consumer to follow, and a skill may
-**reference** them by name — citing a sibling that implements one well, or
-telling the operator to run it. That is a documentation relationship, not a
-call. What the design does own is the *record* of discipline: which checks
-actually ran, in the Pull Request contract, and a refusal when a required
-discipline cannot be evidenced — refusing on the evidence, never on whether some
-other plugin is installed.
+**agent-teams has no runtime dependency on another plugin.** Attribution names
+board-superpowers, superpowers, and gstack, but no skill invokes sibling-plugin
+syntax and correctness never depends on one being installed. Test-driven
+development, review, browser quality assurance, and evidence discipline are
+adapted into focused local skills and conditional references. This is a
+packaging choice, not a claim that the procedures were reinvented. What this
+design owns is the *record* and authority around those disciplines: which
+checks actually ran, in the Pull Request contract, and a refusal when required
+evidence is absent—refusing on the evidence, never on whether another plugin
+is installed.
+
+#### 10.1.1 On-demand skill composition
+
+The worker is a carrier, not a bundle. Its frontmatter grants the `Skill` tool
+but preloads no skills. Deterministic planning selects one routine and emits its
+qualified skill name:
+
+```text
+using-agent-teams / dispatching-work       small entry and coordinator
+                  |
+                  v
+Producer.next_actions                     durable-state planner
+                  |
+                  v
+agent-teams-worker                        no workflow bodies preloaded
+                  |
+                  v
+exactly one molecular skill               intake | clarify | spec | dev | triage | QA
+                  |
+                  v
+conditional reference                     only when that stage needs it
+                  |
+                  v
+producer_board.py + policy.py             deterministic authority and mutation
+```
+
+This retains the useful separation found in the source projects: entry routing
+stays small, workflow skills load only for the selected job, and detailed
+discipline loads from references on demand. Agent-teams adds the architecture
+they do not provide: direct-to-Git specification records, the human Status-only
+Ready gate, `(Status, Role)` authority, durable claim/resume, partial-failure
+envelopes, exact-head acceptance, same-session subagent orchestration, and
+automatic reconciliation.
+
+The local adaptations remain runtime-independent because a consuming repository
+cannot assume board-superpowers, superpowers, and gstack are all installed.
+`ATTRIBUTION.md` identifies each reused rule and each agent-teams invention.
 
 ### 10.2 Entry router and session binder
 

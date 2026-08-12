@@ -527,7 +527,7 @@ class Producer:
                 continue
             if card.status is Status.BACKLOG and card.role is Role.ANALYST:
                 actions.append(_spawn_action(
-                    card, Role.ANALYST, "intaking-requirement",
+                    card, Role.ANALYST, "clarifying-card",
                     "This Card already exists. Resolve its remaining requirement "
                     "question through research, record the answer with clarify, "
                     "then hand the same Card to architect. Never run intake or "
@@ -955,9 +955,9 @@ class Producer:
         """Open the readiness gate on one shaped Card and send it to development.
 
         This is the human's routine. An agent seat shapes the Card and hands it
-        to `human`; approving it into Ready is the first of the two human gates
-        (ARCHITECTURE.md Appendix A.2 decision 6), so `promote_to_ready` refuses every
-        artificial intelligence seat before anything here runs.
+        to `human`; approving it into Ready is the mandatory lifecycle gate
+        (ARCHITECTURE.md Appendix A.2 decision 6), so `promote_to_ready` refuses
+        every artificial intelligence seat before anything here runs.
 
         Two independent semantic operations run in order: the Status
         transition, then the Role handoff. If the handoff fails, the Card is
@@ -2131,7 +2131,9 @@ def _spawn_action(
         f"[role:{seat.value}] [board-card:#{card.number}] "
         f"[expected:({card.status.value if card.status else '?'}, "
         f"{card.role.value if card.role else '?'})] "
-        f"[routine:{routine}] Work only on Card #{card.number}: {objective} "
+        f"[routine:{routine}] [skill:agent-teams:{routine}] "
+        f"Invoke `agent-teams:{routine}` through the Skill tool, then work "
+        f"only on Card #{card.number}: {objective} "
         f"Bootstrap first, reread live board state, mutate only this Card and "
         f"its governed artifacts, persist the result to GitHub, and stop at the "
         f"stage boundary. Never act as human and never select another Card."
@@ -2142,5 +2144,6 @@ def _spawn_action(
         "kind": "spawn",
         "role": seat.value,
         "routine": routine,
+        "skill": f"agent-teams:{routine}",
         "prompt": prompt,
     }

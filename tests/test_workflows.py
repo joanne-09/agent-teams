@@ -473,6 +473,8 @@ class NextActionsTests(unittest.TestCase):
         for entry in actions.values():
             self.assertEqual(entry["kind"], "spawn")
             self.assertIn(f"[board-card:#{entry['number']}]", entry["prompt"])
+            self.assertEqual(entry["skill"], f"agent-teams:{entry['routine']}")
+            self.assertIn(f"[skill:{entry['skill']}]", entry["prompt"])
 
     def test_reports_only_the_two_human_gates(self):
         acceptance = ACCEPTANCE_MARKER + "\n\n```json\n" + json.dumps({
@@ -608,6 +610,8 @@ class NextActionsTests(unittest.TestCase):
         )))
         action = team.next_actions()["actions"][0]
         self.assertIn("Never run intake", action["prompt"])
+        self.assertEqual(action["routine"], "clarifying-card")
+        self.assertEqual(action["skill"], "agent-teams:clarifying-card")
         result = team.clarify(7, "CSV means RFC 4180 with a UTF-8 header row.")
         self.assertTrue(result["ok"])
         self.assertEqual(result["role"], "architect")
@@ -657,6 +661,18 @@ class NextActionsTests(unittest.TestCase):
         self.assertEqual(action["role"], "lead")
         self.assertEqual(action["routine"], "triaging-board")
         self.assertIn("[expected:(Blocked, architect)]", action["prompt"])
+
+
+class WorkerSkillLoadingTests(unittest.TestCase):
+    def test_worker_loads_one_selected_skill_instead_of_preloading_all(self):
+        worker = (
+            Path(__file__).parents[1] / "agents" / "agent-teams-worker.md"
+        ).read_text(encoding="utf-8")
+        frontmatter = worker.split("---", 2)[1]
+        self.assertIn("Skill", frontmatter)
+        self.assertNotIn("\nskills:", frontmatter)
+        self.assertIn("invoke exactly", worker)
+        self.assertIn("[skill:agent-teams:<name>]", worker)
 
 
 class ReleaseClaimTests(unittest.TestCase):

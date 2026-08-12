@@ -1,6 +1,6 @@
 ---
 name: intaking-requirement
-description: Convert a new product or engineering requirement into a Backlog GitHub Issue and hand it from analyst to architect. Use for messages beginning with [role:analyst], "new requirement", "intake this", "I have an idea", "we need to build", "add a card", "found a bug", or casual phrasings of new work ("I've been thinking about X", "can we add Y"). Do NOT use for viewing board state (briefing-board), unblocking stuck work (triaging-board), or dispatching Ready work (dispatching-work).
+description: Convert a new product or engineering requirement into a Backlog GitHub Issue and hand it from analyst to architect. Use for messages beginning with [role:analyst], "new requirement", "intake this", "I have an idea", "we need to build", "add a card", "found a bug", or casual phrasings of new work ("I've been thinking about X", "can we add Y"). Do NOT use for an existing returned Card (clarifying-card), board state (briefing-board), blocked work (triaging-board), or dispatch (dispatching-work).
 ---
 
 <!-- Portions of the shape-judgment, spec-awareness, and decline sections are
@@ -17,21 +17,6 @@ Create one durable, reviewable Card. The System Analyst owns problem clarity,
 not technical design — resist solving it. Intake is a gateway, not a design
 session: its job is to judge the shape of the work and capture it faithfully,
 then hand it to the seat whose job the next decision is.
-
-## Existing returned Card
-
-If the kickoff binds `[board-card:#N]` at expected `(Backlog, analyst)`, this is
-clarification of an existing Card, not intake. Research or resolve the named
-question, write the answer to a UTF-8 file, and run:
-
-```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" clarify N \
-  --note-file "<temporary-file>"
-```
-
-Require `"ok": true` and stop after the same Card is handed to `architect`.
-Never run `intake`, never create a replacement Issue, and never discard the
-existing Card's history.
 
 ## Workflow
 
@@ -151,11 +136,3 @@ twice.
 The common case: the Issue exists but is not on the Project. The result keeps
 the Issue number and URL, and the recovery lines give the one command that
 finishes the job.
-
-## What a returned Card means
-
-The architect may hand a Card back with `Role=analyst` and a specific
-question. That is the design working, not a rejection. Resume from the same
-Issue — add the clarification as a comment and hand it forward again. Do not
-open a replacement Card; the history on the original is what makes the second
-attempt cheaper than the first.
