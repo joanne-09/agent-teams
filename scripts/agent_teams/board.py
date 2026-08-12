@@ -624,9 +624,11 @@ class Board:
         }
 
     def auto_merge_enabled(self) -> bool:
+        # ``gh repo view --json autoMergeAllowed`` is not a supported JSON
+        # field on real gh (observed on 2.97.0); the REST repository object
+        # exposes the same setting as ``allow_auto_merge``.
         raw = self.gh.run(
-            ["repo", "view", self.config.repo, "--json", "autoMergeAllowed",
-             "--jq", ".autoMergeAllowed"]
+            ["api", f"repos/{self.config.repo}", "--jq", ".allow_auto_merge"]
         )
         return str(raw).strip().casefold() == "true"
 
