@@ -62,16 +62,16 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaises(ConfigError) as caught:
             Config.from_dict(
                 {"repo": "bad", "project_owner": "", "project_number": 0,
-                 "dispatch_roles": ["wizard"], "spec_completion": "whenever"}
+                 "dispatch_roles": ["wizard"]}
             )
         message = str(caught.exception)
         for expected in ("OWNER/REPO", "project_owner", "project_number",
-                         "wizard", "spec_completion"):
+                         "wizard"):
             self.assertIn(expected, message)
 
-    def test_spec_completion_defaults_to_merged(self):
-        self.assertTrue(config().requires_merged_spec)
-        self.assertFalse(config(spec_completion="opened").requires_merged_spec)
+    def test_legacy_spec_completion_is_accepted_but_not_serialised(self):
+        current = config(spec_completion="opened")
+        self.assertNotIn("spec_completion", current.to_dict())
 
 
 class ConsumerConfigTests(unittest.TestCase):
@@ -279,6 +279,12 @@ class TransitionTests(unittest.TestCase):
         with self.assertRaises(policy.ActionForbidden):
             self.board.transition_card(20, Status.READY, Role.ANALYST)
 
+    def test_generic_transition_cannot_reach_done_without_merge_evidence(self):
+        self.gh.items = board_with((21, "Delivery", "In Review", "lead"))
+        with self.assertRaisesRegex(producer_board.BoardError, "reconcile-done"):
+            self.board.transition_card(21, Status.DONE, Role.LEAD)
+        self.assertEqual(self.gh.calls_matching("project", "item-edit"), [])
+
 
 class DoctorTests(unittest.TestCase):
     def test_doctor_validates_all_six_statuses_and_six_roles(self):
@@ -355,8 +361,44 @@ class CliTests(unittest.TestCase):
                  "--project-owner", "acme", "--project-number", "3"]
             )
         self.assertEqual(code, 0)
-        self.assertTrue(json.loads(out.getvalue())["ok"])
+        payload = json.loads(out.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertNotIn("spec_completion", payload)
         self.assertEqual(Config.load(target).project_number, 3)
+
+    def test_init_accepts_required_checks_for_automatic_merge(self):
+        args = producer_board._build_parser().parse_args([
+            "init", "--repo", REPO, "--project-owner", "acme",
+            "--project-number", "3", "--required-check", "build",
+            "--required-check", "test",
+        ])
+        self.assertEqual(args.required_check, ["build", "test"])
+
+    def test_resume_and_readiness_finalizer_are_controller_commands(self):
+        parser = producer_board._build_parser()
+        self.assertEqual(
+            parser.parse_args(["finalize-readiness", "20"]).issue, 20
+        )
+        self.assertEqual(
+            parser.parse_args(["resume", "20", "--acting-role", "dev"]).issue, 20
+        )
+
+    def test_next_actions_may_plan_one_card(self):
+        args = producer_board._build_parser().parse_args(["next-actions", "20"])
+        self.assertEqual(args.command, "next-actions")
+        self.assertEqual(args.issue, 20)
+
+    def test_promote_uses_the_recorded_spec_without_a_path_argument(self):
+        args = producer_board._build_parser().parse_args(["promote", "20"])
+        self.assertEqual(args.command, "promote")
+        self.assertIsNone(args.spec)
+
+    def test_publish_spec_requires_only_card_and_path(self):
+        args = producer_board._build_parser().parse_args(
+            ["publish-spec", "20", "--path", "docs/specs/card-20.md"]
+        )
+        self.assertEqual(args.issue, 20)
+        self.assertEqual(args.path, "docs/specs/card-20.md")
 
     def test_dispatch_filters_and_orders(self):
         code, out, _ = self._run("dispatch", "--format", "json")
@@ -499,6 +541,22 @@ class ConsumerCommandTests(CliTests):
         self.assertEqual(args.issue, 21)
         # No flag exists through which a caller could steer the route.
         for forbidden in ("merge", "acceptance", "force", "route"):
+            self.assertFalse(hasattr(args, forbidden), forbidden)
+
+    def test_approve_exception_takes_no_chosen_pull_request(self):
+        args = producer_board._build_parser().parse_args(
+            ["approve-exception", "21"]
+        )
+        self.assertEqual(args.issue, 21)
+        for forbidden in ("pull_request", "pr", "merge", "force"):
+            self.assertFalse(hasattr(args, forbidden), forbidden)
+
+    def test_refresh_verification_has_no_acting_role_or_route_flags(self):
+        args = producer_board._build_parser().parse_args(
+            ["refresh-verification", "21"]
+        )
+        self.assertEqual(args.issue, 21)
+        for forbidden in ("acting_role", "role", "head_sha", "pull_request"):
             self.assertFalse(hasattr(args, forbidden), forbidden)
 
     def test_there_is_no_command_that_merges_a_chosen_pull_request(self):

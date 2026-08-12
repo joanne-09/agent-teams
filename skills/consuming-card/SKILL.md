@@ -17,8 +17,9 @@ description: Claim one GitHub Project Card, implement it in an isolated worktree
 One Card. One claim. One worktree. One Pull Request. Then stop.
 
 This skill carries the Developer routine (`(Ready, dev)` implementation Cards)
-and the Architect documentation routine (`(Ready, architect)` specification
-Cards). They are the same lifecycle: only the content of the delivery differs.
+and ordinary Architect documentation deliveries at `(Ready, architect)`. Product
+specifications are different: `authoring-spec` writes them directly to the
+current branch before the human readiness gate, with no specification PR.
 
 ## Workflow
 
@@ -42,6 +43,16 @@ Read the Card, its comments, its dependencies, and the specification it points
 at before claiming. An unmet dependency is a reason to stop and hand back to
 the architect, not a detail to work around.
 
+If the expected pair is already `(In Progress, dev)` or
+`(In Progress, architect)`, materialise the durable Card claim first:
+
+```bash
+python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" resume N --acting-role <role>
+```
+
+Continue in the returned worktree and skip the Claim step. An interrupted
+session never requires a human to release or re-dispatch the Card.
+
 ### 2. Claim
 
 ```bash
@@ -53,9 +64,9 @@ This pushes the remote claim branch, opens the worktree, and moves the Card to
 
 **A lost race is a clean stop, not an error to retry.** The envelope carries
 `"race_lost": true` and exits 1. Another session owns the Card. Pick up
-different work; do not retry, do not force, do not delete the other claim. If
-the holder looks abandoned, that is a triage observation for the human to act
-on with `release-claim`.
+different work; do not retry, force, or delete the other claim. The coordinator
+re-reads durable state and resumes an In Progress Card in a later bounded
+session; no human transports the claim.
 
 **Work in the worktree the claim opened.** Its path is in the result. Do not
 return to the repository root to make changes — that is the isolation the whole
@@ -161,8 +172,8 @@ correction is continuation, not a new delivery.
 - **Read widely, mutate narrowly.** Read any Card or file you need to reason
   correctly; mutate only this Card and its claim, worktree, branch, Pull
   Request, and comments.
-- **Never delete an unresolved worktree.** Cleanup happens after a confirmed
-  merge, through `reconcile-done`.
+- **Never delete an unresolved worktree.** Cleanup happens automatically after
+  a confirmed merge; `reconcile-done` remains the idempotent recovery command.
 
 ## Partial failures
 

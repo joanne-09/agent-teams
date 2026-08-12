@@ -15,6 +15,12 @@ This routine finds stuck and abandoned work, names who owes a decision, and
 routes it. It answers two questions: **what is blocked and why**, and **what
 has been claimed and abandoned**.
 
+When dispatched with `[board-card:#N]`, use bounded mode: inspect and mutate
+only Card N, resolve its blocker through repository evidence and bounded
+research, return it to its legal prior working state, then stop. Do not scan or
+route another Card. If an external fact is unavailable, record exactly what
+condition must change and leave the Card Blocked.
+
 ## Workflow
 
 1. Bootstrap as `lead`.
@@ -42,8 +48,8 @@ gh issue view <number> --repo <configured-repo> --comments
 |---|---|
 | A technical question or a specification gap | `architect` |
 | The requirement itself is unclear or untestable | `analyst`, via `architect` |
-| A business or authority decision | `human` |
-| Waiting on something outside the repo (vendor, another team, an upstream PR) | stays Blocked with `lead`; surface to `human` if it needs escalation, re-check next triage |
+| A business or authority question | `lead` researches repository decisions and standing context; if the fact does not exist, record the exact durable blocker |
+| Waiting on something outside the repo (vendor, another team, an upstream PR) | stays Blocked with `lead`; re-check automatically and record the external condition |
 | Priority, ownership, or a handoff-cap breach | stays with `lead` |
 | The blocking question is itself a new requirement | run intake for it as a new Card, note the dependency; the blocked Card waits on it |
 | The blocker is already resolved | unblock and return it to its prior Status |
@@ -63,17 +69,11 @@ git log origin/<branch> --not main --oneline | wc -l          # progress
    - **older than 72 hours, no progress** — flag it in the summary; the
      claimant may need a nudge. Note the flag on the Card so the next triage
      can see the owner was warned.
-   - **older than 7 days, no progress, previously flagged** — recommend
-     release. The release itself is the human's:
-
-```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" release-claim <number> \
-  --branch <claim-branch> --note "<evidence: age, commit count, prior warning>"
-```
-
-   `release_claim` refuses every agent seat — deleting the claimant's branch
-   and re-Readying the Card is the readiness decision again, so triage
-   assembles the evidence and the exact command, and hands both to `human`.
+   - **older than 7 days, no progress, previously flagged** — resume it in a
+     bounded Consumer session. Do not delete or re-Ready it. The durable branch
+     belongs to the Card, not to the expired session; the Consumer runs
+     `resume` and continues the same claim and worktree. If the remote branch
+     is absent, record that concrete repository inconsistency as the blocker.
 
 6. Announce each intended change, then route it:
 
@@ -118,19 +118,15 @@ claims."
   architect with the history, and say why.
 - Do not unblock a Card whose blocker you have not actually read. A Status
   flip that skips the reason recreates the block one session later.
-- Do not silently release another seat's work. A stale claim gets a flag, then
-  a warning, then a `release-claim` recommendation to the human — never a
-  quiet branch delete.
-- A slow claimant is not an absent one. The 7-day threshold plus the prior
-  warning exist so a release is a documented decision, not a reflex.
+- Never delete or re-Ready a claim merely because its original session ended.
+  Resume the Card-owned branch. A slow claimant and an interrupted session are
+  both handled by durable Git state, not a human recovery command.
 
 ## Boundaries
 
 - Triage does not implement, specify, or verify anything.
-- Triage does not merge, and does not promote work to Ready — readiness is the
-  human's gate, and both `promote_to_ready` and `release_claim` refuse `lead`
-  like every other agent seat. Route the evidence to `human`; do not open the
-  gate.
+- Triage does not merge or promote work to Ready. It may resolve and route a
+  Blocked Card, but readiness and protected QA remain the only human gates.
 - Triage does not groom the Backlog, detect dependency cycles, or calibrate
   estimates. It is a health check, and staying narrow is what keeps it fast
   enough to run every session.

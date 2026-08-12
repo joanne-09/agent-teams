@@ -104,6 +104,12 @@ class ClaimRaceTests(_OriginFixture, unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["branch"], "claim/42-implement-parser")
 
+    def test_a_durable_claim_can_be_resolved_for_session_resume(self):
+        repository = self._clone("a")
+        result = repository.claim(42, "Implement parser", "dev", "session-a")
+        self.assertEqual(repository.remote_branch_sha(result["branch"]),
+                         result["claim_sha"])
+
     def test_second_claimant_from_the_same_base_loses(self):
         # The regression that motivates the unique claim commit. Both clones
         # sit on the identical base SHA; pushing that bare SHA would report
@@ -294,3 +300,75 @@ class PublishDeliveryTests(_OriginFixture, unittest.TestCase):
         result = git.publish_delivery(self.tmp / "elsewhere", self.BRANCH)
         self.assertTrue(result["ok"])
         self.assertFalse(result["pushed"])
+
+
+class PublishSpecificationTests(_OriginFixture, unittest.TestCase):
+    """Specifications land on the existing branch with no spec PR/branch."""
+
+    def test_publishes_only_the_spec_on_the_current_branch(self):
+        git = self._clone("spec")
+        path = git.root / "docs" / "specs" / "card-42.md"
+        path.parent.mkdir(parents=True)
+        path.write_text("# Card 42\n", encoding="utf-8")
+        before_refs = _git(
+            self.tmp, "--git-dir", str(self.origin), "for-each-ref",
+            "--format=%(refname)", "refs/heads",
+        ).splitlines()
+
+        result = git.publish_specification(
+            42, "Implement parser", "docs/specs/card-42.md"
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["branch"], "main")
+        after_refs = _git(
+            self.tmp, "--git-dir", str(self.origin), "for-each-ref",
+            "--format=%(refname)", "refs/heads",
+        ).splitlines()
+        self.assertEqual(after_refs, before_refs)
+        published = _git(
+            self.tmp, "--git-dir", str(self.origin), "show",
+            "main:docs/specs/card-42.md",
+        )
+        self.assertEqual(published, "# Card 42")
+
+    def test_unrelated_dirty_file_refuses_before_commit(self):
+        git = self._clone("dirty-spec")
+        spec = git.root / "docs" / "specs" / "card-42.md"
+        spec.parent.mkdir(parents=True)
+        spec.write_text("# Card 42\n", encoding="utf-8")
+        (git.root / "f.txt").write_text("unrelated\n", encoding="utf-8")
+        before = git.head_sha()
+        with self.assertRaisesRegex(GitError, "unrelated checkout changes"):
+            git.publish_specification(42, "Parser", "docs/specs/card-42.md")
+        self.assertEqual(git.head_sha(), before)
+
+    def test_path_outside_docs_is_refused(self):
+        git = self._clone("bad-spec")
+        with self.assertRaisesRegex(GitError, "below docs"):
+            git.publish_specification(42, "Parser", "src/spec.md")
+
+    def test_unchanged_republish_records_the_files_last_commit_not_head(self):
+        git = self._clone("republish-spec")
+        spec = git.root / "docs" / "specs" / "card-42.md"
+        spec.parent.mkdir(parents=True)
+        spec.write_text("# Card 42\n", encoding="utf-8")
+        first = git.publish_specification(42, "Parser", "docs/specs/card-42.md")
+
+        tracked = git.root / "f.txt"
+        tracked.write_text("later change\n", encoding="utf-8")
+        _git(git.root, "add", "f.txt")
+        _git(git.root, "commit", "-m", "later unrelated commit")
+
+        second = git.publish_specification(42, "Parser", "docs/specs/card-42.md")
+        self.assertFalse(second["committed"])
+        self.assertEqual(second["commit"], first["commit"])
+        self.assertNotEqual(second["commit"], git.head_sha())
+
+    def test_rename_into_spec_path_is_refused_as_unrelated_scope(self):
+        git = self._clone("renamed-spec")
+        target = git.root / "docs" / "specs" / "card-42.md"
+        target.parent.mkdir(parents=True)
+        _git(git.root, "mv", "f.txt", "docs/specs/card-42.md")
+        with self.assertRaisesRegex(GitError, "unrelated checkout changes"):
+            git.publish_specification(42, "Parser", "docs/specs/card-42.md")

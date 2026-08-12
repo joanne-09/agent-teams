@@ -1,6 +1,6 @@
 ---
 name: using-agent-teams
-description: Entry point for an agent-teams Producer session over a GitHub engineering board. Runs the mandatory read-only bootstrap, gives the user an orientation on the current project state and what to do next, and selects the right seat and routine from what the user asked for. Use at the start of any session involving the board, a new requirement, specifications, decomposition, board health, blocked work, dispatch, or the verification queue.
+description: Entry point for an automated agent-teams workflow over a GitHub Project. Runs read-only bootstrap, orients the user, routes plain-language intent, and starts the in-session subagent coordinator for "start/run/continue the team". Use for board work, requirements, specifications, readiness, blocked work, automated dispatch, delivery, and QA.
 ---
 
 <!-- The state-on-disk table, non-signals list, and router anti-pattern are
@@ -10,184 +10,84 @@ description: Entry point for an agent-teams Producer session over a GitHub engin
 
 # Using agent-teams
 
-Operate a Producer workflow over GitHub Issues in one GitHub Project. The
-Project is durable truth; this conversation is disposable. Assume the next
-session remembers nothing you were told.
+GitHub is durable truth; this conversation and every child context are
+disposable. Routing state lives in Project fields, requirements and handoffs in
+Issues, claims in Git branches, deliveries and QA evidence in Pull Requests,
+and policy in `.agent-teams/config.json`.
 
-Everything durable lives in five places — nothing of record lives in the
-conversation:
+## Plain-language routing
 
-| Where | What lives there |
-|---|---|
-| GitHub Project fields | routing state: the `(Status, Role)` pair per Card |
-| GitHub Issues | Card scope, acceptance criteria, the handoff-comment trail |
-| Git branches | claims and work in flight |
-| Pull Requests | deliveries, specification documents, the merge gate |
-| `.agent-teams/config.json` | board coordinates, caps, and gate policy |
+The user states intent. Never ask which seat they are. A leading `[role:<seat>]`
+token is a machine binding from `next-actions`, not the normal human interface.
+Policy rechecks every action regardless of how the seat was selected.
 
-## How a user talks to this plugin
+| Intent | Seat | Routine |
+|---|---|---|
+| orient me, status, what is next | `lead` | `briefing-board` |
+| new idea or requirement | `analyst` | `intaking-requirement` |
+| specify, design, or decompose | `architect` | `authoring-spec` |
+| diagnose blocked work | `lead` | `triaging-board` |
+| start/run/continue/automate the team | `lead` | `dispatching-work` |
+| inspect the QA queue without reviewing | `qa` | `inspecting-queue` |
+| directly implement one named Card | `dev` | `consuming-card` |
+| directly verify one named Card | `qa` | `verifying-delivery` |
 
-**The user speaks in plain language. You choose the seat.**
+A direct Consumer request names one Card. A team-orchestration request is the
+deliberate exception: `dispatching-work` reads deterministic `next-actions` and
+spawns one bounded child for each returned Card. The coordinator does not make
+up its own Card selection.
 
-A user says "what's the state of things?", "we need CSV export", "why is #14
-stuck?", "what should I work on next?". They do **not** name a seat, and you
-must never ask them to. Seat selection is your job, and it is a routing
-decision, not a grant of authority — `policy.py` re-checks every action against
-the seat regardless of how that seat was chosen.
+General programming or Git questions without board intent are not routing
+requests. A kickoff token the user is merely quoting is not a request to act.
 
-If the user *does* write a leading `[role:<seat>]` token, honour it. That form
-exists for dispatch kickoff prompts, which a carrier pastes verbatim into a
-fresh session. It is a machine channel that happens to be readable; it is not
-the interface a person is expected to use.
+## Bootstrap first
 
-## Bootstrap first, always
-
-Decide the seat, then run this before anything else — including before
-answering a question about the board:
+Choose the seat, then run this before any mutation:
 
 ```bash
 python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" bootstrap --role <seat>
 ```
 
-It is read-only and mutates nothing. It returns your seat, the standing
-repository context pointers, a live board projection, and the seat-specific
-view your routine consumes.
+Startup is read-only. Live board state overrides prompts and child reports. If
+an expected pair is stale, stop that Card stage rather than changing the board
+to match it.
 
-Three rules:
+When intent is absent or the user asks for status, bootstrap as `lead`, invoke
+`briefing-board`, and lead with:
 
-- **No mutation before bootstrap completes.** A session that cannot establish
-  where it is has no business changing anything.
-- **Live board state beats the prompt.** If a kickoff says a Card is
-  `(Ready, dev)` and the board says otherwise, the board is right and the
-  kickoff is stale. Say so and stop.
-- **Run it once.** If intent is obvious and you route straight to a downstream
-  skill, that skill still needs the bootstrap to have happened. Do not run it
-  twice.
+1. Cards at `(Backlog, human)` awaiting the Ready decision;
+2. Cards at `(In Review, human)` awaiting a protected/ambiguous QA decision;
+3. in-flight, blocked, Ready, and verification work;
+4. one recommended next action.
 
-Open the documents named in `standing_context` on demand. Do not paste them
-wholesale into the conversation; the bootstrap returns pointers precisely so
-context stays compact.
+## Never act as human
 
-## Orientation: the default, and always available on request
+You may bind any agent seat. You may never bind `human` or run a human command
+on the user's behalf. The only human gates are:
 
-Orientation is both the opening move and a first-class thing the user can ask
-for at any point in a session:
+- readiness: the person moves the specified Card Status to `Ready`; the
+  coordinator validates the recorded Git specification and hands it to dev;
+- final QA exception: `producer_board.py approve-exception N`; this validates
+  and merges only the exact reviewed protected head, then reconciles Done.
 
-- **They ask for it** — "brief me", "orientation", "where are we", "what should
-  I do next", "status". Answer it immediately, however deep into the session,
-  and however many times they ask. It is read-only, so it is always safe.
-- **They open with nothing specific** — a greeting, or a vague opener. Orient
-  them unprompted rather than asking what they want.
+Present the evidence and recommendation, then stop that Card. Other independent
+Cards may continue through the orchestrator.
 
-Either way: bootstrap as `lead`, run `agent-teams:briefing-board`, and give them a
-short readable summary:
+This boundary is instructional: the CLI receives a seat token and cannot know
+whether a person or model supplied it. Keep the rule rather than pretending the
+parser can enforce identity.
 
-- what is in flight and whose turn each Card is on;
-- what is blocked and who owes the decision;
-- **what is waiting on them** — Cards at `(Backlog, human)` needing readiness
-  approval, and at `(In Review, human)` needing a merge;
-- the single recommended next action, and why it is that one.
+## Workflow boundaries
 
-Lead with anything waiting on the user. Everything else can proceed without
-them; those two queues cannot.
-
-## Choosing the seat
-
-Match what the user wants to do, then bootstrap as that seat:
-
-| The user is asking to… | Seat | Skill |
-|---|---|---|
-| see the state of things, get oriented, decide what is next | `lead` | `agent-teams:briefing-board` |
-| bring in a new idea, need, or requirement | `analyst` | `agent-teams:intaking-requirement` |
-| work out *how* to build something; specify, or split it up | `architect` | `agent-teams:authoring-spec` |
-| understand or clear blocked work | `lead` | `agent-teams:triaging-board` |
-| find out what is ready and hand it out | `lead` | `agent-teams:dispatching-work` |
-| look at what is waiting to be verified | `qa` | `agent-teams:inspecting-queue` |
-
-Those six are Producer routines: they shape the board and never write
-implementation code. Two Consumer routines resolve one bound Card each:
-
-| The user is asking to… | Seat | Skill |
-|---|---|---|
-| build, implement, or document one specific Card | `dev` or `architect` | `agent-teams:consuming-card` |
-| verify one delivered Pull Request against its Card | `qa` | `agent-teams:verifying-delivery` |
-
-A Consumer request always names one Card — `[board-card:#N]`, "work on 12",
-"verify #21". **If no Card is named, it is not a Consumer request**; orient
-first and find out which work is meant. Never pick a Card on the user's behalf.
-
-When a request is genuinely ambiguous, **do not interrogate the user about
-seats.** Orient first — run the briefing, then say what you think they mean and
-what you propose to do, in their words. "It sounds like this is new work, so
-I'll shape it into a Card — is that right?" is a good question. "Which seat are
-you?" is not.
-
-Some signals are **not** routing requests, however board-shaped they look:
-
-- a general programming or git question with no board intent — answer it,
-  do not intake it;
-- a rendered kickoff prompt the user is merely showing or quoting — routing
-  fires when they ask you to act, not when the token appears;
-- a request to implement work in general, with no Card named — that is not yet
-  Consumer work; orient, or intake it, depending on whether the work exists.
-
-And one anti-pattern to watch in yourself: **routing that becomes work.** If
-you catch this skill writing procedure inline — shaping a Card body here,
-drafting a spec here — stop. This skill routes and orients; every procedure
-belongs to the skill that owns it.
-
-## Never act as the human
-
-**You may bind any agent seat. You may never bind `human`.**
-
-`human` is not a role you can adopt on the user's behalf. It holds the two
-gates the entire design rests on: approving `Backlog -> Ready`, and merging.
-When the next legal step is one of those, stop and hand it back:
-
-- say plainly that this one is theirs;
-- say what you would recommend and why;
-- give them the exact command to run, or the Pull Request to review.
-
-```text
-#12 is specified and I've handed it to you. The readiness call is yours:
-
-  producer_board.py promote 12 --spec <pr-url>
-
-I'd approve it — one shippable slice, acceptance criteria are testable.
-```
-
-Never run `promote`, and never pass `--acting-role human`, on your own
-initiative. Note honestly that this boundary is carried by these instructions
-and by the user running the gate commands — a session with shell access could
-technically pass the flag, so treat it as a rule you keep, not a wall that
-stops you.
-
-## What this plugin will not do
-
-- **It does not mix the two shapes in one session.** A Producer shapes the
-  board; a Consumer resolves exactly one Card. A session that has started one
-  does not switch to the other — it finishes and stops.
-- **It does not merge.** No agent seat can, and none may request a merge
-  either. An eligible delivery reaches the merge controller only through
-  deterministic acceptance policy; protected changes go to the human.
-- **It does not declare work Ready.** No agent seat can. That is the human's
-  gate.
-- **It does not let a reviewer choose its own outcome.** QA publishes evidence;
-  `accept` computes the route from that evidence and the live Pull Request.
-- **It does not call other plugins.** `superpowers` and `gstack` may be named
-  as recommended practice, but nothing here invokes them and nothing here
-  depends on them being installed.
-
-## Safety
-
-- Reads may proceed immediately.
-- Before any mutation, state the Issue, its current `(Status, Role)`, the
-  intended change, and the expected result.
-- Every command prints one JSON envelope. **Never report a mutation as
-  successful without `"ok": true` in that output.**
-- A result carrying `"partial": true` is not a failure to retry blindly. It
-  names what already landed and what to do next. Read `recovery` and follow
-  it — re-running the whole command duplicates the completed steps.
-- A refusal is information. `IllegalHandoff`, `IllegalTransition`,
-  `HandoffCapExceeded`, and `ActionForbidden` each mean the board is telling
-  you something true. Explain it; do not route around it.
+- Specifications are written below `docs/` and published directly on the
+  current branch with `publish-spec`. No spec branch, worktree, or PR exists.
+- `dispatching-work` spawns bounded subagents in the current session. Never ask
+  the human to open a terminal or paste a prompt.
+- One worker owns one Card and one stage. Workers cannot spawn grandchildren.
+- Dev never merges. QA publishes evidence and cannot choose its route.
+- `accept` deterministically selects eligible, defect, or protected change.
+- Eligible heads auto-merge and the coordinator reconciles them automatically.
+- Never report an external mutation as successful without `"ok": true`.
+- A partial result is fix-forward evidence. Run only its recovery steps; do not
+  replay already completed creation.
+- A refusal is durable information, not permission to route around policy.

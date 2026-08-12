@@ -1,6 +1,6 @@
 ---
 name: authoring-spec
-description: Shape an architect-owned GitHub Issue into a durable specification, then either send it to the human readiness gate or decompose it into flat implementation Cards. Use for [role:architect], "author the spec", "make this ready", "decompose this", "split into cards", "break this into milestones", architecture decisions, contracts, or implementation-facing plans.
+description: Turn one architect-owned Backlog Card into a specification committed directly to the current Git branch, then either hand the Card to the human readiness gate or decompose it into flat implementation Cards. Use for [role:architect], [routine:authoring-spec], "write the spec", "make this ready", "decompose this", "split into cards", architecture decisions, contracts, or implementation-facing plans. Never creates a specification branch or Pull Request.
 ---
 
 <!-- The decomposition gates (INVEST, vertical slicing, SPIDR, sizing) are
@@ -8,168 +8,89 @@ description: Shape an architect-owned GitHub Issue into a durable specification,
      (c) 2026 PanQiWei, github.com/PanQiWei/board-superpowers), adapted to
      the agent-teams flow. See ATTRIBUTION.md. -->
 
-# Shaping and specifying work
+# Specify work directly in Git
 
-The System Architect turns shaped demand into technically sound work and puts
-it in front of the human who decides it is ready. This covers three distinct
-jobs. Do exactly one per session.
+The architect removes implementation ambiguity, publishes the specification
+directly on the repository's current branch, and shapes the implementation
+Cards. There is no specification branch, Pull Request, or human merge step.
 
-| Job | Shape | Ends with |
-|---|---|---|
-| Author one specification document | Consumer | one docs Pull Request, then **stop** |
-| Send one shaped Card to the gate | Producer | `(Backlog, human)` |
-| Decompose a specification | Producer | several flat `(Backlog, human)` Cards |
+## 1. Bind and understand
 
-Authoring and decomposing in one session would blend a Consumer shape with a
-Producer shape. After a specification Pull Request exists, stop; a later
-session promotes or decomposes against it.
+Bootstrap as `architect`. Require the live pair `(Backlog, architect)`, then
+read the Card, comments, related requirements, current repository structure,
+and relevant architecture decisions.
 
-## Start here
+Research resolvable unknowns instead of asking the human to transport context.
+If a product answer genuinely cannot be inferred or researched, record the
+specific question and hand the Card to `analyst`; do not invent it.
 
-Bootstrap as `architect`. The `seat_view` names Cards awaiting shaping, Cards
-blocked on architecture, and specification Cards already Ready.
+## 2. Write the direct specification
 
-Read the Card and everything attached to it before deciding anything:
+Create or update one Markdown file below `docs/`, normally:
 
-```bash
-gh issue view <number> --repo <configured-repo> --comments
+```text
+docs/specs/YYYY-MM-DD-card-N-short-name.md
 ```
 
-Then judge the requirement. If the outcome is unclear or the acceptance
-criteria are not testable, **send it back** rather than guessing:
+It must state the problem, scope and non-goals, observable behavior, acceptance
+criteria, dependencies, design decisions with rationale, risks, and verification
+strategy. Keep it as small as possible while removing implementation ambiguity.
+
+Do this in the current checkout. **Do not create a branch, worktree, or Pull
+Request.** Then publish only that file:
 
 ```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" handoff <number> \
-  --from-role architect --to-role analyst \
-  --note "Acceptance criteria are not testable as written." \
-  --needs "<the specific question that would make this specifiable>"
+python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" publish-spec N \
+  --path docs/specs/YYYY-MM-DD-card-N-short-name.md
 ```
 
-Returning an under-specified Card is a legal, expected move. Specifying around
-a gap is how a wrong thing gets built efficiently.
+`publish-spec` verifies `(Backlog, architect)`, refuses paths outside
+`docs/**/*.md`, refuses unrelated checkout changes, commits only the requested
+file on the current branch, pushes that branch, and records the exact path and
+commit on the Card. Do not claim success without `"ok": true`.
 
-## Job 1 — author one specification (Consumer-shaped)
+## 3. Shape the implementation
 
-When the specification is itself a repository deliverable:
-
-1. Confirm the Card is owned by `architect`. Stop on a mismatch.
-2. Branch: `spec/issue-<number>-<slug>`.
-3. Write the smallest durable artifact that removes implementation
-   ambiguity — behaviour, boundaries, acceptance criteria, unresolved risks.
-4. Verify the diff is docs-only.
-5. Open one Pull Request referencing the Issue in the body as
-   `Spec for #<number>` — **never with a GitHub closing keyword**
-   (`Closes`/`Fixes`/`Resolves #<number>`). The Card outlives its
-   specification: a closing keyword makes the merge close the Card
-   mid-lifecycle, while it still has the gate and implementation ahead of it.
-   Closing keywords belong to implementation Pull Requests only.
-6. **Stop.** Do not promote and do not decompose in this session.
-
-## Job 2 — send one shaped Card to the readiness gate (Producer-shaped)
-
-For a genuine single-Card change, once the specification is durable, hand it to
-the human. **You may not make a Card `Ready`** — `promote_to_ready` refuses
-every agent seat, and so do `transition --to Ready` and `create-card --status
-Ready`, because authority is keyed to the destination.
+For a single independently shippable Card, hand it to the human readiness gate:
 
 ```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" handoff <number> \
+python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" handoff N \
   --from-role architect --to-role human \
-  --note "<why this is technically ready>" \
-  --needs "Approve into Ready, or send it back with what is missing." \
-  --artifacts "<spec pr-url|docs/path>"
+  --note "Specification is published directly in Git and the Card is ready for the readiness decision." \
+  --needs "Approve into Ready, or return it with the missing decision." \
+  --artifacts "docs/specs/...md @ <commit>"
 ```
 
-The human then runs `promote <number> --spec <ref>`, which transitions the Card
-to `Ready` and hands it to `dev` in one routine. Your job is to make that
-decision easy: state the scope, the acceptance criteria, and the risk, and put
-the specification link in `--artifacts`.
-
-If you try to promote anyway, the refusal tells you this and exits 1. Do not
-work around it — it is one of the two human gates the whole design rests on.
-
-## Job 3 — decompose (Producer-shaped)
-
-When the specification has several independently shippable slices, gate every
-candidate child before creating anything. The two gates are **refusal
-conditions** — a child that fails is reframed, resliced, or split, never waved
-through:
-
-- **INVEST** (Wake 2003): Independent (coupling declared as `depends-on`,
-  never silent) · Negotiable (post-conditions, not a procedural recipe) ·
-  Valuable (merging it alone changes observable state) · Estimable (no "TBD",
-  no "figure out"; unknowns become a spike) · Small (within the size ceiling) ·
-  Testable (no "works well", no bare "tests pass").
-- **Vertical slicing** (Cohn): no layer-only children, no trailing
-  "wire-it-up" card, no spike overload, no all-rules-upfront first card. A
-  title containing "frontend", "backend", "schema", or "wire up" fails on
-  sight. When a gate fires, reslice along a SPIDR axis (Spike / Paths /
-  Interfaces / Data / Rules).
-
-The full gate tables — per-letter refusal criteria, the reframe playbook, the
-SPIDR axes with their refuse-when conditions, the XS/S/M/L size bins and the
-~500-LOC verification ceiling, the shape catalog, and the pre-`decompose`
-checklist — are in `references/decomposition-gates.md`. Read it before
-writing the children file.
-
-If one candidate fails the same gate three times, it is structurally wrong —
-usually not a card at all. Stop and surface it rather than reframing a fourth
-time. A spec with no distinct capabilities is a single Card: do not force a
-split.
-
-Then write the children to a JSON file and create them in one pass:
-
-```json
-[
-  {"title": "Add sales_db connector", "body": "Goal: ...\n\nAcceptance:\n- [ ] ..."},
-  {"title": "Render revenue chart", "body": "Goal: ...\n\nAcceptance:\n- [ ] ..."}
-]
-```
+For multiple independently shippable slices, read
+`references/decomposition-gates.md`, then run:
 
 ```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" decompose <parent> \
-  --spec <pr-url|#number|docs/path> \
-  --children <file.json>
+python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" decompose N \
+  --children children.json
 ```
 
-Each child is created in `(Backlog, human)` — waiting at the readiness gate,
-not past it — carries the specification pointer and its provenance, and the
-parent gets a summary comment. The human approves each child individually with
-`promote`. If some children fail, the result lists which — re-run with only
-those, or the board carries duplicates.
+Every child must pass INVEST, be a vertical slice, fit the size ceiling, and
+remain independently testable. Reslice failures with SPIDR. Children land at
+`(Backlog, human)` with the recorded specification path and provenance. The
+human decides readiness for each Card; the architect never promotes them.
 
-Each child must stand on its own: an independently shippable outcome, testable
-acceptance criteria, no dependency on a sibling landing first. A slice that
-cannot ship alone is not a slice; keep decomposing, or leave it as one Card.
+## 4. Stop at the gate
 
-## The readiness gate
+The human does not merge specification work. Their only readiness operation is:
 
-Two things stand between shaped work and `Ready`, and you control neither:
+Move the Card's Project Status from `Backlog` to `Ready`.
 
-1. **The human decides.** `promote` is the human's routine. You propose;
-   they approve. Hand the Card to `human` with everything they need.
-2. **The specification must be durable.** This board runs
-   `spec_completion=merged` by default, so if the specification Pull Request is
-   still open, `promote` and `decompose` both refuse and name the reason.
-
-That refusal is the design working. Development building against a document
-review may still change is exactly what the gate prevents. Two legitimate
-responses: ask the human merge authority to review the specification, or — if
-this repository genuinely accepts an open specification — set
-`spec_completion` to `opened` in the config, deliberately and once.
-
-A durable path (`docs/architecture/...`) satisfies the gate without a Pull
-Request lookup, because a path on the branch you are reading is already
-durable.
+The coordinator then runs `finalize-readiness`: it retrieves the exact
+specification path and commit from the Card, verifies Git still contains that
+version, and hands the Ready Card to `dev`. If the specification changed after
+its Card record, publish it again before asking for readiness.
 
 ## Boundaries
 
-- **Do not write production code.** That is the Developer's seat, and the action policy refuses it.
-- **Do not mark work Ready without a specification reference.** There is
-  nothing to implement against.
-- **Do not merge**, including the specification Pull Request. No seat here can.
-- **Do not put closing keywords in a specification Pull Request.** The human
-  gate should only have to click merge — never to first edit the body to
-  keep the Card alive.
-- Do not invent parent/child Card semantics. The board is flat; provenance
-  lives in the child body and the parent's summary comment.
+- Do not create or merge a specification Pull Request.
+- Do not create a specification branch or worktree.
+- Do not modify production code.
+- Do not make a Card Ready or act as `human`.
+- Do not decompose vague or horizontally sliced work.
+- Persist the specification and routing result before stopping; conversation
+  text is not a handoff.

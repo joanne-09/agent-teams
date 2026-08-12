@@ -225,6 +225,14 @@ ACTION_POLICY: Mapping[str, Mapping[Role, object]] = {
         Role.LEAD: (_R, "requires a written justification"),
         Role.HUMAN: _A,
     },
+    "publish_specification": {
+        Role.ANALYST: _N,
+        Role.ARCHITECT: _A,
+        Role.DEV: _N,
+        Role.QA: _N,
+        Role.LEAD: _N,
+        Role.HUMAN: _A,
+    },
     # Readiness is a human lifecycle gate (ARCHITECTURE.md Appendix A.2 decision 6).
     # Every artificial intelligence seat is refused, including `lead`: a
     # review-class pass would have been decorative, because REVIEW is
@@ -245,9 +253,9 @@ ACTION_POLICY: Mapping[str, Mapping[Role, object]] = {
         Role.LEAD: _N,
         Role.HUMAN: _A,
     },
-    # Releasing an abandoned claim deletes the claimant's branch and puts the
-    # Card back through Ready, so it is the readiness decision again plus a
-    # destructive git operation. Triage detects and proposes; the human runs it.
+    # Retained only as an emergency destructive cleanup command. Routine stale
+    # sessions resume the remote claim branch automatically without reopening
+    # readiness or involving a human.
     "release_claim": {
         Role.ANALYST: _N,
         Role.ARCHITECT: _N,
@@ -334,9 +342,9 @@ ACTION_REFUSAL_REASONS: Mapping[str, str] = {
         "the specification and let them approve it into Ready"
     ),
     "release_claim": (
-        "releasing a claim deletes the claimant's branch and re-opens the "
-        "readiness decision. Flag the stale claim with the evidence and let "
-        "`human` run release-claim"
+        "deleting a claim branch is emergency destructive cleanup. Routine "
+        "interrupted work must resume the existing remote branch; if deletion "
+        "is truly required, report the evidence to `human`"
     ),
     "request_automated_merge": (
         "merging is not a seat action. Publish a complete verdict for the "
@@ -465,6 +473,14 @@ def classify_protected(
 #: by a policy it did not run.
 ACCEPTANCE_POLICY_VERSION = "1"
 
+# GitHub reports a check with no conclusion while it is queued or running.
+# Those states are neither proof of success nor a development defect: the
+# coordinator waits and re-reads them instead of bouncing the Card to dev.
+TRANSIENT_CHECK_STATES: frozenset[str] = frozenset({
+    "", "NONE", "NULL", "EXPECTED", "PENDING", "QUEUED", "IN_PROGRESS",
+    "REQUESTED", "WAITING",
+})
+
 
 def validate_verdict(
     verdict: Verdict, live_head_sha: str, live_changed_files: Iterable[str]
@@ -507,6 +523,38 @@ def validate_verdict(
         )
     problems.extend(_test_strength_problems(verdict.test_strength))
     return problems
+
+
+def acceptance_wait_reasons(
+    verdict: Verdict, pr_facts: Mapping[str, object], config
+) -> tuple[str, ...]:
+    """Transient conditions that should be monitored, never routed as defects."""
+    if verdict.verdict != "pass" or not config.required_checks:
+        return ()
+
+    checks = dict(pr_facts.get("checks", {}) or {})
+    terminal_failures = [
+        name for name in config.required_checks
+        if name in checks
+        and str(checks.get(name, "")).strip().upper() != "SUCCESS"
+        and str(checks.get(name, "")).strip().upper()
+        not in TRANSIENT_CHECK_STATES
+    ]
+    if terminal_failures:
+        return ()
+    pending = [
+        name for name in config.required_checks
+        if name not in checks
+        or str(checks.get(name, "")).strip().upper() in TRANSIENT_CHECK_STATES
+    ]
+    reasons: list[str] = []
+    if pending:
+        reasons.append("required checks still pending: " + ", ".join(pending))
+
+    mergeable_state = str(pr_facts.get("mergeable_state", "")).strip().upper()
+    if mergeable_state in {"", "UNKNOWN"}:
+        reasons.append("GitHub is still calculating mergeability")
+    return tuple(reasons)
 
 
 #: The minimum a falsification note must say to be checkable: what was broken

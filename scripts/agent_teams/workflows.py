@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from .errors import AgentTeamsError
 
+import json
 import re
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -23,7 +24,9 @@ from .config import Config
 from .git import ClaimRaceLost, Git, claim_branch, worktree_path
 from .github import GitHubError
 from .model import (
-    Acceptance, Card, Handoff, MutationLog, PR_MARKER, Role, Status, Verdict,
+    Acceptance, Card, CLARIFICATION_MARKER, DECOMPOSED_CHILD_MARKER,
+    DECOMPOSITION_MARKER, Handoff, MutationLog, PR_MARKER, Role,
+    SPECIFICATION_MARKER, Status, Verdict,
 )
 
 #: Files a fresh session reloads to rebuild standing repository context.
@@ -55,9 +58,10 @@ def _pr_number(reference: Any) -> int | None:
 class Producer:
     """Every board-shaping transaction a Producer session can run."""
 
-    def __init__(self, config: Config, board: Board):
+    def __init__(self, config: Config, board: Board, git: Any = None):
         self.config = config
         self.board = board
+        self.git = git if git is not None else Git(Path.cwd())
 
     # ------------------------------------------------------------ read-only
 
@@ -155,7 +159,7 @@ class Producer:
             # The human now owns two gates, so the orientation names both
             # queues separately -- "awaiting you" alone hid which decision
             # each Card actually needs.
-            "focus": "the two human gates: readiness, then merge",
+            "focus": "readiness and exceptional protected or ambiguous QA",
             "awaiting_readiness": pick(status=Status.BACKLOG, role=Role.HUMAN),
             "awaiting_merge": pick(status=Status.IN_REVIEW, role=Role.HUMAN),
             "awaiting_you": [
@@ -229,6 +233,10 @@ class Producer:
                 card.to_dict() for card in cards
                 if card.status is Status.IN_REVIEW and card.role is Role.HUMAN
             ],
+            "awaiting_readiness": [
+                card.to_dict() for card in cards
+                if card.status is Status.BACKLOG and card.role is Role.HUMAN
+            ],
             "verification_queue": [
                 card.to_dict() for card in cards
                 if card.status is Status.IN_REVIEW and card.role is Role.QA
@@ -245,6 +253,16 @@ class Producer:
         projection: dict[str, Any],
         data_quality: Sequence[dict[str, Any]],
     ) -> str:
+        readiness = [
+            card for card in cards
+            if card.status is Status.BACKLOG and card.role is Role.HUMAN
+        ]
+        if readiness:
+            oldest = min(readiness, key=lambda card: card.number)
+            return (
+                f"Readiness gate: #{oldest.number} is specified and waiting for "
+                f"your Ready decision."
+            )
         human = [
             card for card in cards
             if card.status is Status.IN_REVIEW and card.role is Role.HUMAN
@@ -369,6 +387,286 @@ class Producer:
             {**card.to_dict(), "prompt": _kickoff(card.role, card)}
             for card in selected
         ]
+
+    def next_actions(self, number: int | None = None) -> dict[str, Any]:
+        """Plan every runnable stage for a current-session subagent carrier.
+
+        This is read-only. It separates runnable work from the allowed gates so
+        a coordinator can keep independent Cards moving while never acting
+        as ``human``. Each spawn action binds exactly one Card and stage.
+        """
+        all_cards = self.board.cards()
+        cards = all_cards
+        if number is not None:
+            cards = [card for card in cards if card.number == number]
+            if not cards:
+                raise WorkflowError(f"Issue #{number} is not on the configured Project")
+
+        actions: list[dict[str, Any]] = []
+        human_gates: list[dict[str, Any]] = []
+        waiting: list[dict[str, Any]] = []
+
+        configured = self.config.dispatch_role_values
+        role_rank = {role: index for index, role in enumerate(configured)}
+        cards_by_number = {card.number: card for card in all_cards}
+        dependency_waits: dict[int, tuple[int, ...]] = {}
+        ready_candidates = [
+            card for card in cards
+            if card.status is Status.READY
+            and card.role in (Role.DEV, Role.ARCHITECT)
+            and card.role in role_rank
+        ]
+        for candidate in ready_candidates:
+            unmet = tuple(
+                dependency for dependency in self.board.hard_dependencies(
+                    candidate.number
+                )
+                if dependency not in cards_by_number
+                or cards_by_number[dependency].status is not Status.DONE
+            )
+            if unmet:
+                dependency_waits[candidate.number] = unmet
+        ready = sorted(
+            (card for card in ready_candidates if card.number not in dependency_waits),
+            key=lambda card: (role_rank[card.role], card.number),
+        )
+        if self.config.wip_limit == 0:
+            ready_selected = {card.number for card in ready}
+        else:
+            slots = max(0, self.config.wip_limit - policy.wip_count(all_cards))
+            ready_selected = {card.number for card in ready[:slots]}
+        architect_authoring_started = False
+
+        for card in sorted(cards, key=lambda item: item.number):
+            base = card.to_dict() | {"routing_state": card.routing_state}
+            if card.status is Status.BACKLOG and card.role is Role.HUMAN:
+                spec = self.board.latest_specification(card.number)
+                if spec:
+                    human_gates.append({
+                        **base, "gate": "readiness", "specification": spec,
+                        "instruction": "Move the Card Status to Ready.",
+                        "field": self.config.status_field,
+                        "value": self.config.status_name(Status.READY),
+                        "cli_convenience": f"promote {card.number}",
+                    })
+                else:
+                    waiting.append({
+                        **base, "reason": "Card is in the human lane without a "
+                        "structured direct-to-Git specification record; it is "
+                        "not ready for approval",
+                    })
+                continue
+            if card.status is Status.READY and card.role is Role.HUMAN:
+                spec = self.board.latest_specification(card.number)
+                gate = self.check_spec_gate(spec["path"]) if spec else None
+                if (spec and gate and gate["satisfied"]
+                        and gate.get("commit") == spec.get("commit")):
+                    actions.append({
+                        **base, "kind": "controller", "role": Role.LEAD.value,
+                        "routine": "finalize-readiness",
+                        "argv": ["finalize-readiness", str(card.number)],
+                        "reason": "the human opened the readiness gate by moving "
+                                  "the specified Card to Ready; ownership handoff "
+                                  "to dev is deterministic",
+                    })
+                else:
+                    waiting.append({
+                        **base, "reason": "Card was moved to Ready without a "
+                        "current direct-to-Git specification record",
+                    })
+                continue
+            if card.status is Status.IN_REVIEW and card.role is Role.HUMAN:
+                acceptance = self.board.latest_acceptance(card.number)
+                if acceptance and acceptance.acceptance == "protected_change":
+                    pr = self.board.pull_request(card.number, card.title)
+                    if acceptance.head_sha == pr["head_sha"]:
+                        human_gates.append({
+                            **base, "gate": "qa_exception",
+                            "acceptance": acceptance.to_dict(),
+                            "pull_request": pr["url"],
+                            "command": f"approve-exception {card.number}",
+                        })
+                    else:
+                        actions.append({
+                            **base, "kind": "controller", "role": Role.QA.value,
+                            "routine": "refresh-verification",
+                            "argv": ["refresh-verification", str(card.number)],
+                            "reason": "protected-change evidence is stale because "
+                            "the Pull Request head changed",
+                        })
+                else:
+                    waiting.append({
+                        **base, "reason": "Card is in the human QA lane without a "
+                        "protected-change acceptance record",
+                    })
+                continue
+            if card.status is Status.BACKLOG and card.role is Role.ARCHITECT:
+                if (self.board.latest_specification(card.number) and
+                        self.board.decomposition_complete(card.number)):
+                    waiting.append({
+                        **base,
+                        "reason": "specification is published and decomposition "
+                                  "is complete; implementation children carry "
+                                  "their own readiness gates",
+                    })
+                    continue
+                if architect_authoring_started:
+                    waiting.append({
+                        **base, "reason": "direct specification authoring is "
+                        "serialized because all spec workers share the current "
+                        "checkout",
+                    })
+                else:
+                    actions.append(_spawn_action(
+                        card, Role.ARCHITECT, "authoring-spec",
+                        "Write the specification directly under docs/, publish it "
+                        "with publish-spec, then decompose or hand the Card to the "
+                        "human readiness gate. Create no spec branch or Pull Request.",
+                    ))
+                    architect_authoring_started = True
+                continue
+            if card.status is Status.BACKLOG and card.role is Role.ANALYST:
+                actions.append(_spawn_action(
+                    card, Role.ANALYST, "intaking-requirement",
+                    "This Card already exists. Resolve its remaining requirement "
+                    "question through research, record the answer with clarify, "
+                    "then hand the same Card to architect. Never run intake or "
+                    "create a replacement Issue.",
+                ))
+                continue
+            if card.status is Status.BLOCKED:
+                actions.append(_spawn_action(
+                    card, Role.LEAD, "triaging-board",
+                    "Resolve this one blocker through repository evidence and "
+                    "bounded research. Route the same Card back to its legal "
+                    "working state when resolved. Do not ask the human to carry "
+                    "a prompt or run mechanical recovery; if an external fact is "
+                    "genuinely unavailable, record the durable blocker and stop.",
+                ))
+                continue
+            if card.status is Status.READY and card.role in (Role.DEV, Role.ARCHITECT):
+                if card.role not in role_rank:
+                    waiting.append({
+                        **base, "reason": f"role `{card.role}` is not in configured "
+                        "dispatch_roles",
+                    })
+                elif card.number in dependency_waits:
+                    waiting.append({
+                        **base, "reason": "hard dependencies are not Done: "
+                        + ", ".join(
+                            f"#{number}" for number in dependency_waits[card.number]
+                        ),
+                        "dependencies": list(dependency_waits[card.number]),
+                    })
+                elif card.number not in ready_selected:
+                    waiting.append({
+                        **base, "reason": "starting this Card would exceed the "
+                        f"work-in-progress limit of {self.config.wip_limit}",
+                    })
+                else:
+                    actions.append(_spawn_action(
+                        card, card.role, "consuming-card",
+                        "Claim and deliver this Card through exactly one Pull Request.",
+                    ))
+                continue
+            if card.status is Status.IN_PROGRESS and card.role in (Role.DEV, Role.ARCHITECT):
+                actions.append(_spawn_action(
+                    card, card.role, "consuming-card",
+                    "Resume the existing claim, worktree, branch, and Pull Request; "
+                    "do not claim again or create a second delivery.",
+                ))
+                continue
+            if card.status is Status.IN_REVIEW and card.role is Role.QA:
+                accepted = self.board.latest_acceptance(card.number)
+                if accepted:
+                    pr = self.board.pull_request(card.number, card.title)
+                    if accepted.head_sha != pr["head_sha"]:
+                        actions.append(_spawn_action(
+                            card, Role.QA, "verifying-delivery",
+                            "The Pull Request head changed after acceptance. Review "
+                            "the current head and publish fresh evidence before any "
+                            "merge or reconciliation.",
+                        ))
+                    elif accepted.acceptance != "eligible":
+                        actions.append({
+                            **base, "kind": "controller", "role": Role.QA.value,
+                            "routine": "accept", "argv": ["accept", str(card.number)],
+                            "reason": "acceptance was recorded but its deterministic "
+                            "route did not complete",
+                        })
+                    else:
+                        state = self.board.merge_state(pr["number"])
+                        if str(state.get("state", "")).upper() == "MERGED":
+                            actions.append({
+                                **base, "kind": "reconcile", "role": Role.LEAD.value,
+                                "routine": "reconcile-done",
+                                "argv": ["reconcile-done", str(card.number)],
+                            })
+                        elif pr["auto_merge_enabled"]:
+                            actions.append({
+                                **base, "kind": "monitor", "role": Role.LEAD.value,
+                                "routine": "observe-auto-merge",
+                                "poll_after_seconds": 30,
+                                "reason": "exact reviewed head is queued for "
+                                "GitHub auto-merge",
+                            })
+                        else:
+                            actions.append({
+                                **base, "kind": "controller", "role": Role.QA.value,
+                                "routine": "accept", "argv": ["accept", str(card.number)],
+                                "reason": "eligible acceptance exists but auto-merge "
+                                "is not armed; retry the deterministic route",
+                            })
+                else:
+                    verdict = self.board.latest_verdict(card.number)
+                    if verdict:
+                        pr = self.board.pull_request(card.number, card.title)
+                        problems = policy.validate_verdict(
+                            verdict, pr["head_sha"], pr["changed_files"]
+                        )
+                    else:
+                        pr, problems = None, ["no verdict"]
+                    if verdict and not problems:
+                        transient = policy.acceptance_wait_reasons(
+                            verdict, pr, self.config
+                        )
+                        if transient:
+                            actions.append({
+                                **base, "kind": "monitor",
+                                "role": Role.LEAD.value,
+                                "routine": "observe-pr-readiness",
+                                "poll_after_seconds": 30,
+                                "reason": "; ".join(transient),
+                            })
+                        else:
+                            actions.append({
+                                **base, "kind": "controller",
+                                "role": Role.QA.value, "routine": "accept",
+                                "argv": ["accept", str(card.number)],
+                                "reason": "current-head verdict is complete; run "
+                                          "the deterministic route",
+                            })
+                    else:
+                        actions.append(_spawn_action(
+                            card, Role.QA, "verifying-delivery",
+                            "Independently review the current Pull Request head, "
+                            "publish the structured verdict, and run deterministic "
+                            "acceptance.",
+                        ))
+                continue
+            if card.status not in (Status.DONE,):
+                waiting.append({**base, "reason": "no automatic stage is legal"})
+
+        actions.sort(key=lambda entry: (
+            role_rank.get(Role.parse(entry["role"]), len(role_rank)),
+            entry["number"], entry["routine"],
+        ))
+        return {
+            "ok": True,
+            "actions": actions,
+            "human_gates": human_gates,
+            "waiting": waiting,
+        }
 
     # ------------------------------------------------------------- mutating
 
@@ -518,6 +816,11 @@ class Producer:
         reach Ready by creating a Card there, and refused the `analyst -> dev`
         edge could still deposit one straight into the development lane.
         """
+        if status is Status.DONE:
+            raise WorkflowError(
+                "a Card cannot be created Done; completion requires an "
+                "exact-head acceptance and confirmed merge"
+            )
         policy.check_action("create_requirement_card", acting_role)
         policy.check_action(policy.action_for_transition(status), acting_role)
         # Creating a Card another seat owns *is* a handoff, decided before the
@@ -594,10 +897,58 @@ class Producer:
             "completed": log.completed,
         }
 
+    def clarify(
+        self, number: int, note: str, acting_role: Role = Role.ANALYST
+    ) -> dict[str, Any]:
+        """Resolve a returned requirement on its existing Card."""
+        policy.check_handoff(acting_role, Role.ARCHITECT)
+        card = self.board.card(number)
+        if card.status is not Status.BACKLOG or card.role is not acting_role:
+            raise WorkflowError(
+                f"#{number} is {card.routing_state}; clarification requires "
+                f"(Backlog, {acting_role})"
+            )
+        note = note.strip()
+        if not note:
+            raise WorkflowError("clarification note must not be empty")
+
+        log = MutationLog()
+        comment = CLARIFICATION_MARKER + "\n\n" + note
+        try:
+            self.board.comment_on_card(number, comment)
+        except AgentTeamsError as exc:
+            return log.partial_result(
+                "clarification_comment", str(exc), ["Nothing changed; retry clarify."]
+            )
+        log.record("clarification_comment", issue=number, comment=comment)
+        try:
+            handoff = self.board.handoff_card(
+                number, acting_role, Role.ARCHITECT,
+                "Requirement clarification recorded on the existing Card.",
+                needs="resume specification authoring from the new clarification",
+                artifacts=card.url,
+            )
+        except PartialHandoff as exc:
+            result = exc.to_result(self.config.repo)
+            result["completed"] = log.completed + result["completed"]
+            result["clarification_comment"] = comment
+            return result
+        except AgentTeamsError as exc:
+            return log.partial_result(
+                "handoff", str(exc),
+                [f"Clarification is recorded; hand #{number} from analyst to architect."],
+            )
+        return {
+            "ok": True, "issue": number, "status": Status.BACKLOG.value,
+            "role": Role.ARCHITECT.value,
+            "completed": log.completed + ["handoff"],
+            "comment": comment, "handoff": handoff["comment"],
+        }
+
     def promote(
         self,
         number: int,
-        spec_reference: str,
+        spec_reference: str = "",
         acting_role: Role = Role.HUMAN,
         reason: str = "",
     ) -> dict[str, Any]:
@@ -620,9 +971,25 @@ class Producer:
             )
         policy.check_transition(card.status, Status.READY)
 
-        gate = self.check_spec_gate(spec_reference)
+        recorded = self.board.latest_specification(number)
+        if recorded is None:
+            raise WorkflowError(
+                f"Issue #{number} has no published direct-to-Git specification. "
+                f"The architect must run publish-spec before the Ready decision."
+            )
+        reference = str(spec_reference or recorded["path"]).strip()
+        if reference != recorded["path"]:
+            raise WorkflowError(
+                f"the Card records specification `{recorded['path']}`, not `{reference}`"
+            )
+        gate = self.check_spec_gate(reference)
         if not gate["satisfied"]:
             raise WorkflowError(gate["explanation"])
+        if gate.get("commit") != recorded.get("commit"):
+            raise WorkflowError(
+                f"specification `{reference}` changed after it was recorded on the "
+                f"Card; the architect must run publish-spec again"
+            )
 
         log = MutationLog()
         try:
@@ -671,6 +1038,40 @@ class Producer:
             "comment": handoff["comment"],
         }
 
+    def finalize_readiness(self, number: int) -> dict[str, Any]:
+        """Complete the deterministic half of a human Status-to-Ready decision."""
+        card = self.board.card(number)
+        if card.status is not Status.READY or card.role is not Role.HUMAN:
+            raise WorkflowError(
+                f"#{number} is {card.routing_state}; readiness finalization "
+                "requires the human to have moved a specified Card to Ready"
+            )
+        recorded = self.board.latest_specification(number)
+        if recorded is None:
+            raise WorkflowError(
+                f"#{number} has no direct-to-Git specification record"
+            )
+        gate = self.check_spec_gate(recorded["path"])
+        if not gate["satisfied"] or gate.get("commit") != recorded.get("commit"):
+            raise WorkflowError(
+                "the recorded specification is not the current committed "
+                "specification; return the Card to Backlog for architect repair"
+            )
+        try:
+            handoff = self.board.handoff_card(
+                number, Role.HUMAN, Role.DEV,
+                "The human moved the specified Card to Ready.",
+                needs="implement against the recorded acceptance criteria",
+                artifacts=gate["reference"],
+            )
+        except PartialHandoff as exc:
+            return exc.to_result(self.config.repo)
+        return {
+            "ok": True, "issue": number, "status": Status.READY.value,
+            "role": Role.DEV.value, "spec": gate["reference"],
+            "comment": handoff["comment"],
+        }
+
     def check_spec_gate(self, spec_reference: str) -> dict[str, Any]:
         """Decide whether a specification is durable enough to build against.
 
@@ -692,66 +1093,61 @@ class Producer:
                 ),
             }
 
-        number = _pr_number(reference)
-        if number is None:
-            # A path or plain pointer: it is durable by construction, since it
-            # is already on the branch the caller is reading.
+        if _pr_number(reference) is not None:
             return {
-                "satisfied": True,
-                "state": "pointer",
+                "satisfied": False, "state": "PULL_REQUEST",
                 "reference": reference,
-                "explanation": "",
+                "explanation": "specification Pull Requests are no longer part of "
+                               "the workflow; publish a docs/*.md specification "
+                               "directly on the current branch",
             }
-
         try:
-            payload = self.board.gh.json(
-                ["pr", "view", str(number), "--repo", self.config.repo,
-                 "--json", "number,state,url,mergedAt"]
-            )
-        except GitHubError as exc:
+            artifact = self.git.specification(reference)
+        except AgentTeamsError as exc:
             return {
-                "satisfied": False,
-                "state": None,
-                "reference": reference,
-                "explanation": f"cannot read specification Pull Request #{number}: {exc}",
+                "satisfied": False, "state": None, "reference": reference,
+                "explanation": str(exc),
             }
-
-        state = str(payload.get("state") or "").upper()
-        url = str(payload.get("url") or reference)
-        merged = bool(payload.get("mergedAt")) or state == "MERGED"
-
-        if not self.config.requires_merged_spec:
-            if state == "CLOSED" and not merged:
-                return {
-                    "satisfied": False, "state": state, "reference": url,
-                    "explanation": (
-                        f"specification Pull Request #{number} was closed without "
-                        f"merging; there is no durable specification to build against"
-                    ),
-                }
-            return {"satisfied": True, "state": state, "reference": url, "explanation": ""}
-
-        if merged:
-            return {"satisfied": True, "state": "MERGED", "reference": url, "explanation": ""}
         return {
-            "satisfied": False,
-            "state": state,
-            "reference": url,
-            "explanation": (
-                f"specification Pull Request #{number} is {state or 'not merged'}. "
-                f"This board runs spec_completion=merged, so implementation "
-                f"becomes Ready only after the specification is durable on the "
-                f"target branch. Ask the human merge authority to review it, or "
-                f"set spec_completion=opened if this repository accepts an open "
-                f"specification."
-            ),
+            "satisfied": True, "state": artifact["state"],
+            "reference": artifact["path"], "commit": artifact["commit"],
+            "explanation": "",
         }
+
+    def publish_specification(
+        self, number: int, reference: str,
+        acting_role: Role = Role.ARCHITECT,
+    ) -> dict[str, Any]:
+        """Publish one specification directly on the current Git branch."""
+        policy.check_action("publish_specification", acting_role)
+        card = self.board.card(number)
+        if card.status is not Status.BACKLOG or card.role is not acting_role:
+            raise WorkflowError(
+                f"#{number} is {card.routing_state}; direct specification "
+                f"publication requires (Backlog, {acting_role})"
+            )
+        artifact = self.git.publish_specification(number, card.title, reference)
+        record = {
+            "card": number, "path": artifact["path"],
+            "commit": artifact["commit"], "branch": artifact["branch"],
+        }
+        try:
+            self.board.record_specification(number, record)
+        except AgentTeamsError as exc:
+            return {
+                "ok": False, "partial": True, "issue": number,
+                "completed": ["specification_committed", "specification_pushed"],
+                "failed": "card_record", "error": str(exc),
+                "specification": record,
+                "recovery": [f"producer_board.py publish-spec {number} --path {reference}"],
+            }
+        return {"ok": True, "issue": number, "specification": record}
 
     def decompose(
         self,
         parent: int,
         children: Sequence[dict[str, str]],
-        spec_reference: str,
+        spec_reference: str = "",
         acting_role: Role = Role.ARCHITECT,
     ) -> dict[str, Any]:
         """Create flat implementation Cards from a durable specification.
@@ -769,11 +1165,40 @@ class Producer:
         if not children:
             raise WorkflowError("decompose requires at least one child Card")
 
-        gate = self.check_spec_gate(spec_reference)
+        recorded = self.board.latest_specification(parent)
+        if recorded is None:
+            raise WorkflowError(
+                f"Issue #{parent} has no published direct-to-Git specification"
+            )
+        reference = str(spec_reference or recorded["path"]).strip()
+        if reference != recorded["path"]:
+            raise WorkflowError(
+                f"the Card records specification `{recorded['path']}`, not `{reference}`"
+            )
+        gate = self.check_spec_gate(reference)
         if not gate["satisfied"]:
             raise WorkflowError(gate["explanation"])
+        if gate.get("commit") != recorded.get("commit"):
+            raise WorkflowError(
+                f"specification `{reference}` changed after Card publication; "
+                f"run publish-spec again"
+            )
 
-        self.board.card(parent)  # refuse early if the parent is not on the board
+        board_cards = self.board.cards()
+        if not any(card.number == parent for card in board_cards):
+            raise WorkflowError(f"Issue #{parent} is not on the configured Project")
+
+        titles = [str(child.get("title", "")).strip() for child in children]
+        duplicates = sorted({
+            title for title in titles if title and titles.count(title) > 1
+        })
+        if duplicates:
+            raise WorkflowError(
+                "decomposition child titles must be unique: " + ", ".join(duplicates)
+            )
+        existing_by_title: dict[str, list[Card]] = {}
+        for existing in board_cards:
+            existing_by_title.setdefault(existing.title, []).append(existing)
 
         created: list[dict[str, Any]] = []
         failures: list[dict[str, Any]] = []
@@ -783,9 +1208,39 @@ class Producer:
             if not title or not body:
                 failures.append({"title": title, "error": "title and body are required"})
                 continue
+
+            reused = None
+            for candidate in existing_by_title.get(title, []):
+                inheritance = self.board.decomposed_child(candidate.number)
+                if (inheritance and inheritance.get("parent") == parent and
+                        inheritance.get("path") == recorded["path"] and
+                        inheritance.get("commit") == recorded["commit"]):
+                    reused = candidate
+                    break
+            if reused is not None:
+                created.append({
+                    "ok": True, "issue": reused.number, "url": reused.url,
+                    "status": reused.status.value if reused.status else None,
+                    "role": reused.role.value if reused.role else None,
+                    "reused": True,
+                })
+                continue
+
+            specification_record = {
+                "path": recorded["path"], "commit": recorded["commit"],
+                "branch": recorded.get("branch", ""), "inherited_from": parent,
+            }
+            child_record = {
+                "parent": parent, "path": recorded["path"],
+                "commit": recorded["commit"], "title": title,
+            }
             body = (
                 f"{body}\n\n---\nSpecification: {gate['reference']}\n"
-                f"Decomposed from #{parent}."
+                f"Decomposed from #{parent}.\n\n"
+                f"{SPECIFICATION_MARKER}\n\n```json\n"
+                f"{json.dumps(specification_record, indent=2)}\n```\n\n"
+                f"{DECOMPOSED_CHILD_MARKER}\n\n```json\n"
+                f"{json.dumps(child_record, indent=2)}\n```"
             )
             result = self.create_card(
                 title, body, Status.BACKLOG, Role.HUMAN, acting_role
@@ -805,12 +1260,22 @@ class Producer:
             summary_lines += ["", f"{len(failures)} Card(s) failed to create."]
 
         comment_posted = False
+        summary_error = ""
         if created:
             try:
-                self.board.comment_on_card(parent, "\n".join(summary_lines))
+                summary = "\n".join(summary_lines)
+                if not failures:
+                    summary = DECOMPOSITION_MARKER + "\n" + summary
+                self.board.comment_on_card(parent, summary)
                 comment_posted = True
-            except GitHubError:
+            except GitHubError as exc:
                 comment_posted = False
+                summary_error = str(exc)
+
+        if created and not failures and not comment_posted:
+            failures.append({
+                "stage": "summary_comment", "error": summary_error or "not posted"
+            })
 
         return {
             "ok": not failures,
@@ -822,9 +1287,9 @@ class Producer:
             "summary_comment_posted": comment_posted,
             "recovery": (
                 [
-                    f"{len(failures)} child Card(s) failed. The successful ones "
-                    f"already exist -- re-run decompose with only the failed "
-                    f"titles, or the board will carry duplicates.",
+                    f"{len(failures)} decomposition step(s) failed. Re-run the "
+                    f"same decompose command: children carry structured parent "
+                    f"identity, so successful Cards are reused rather than duplicated.",
                 ]
                 if failures
                 else []
@@ -838,13 +1303,13 @@ class Producer:
         acting_role: Role = Role.HUMAN,
         reason: str = "",
     ) -> dict[str, Any]:
-        """Release an abandoned claim: delete its branch, return the Card to Ready.
+        """Emergency cleanup: delete an abandoned claim and return it to Ready.
 
-        Triage detects a stale claim and proposes this; running it is the
-        human's, because the branch delete discards the claimant's lock and
-        putting the Card back through Ready is the readiness decision again.
-        The Card must actually be In Progress -- release-claim recovers
-        abandoned work; it is not a side door past `promote`.
+        Routine interrupted work uses ``resume`` to continue the existing
+        remote claim branch automatically. This human-only destructive fallback
+        exists for evidence-backed cases where preserving that branch is unsafe.
+        The Card must actually be In Progress, so this is not a side door past
+        the readiness gate.
 
         Mutation order: branch delete -> Status -> comment. The branch goes
         first because the failure modes are asymmetric: a Ready Card whose dead
@@ -1123,8 +1588,7 @@ class Consumer:
                 "next": [
                     "Do not retry. Another session owns this Card.",
                     "Run `dispatch` to pick up different Ready work.",
-                    "If the holder looks abandoned, triage can propose a "
-                    "release-claim for the human to run.",
+                    "The coordinator resumes it from durable state later.",
                 ],
             }
         log.record("claim", branch=claim["branch"], claim_sha=claim["claim_sha"])
@@ -1165,6 +1629,20 @@ class Consumer:
             "status": Status.IN_PROGRESS.value,
             "role": seat.value,
             **log.artifacts,
+        }
+
+    def resume(self, number: int, seat: Role) -> dict[str, Any]:
+        """Materialise an interrupted Card's durable claim in this session."""
+        policy.check_action("claim_card", seat)
+        card = self._bound_card(number, seat, Status.IN_PROGRESS)
+        branch = claim_branch(number, card.title)
+        sha = self.git.remote_branch_sha(branch)
+        target = self._worktree_for(card)
+        tree = self.git.add_worktree(target, branch, sha)
+        return {
+            "ok": True, "issue": number, "url": card.url,
+            "status": Status.IN_PROGRESS.value, "role": seat.value,
+            "branch": branch, "claim_sha": sha, **tree,
         }
 
     # ------------------------------------------------------------- submit
@@ -1321,6 +1799,21 @@ class Consumer:
                 "cannot accept on this evidence:\n  - " + "\n  - ".join(problems)
             )
 
+        transient = policy.acceptance_wait_reasons(verdict, pr, self.config)
+        if transient:
+            return {
+                "ok": True,
+                "issue": number,
+                "url": card.url,
+                "acceptance": "waiting",
+                "head_sha": pr["head_sha"],
+                "reasons": list(transient),
+                "pull_request": pr["url"],
+                "status": Status.IN_REVIEW.value,
+                "role": Role.QA.value,
+                "next": ["The coordinator will monitor GitHub and retry acceptance."],
+            }
+
         result = policy.evaluate_acceptance(verdict, pr, self.config)
         self.board.record_acceptance(number, result)
 
@@ -1358,8 +1851,8 @@ class Consumer:
                 "next": [
                     "GitHub merges this head once the required checks pass on "
                     "the current base, and disarms if a new commit lands.",
-                    f"When the merge confirms: producer_board.py "
-                    f"reconcile-done {number}",
+                    "The current-session coordinator observes this state through "
+                    "next-actions and reconciles it automatically after MERGED.",
                 ],
             }
 
@@ -1425,7 +1918,7 @@ class Consumer:
         """
         log = MutationLog()
         try:
-            self.board.transition_card(number, Status.DONE, acting_role)
+            self.board.reconcile_done_status(number, acting_role)
             log.record("transition")
             if card.role is not Role.LEAD:
                 self.board.handoff_card(
@@ -1441,8 +1934,7 @@ class Consumer:
                 "reconcile",
                 str(exc),
                 [
-                    f"producer_board.py transition {number} --to Done "
-                    f"--acting-role {acting_role}"
+                    f"producer_board.py reconcile-done {number}"
                 ],
             )
 
@@ -1485,7 +1977,17 @@ class Consumer:
                 f"a Card in In Review whose Pull Request has merged"
             )
 
+        acceptance = self.board.latest_acceptance(number)
+        if acceptance is None or acceptance.acceptance != "eligible":
+            raise WorkflowError(
+                f"#{number} has no eligible acceptance record to reconcile"
+            )
         pr = self.board.pull_request(number, card.title)
+        if acceptance.head_sha != pr["head_sha"]:
+            raise WorkflowError(
+                "the Pull Request head differs from the eligible acceptance; "
+                "publish a current-head QA verdict before reconciliation"
+            )
         state = self.board.merge_state(pr["number"])
         if str(state.get("state", "")).upper() != "MERGED":
             raise WorkflowError(
@@ -1498,6 +2000,59 @@ class Consumer:
         if not outcome.get("status"):  # partial-failure envelope
             return outcome
         return {"ok": True, "issue": number, "url": card.url, **outcome}
+
+    def approve_exception(
+        self, number: int, acting_role: Role = Role.HUMAN
+    ) -> dict[str, Any]:
+        """Human final gate: merge the exact reviewed head and reconcile Done."""
+        policy.check_action("merge_pull_request", acting_role)
+        card = self._bound_card(number, Role.HUMAN, Status.IN_REVIEW)
+        acceptance = self.board.latest_acceptance(number)
+        if acceptance is None or acceptance.acceptance != "protected_change":
+            raise WorkflowError(
+                f"#{number} has no protected-change acceptance record to approve"
+            )
+        pr = self.board.pull_request(number, card.title)
+        if acceptance.head_sha != pr["head_sha"]:
+            raise WorkflowError(
+                "the Pull Request head changed after the exception was recorded; "
+                "hand it back to QA for a current-head verdict"
+            )
+        self.board.merge_pull_request(
+            pr["number"], self.config.merge_method, acceptance.head_sha
+        )
+        state = self.board.merge_state(pr["number"])
+        if str(state.get("state", "")).upper() != "MERGED":
+            raise WorkflowError(
+                "GitHub accepted the merge command but has not confirmed MERGED; "
+                "the Card remains In Review and may be retried safely"
+            )
+        return {
+            "ok": True, "issue": number, "acceptance": "human_exception",
+            "pull_request": pr["url"],
+            **self._reconcile_to_done(number, card, pr, state, acting_role),
+        }
+
+    def refresh_verification(self, number: int) -> dict[str, Any]:
+        """Return a stale human exception to QA without a human command."""
+        card = self._bound_card(number, Role.HUMAN, Status.IN_REVIEW)
+        acceptance = self.board.latest_acceptance(number)
+        if acceptance is None or acceptance.acceptance != "protected_change":
+            raise WorkflowError(
+                f"#{number} has no protected-change acceptance to invalidate"
+            )
+        pr = self.board.pull_request(number, card.title)
+        if acceptance.head_sha == pr["head_sha"]:
+            raise WorkflowError(
+                "the protected-change evidence still matches the current head; "
+                "the Card remains a human QA exception"
+            )
+        try:
+            return self.board.return_stale_exception_to_qa(
+                number, acceptance.head_sha, pr["head_sha"], pr["url"]
+            )
+        except PartialHandoff as exc:
+            return exc.to_result(self.config.repo)
 
     # -------------------------------------------------------- observation
 
@@ -1566,3 +2121,26 @@ def _kickoff(seat: Role | None, card: Card) -> str:
         f"the Card still matches the expected pair, and do not change another "
         f"Card."
     )
+
+
+def _spawn_action(
+    card: Card, seat: Role, routine: str, objective: str
+) -> dict[str, Any]:
+    """One bounded child-agent request; GitHub state remains authoritative."""
+    prompt = (
+        f"[role:{seat.value}] [board-card:#{card.number}] "
+        f"[expected:({card.status.value if card.status else '?'}, "
+        f"{card.role.value if card.role else '?'})] "
+        f"[routine:{routine}] Work only on Card #{card.number}: {objective} "
+        f"Bootstrap first, reread live board state, mutate only this Card and "
+        f"its governed artifacts, persist the result to GitHub, and stop at the "
+        f"stage boundary. Never act as human and never select another Card."
+    )
+    return {
+        **card.to_dict(),
+        "routing_state": card.routing_state,
+        "kind": "spawn",
+        "role": seat.value,
+        "routine": routine,
+        "prompt": prompt,
+    }

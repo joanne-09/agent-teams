@@ -1,5 +1,6 @@
 """Producer routine behaviour: the four flows from ARCHITECTURE.md section 6."""
 
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -10,68 +11,52 @@ sys.path.insert(0, str(Path(__file__).parent))
 from agent_teams import policy  # noqa: E402
 from agent_teams.board import Board  # noqa: E402
 from agent_teams.config import Config  # noqa: E402
-from agent_teams.model import Role, Status  # noqa: E402
+from agent_teams.model import (  # noqa: E402
+    ACCEPTANCE_MARKER, DECOMPOSED_CHILD_MARKER, DECOMPOSITION_MARKER, Role,
+    SPECIFICATION_MARKER, Status,
+)
 from agent_teams.workflows import Producer, WorkflowError  # noqa: E402
-from fake_gh import REPO, FakeGh, board_with  # noqa: E402
+from fake_gh import REPO, FakeGh, FakeGit, board_with  # noqa: E402
 
-SPEC_PR = "https://github.com/acme/widgets/pull/57"
+SPEC_PATH = "docs/specs/card-20.md"
+SPEC_COMMIT = "e" * 40
+SPEC_COMMENT = (
+    SPECIFICATION_MARKER + "\n\n```json\n" +
+    json.dumps({"card": 20, "path": SPEC_PATH, "commit": SPEC_COMMIT,
+                "branch": "main"}) + "\n```"
+)
 
 
-def producer(gh=None, **config_overrides):
+def producer(gh=None, git=None, **config_overrides):
     gh = gh or FakeGh()
     base = {"repo": REPO, "project_owner": "acme", "project_number": 1}
     base.update(config_overrides)
     config = Config.from_dict(base)
-    return Producer(config, Board(config, gh)), gh
+    return Producer(config, Board(config, gh), git=git or FakeGit()), gh
 
 
 class SpecGateTests(unittest.TestCase):
-    """The settled M2 decision: Ready requires a durable specification."""
+    """Ready requires a direct, tracked Git specification."""
 
-    def test_merged_pull_request_satisfies_the_merged_policy(self):
+    def test_tracked_git_specification_satisfies_the_gate(self):
         team, _ = producer()
-        gate = team.check_spec_gate(SPEC_PR)
+        gate = team.check_spec_gate(SPEC_PATH)
         self.assertTrue(gate["satisfied"])
-        self.assertEqual(gate["state"], "MERGED")
+        self.assertEqual(gate["state"], "TRACKED")
+        self.assertEqual(gate["commit"], SPEC_COMMIT)
 
-    def test_open_pull_request_is_refused_under_the_merged_policy(self):
-        gh = FakeGh(pr_state={"state": "OPEN", "mergedAt": None})
-        team, _ = producer(gh)
-        gate = team.check_spec_gate(SPEC_PR)
+    def test_pull_request_reference_is_refused(self):
+        team, gh = producer()
+        gate = team.check_spec_gate("https://github.com/acme/widgets/pull/57")
         self.assertFalse(gate["satisfied"])
-        # The refusal must name the escape hatch, not just say no.
-        self.assertIn("spec_completion=merged", gate["explanation"])
-        self.assertIn("spec_completion=opened", gate["explanation"])
-
-    def test_open_pull_request_satisfies_the_opened_policy(self):
-        gh = FakeGh(pr_state={"state": "OPEN", "mergedAt": None})
-        team, _ = producer(gh, spec_completion="opened")
-        self.assertTrue(team.check_spec_gate(SPEC_PR)["satisfied"])
-
-    def test_closed_unmerged_is_refused_under_both_policies(self):
-        gh = FakeGh(pr_state={"state": "CLOSED", "mergedAt": None})
-        for completion in ("merged", "opened"):
-            team, _ = producer(FakeGh(pr_state=gh.pr_state), spec_completion=completion)
-            gate = team.check_spec_gate(SPEC_PR)
-            self.assertFalse(gate["satisfied"], completion)
-
-    def test_a_durable_path_needs_no_pull_request_lookup(self):
-        team, gh = producer()
-        gate = team.check_spec_gate("docs/architecture/0007-parser.md")
-        self.assertTrue(gate["satisfied"])
-        self.assertEqual(gate["state"], "pointer")
+        self.assertIn("no longer part of the workflow", gate["explanation"])
         self.assertEqual(gh.calls_matching("pr", "view"), [])
-
-    def test_a_bare_number_is_read_as_a_pull_request(self):
-        team, gh = producer()
-        self.assertTrue(team.check_spec_gate("#57")["satisfied"])
-        self.assertEqual(len(gh.calls_matching("pr", "view")), 1)
 
     def test_no_reference_refuses(self):
         team, _ = producer()
         gate = team.check_spec_gate("")
         self.assertFalse(gate["satisfied"])
-        self.assertIn("--spec", gate["explanation"])
+        self.assertIn("specification reference", gate["explanation"])
 
 
 #: A Card the architect has already shaped and handed to the human for the
@@ -85,8 +70,8 @@ class PromoteTests(unittest.TestCase):
     # gate (ARCHITECTURE.md Appendix A.2 decision 6), so these act as `human` on a Card
     # the architect handed over.
     def test_the_human_promotes_and_hands_to_development(self):
-        team, gh = producer(FakeGh(items=AT_THE_GATE))
-        result = team.promote(20, SPEC_PR)
+        team, gh = producer(FakeGh(items=AT_THE_GATE, comments=[SPEC_COMMENT]))
+        result = team.promote(20)
         self.assertTrue(result["ok"])
         self.assertEqual(result["status"], "Ready")
         self.assertEqual(result["role"], "dev")
@@ -96,12 +81,53 @@ class PromoteTests(unittest.TestCase):
         self.assertIn("STATUS_READY", edits[0])
         self.assertIn("ROLE_DEV", edits[1])
 
-    def test_refuses_when_the_specification_is_not_durable(self):
-        gh = FakeGh(items=AT_THE_GATE, pr_state={"state": "OPEN", "mergedAt": None})
-        team, _ = producer(gh)
-        with self.assertRaises(WorkflowError):
-            team.promote(20, SPEC_PR)
+    def test_status_only_readiness_is_finalized_without_another_human_command(self):
+        items = board_with((20, "Shaped requirement", "Ready", "human"))
+        team, gh = producer(FakeGh(items=items, comments=[SPEC_COMMENT]))
+        result = team.finalize_readiness(20)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["role"], "dev")
+        edits = gh.calls_matching("project", "item-edit")
+        self.assertEqual(len(edits), 1)
+        self.assertIn("ROLE_DEV", edits[0])
+
+    def test_refuses_when_the_recorded_specification_changed(self):
+        gh = FakeGh(items=AT_THE_GATE, comments=[SPEC_COMMENT])
+        changed = FakeGit(specification={
+            "ok": True, "path": SPEC_PATH, "commit": "f" * 40,
+            "head_sha": "f" * 40, "branch": "main", "state": "TRACKED",
+        })
+        team, _ = producer(gh, git=changed)
+        with self.assertRaisesRegex(WorkflowError, "changed after"):
+            team.promote(20)
         self.assertEqual(gh.calls_matching("project", "item-edit"), [])
+
+
+class PublishSpecificationTests(unittest.TestCase):
+    def test_architect_publishes_on_current_branch_and_records_the_card(self):
+        items = board_with((20, "Shaped requirement", "Backlog", "architect"))
+        git = FakeGit()
+        team, gh = producer(FakeGh(items=items), git=git)
+        result = team.publish_specification(20, SPEC_PATH)
+        self.assertTrue(result["ok"])
+        self.assertIn(("publish_specification", 20, SPEC_PATH), git.calls)
+        self.assertEqual(gh.calls_matching("pr", "create"), [])
+        self.assertTrue(any(
+            SPECIFICATION_MARKER in call[-1]
+            for call in gh.calls_matching("issue", "comment")
+        ))
+
+    def test_non_architect_is_refused_before_git_or_github(self):
+        items = board_with((20, "Shaped requirement", "Backlog", "architect"))
+        git = FakeGit()
+        team, gh = producer(FakeGh(items=items), git=git)
+        with self.assertRaises(policy.ActionForbidden):
+            team.publish_specification(20, SPEC_PATH, Role.DEV)
+        self.assertEqual(git.calls, [])
+        self.assertEqual(gh.calls, [])
+
+
+class PromoteAuthorityTests(unittest.TestCase):
 
     def test_no_agent_seat_can_promote_even_its_own_work(self):
         for seat in (Role.ANALYST, Role.ARCHITECT, Role.DEV, Role.QA, Role.LEAD):
@@ -109,18 +135,18 @@ class PromoteTests(unittest.TestCase):
                 gh = FakeGh(items=AT_THE_GATE)
                 team, _ = producer(gh)
                 with self.assertRaises(policy.ActionForbidden):
-                    team.promote(20, SPEC_PR, seat)
+                    team.promote(20, "", seat)
                 self.assertEqual(gh.calls_matching("project", "item-edit"), [])
 
     def test_refuses_a_card_owned_by_another_seat(self):
         team, _ = producer()
         with self.assertRaisesRegex(WorkflowError, "owned by"):
-            team.promote(21, SPEC_PR)  # #21 is (In Review, qa)
+            team.promote(21)  # #21 is (In Review, qa)
 
     def test_refuses_a_card_whose_status_cannot_reach_ready(self):
         team, _ = producer(FakeGh(items=board_with((8, "Already Ready", "Ready", "human"))))
         with self.assertRaises(policy.IllegalTransition):
-            team.promote(8, SPEC_PR)
+            team.promote(8)
 
     def test_the_architect_cannot_reach_ready_by_any_other_door(self):
         # The destination rule (16.1 decision 5) means closing `promote` closes
@@ -156,7 +182,7 @@ class CreateCardTests(unittest.TestCase):
     def test_no_seat_reaches_done_by_creating_a_card(self):
         # Done means a human accepted a delivery. Nothing may start there.
         team, gh = producer()
-        with self.assertRaisesRegex(policy.ActionForbidden, "reconcile done"):
+        with self.assertRaisesRegex(WorkflowError, "cannot be created Done"):
             team.create_card("t", "b", Status.DONE, Role.HUMAN, Role.ANALYST)
         self.assertEqual(gh.calls_matching("issue", "create"), [])
 
@@ -191,14 +217,14 @@ class CreateCardTests(unittest.TestCase):
 
 class DecomposeTests(unittest.TestCase):
     def test_creates_flat_ready_cards_and_summarises_on_the_parent(self):
-        team, gh = producer()
+        team, gh = producer(FakeGh(comments=[SPEC_COMMENT]))
         result = team.decompose(
             20,
             [
                 {"title": "Parser core", "body": "Acceptance: parses JSON."},
                 {"title": "Parser errors", "body": "Acceptance: reports position."},
             ],
-            SPEC_PR,
+            SPEC_PATH,
         )
         self.assertTrue(result["ok"])
         self.assertEqual(len(result["created"]), 2)
@@ -214,23 +240,57 @@ class DecomposeTests(unittest.TestCase):
         bodies = [call[-1] for call in gh.calls_matching("issue", "create")]
         for body in bodies:
             self.assertIn("Decomposed from #20", body)
+            self.assertIn(SPECIFICATION_MARKER, body)
+            self.assertIn(DECOMPOSED_CHILD_MARKER, body)
+
+    def test_a_decomposed_child_can_pass_readiness_from_its_inherited_spec(self):
+        gh = FakeGh(comments=[SPEC_COMMENT])
+        team, _ = producer(gh)
+        result = team.decompose(
+            20, [{"title": "Parser core", "body": "Acceptance: parses JSON."}]
+        )
+        self.assertTrue(result["ok"])
+        gh.comments.clear()  # prove the child body, not the parent's comment, is used
+        gh.items = board_with((42, "Parser core", "Backlog", "human"))
+        promoted = team.promote(42)
+        self.assertTrue(promoted["ok"])
+        self.assertEqual(promoted["status"], "Ready")
+
+    def test_retry_reuses_children_when_the_parent_summary_comment_failed(self):
+        gh = FakeGh(
+            comments=[SPEC_COMMENT],
+            fail_on={"issue comment": ("temporary failure", 1)},
+        )
+        team, _ = producer(gh)
+        children = [{"title": "Parser core", "body": "Acceptance: parses JSON."}]
+        first = team.decompose(20, children)
+        self.assertFalse(first["ok"])
+        self.assertTrue(first["partial"])
+        gh.items = board_with(
+            (20, "Shaped requirement", "Backlog", "architect"),
+            (42, "Parser core", "Backlog", "human"),
+        )
+        second = team.decompose(20, children)
+        self.assertTrue(second["ok"])
+        self.assertTrue(second["created"][0]["reused"])
+        self.assertEqual(len(gh.calls_matching("issue", "create")), 1)
 
     def test_only_the_architect_may_split_work(self):
-        team, gh = producer()
+        team, gh = producer(FakeGh(comments=[SPEC_COMMENT]))
         with self.assertRaises(policy.ActionForbidden):
-            team.decompose(20, [{"title": "t", "body": "b"}], SPEC_PR, Role.DEV)
+            team.decompose(20, [{"title": "t", "body": "b"}], SPEC_PATH, Role.DEV)
         self.assertEqual(gh.calls_matching("issue", "create"), [])
 
-    def test_refuses_without_a_durable_specification(self):
-        gh = FakeGh(pr_state={"state": "OPEN", "mergedAt": None})
+    def test_refuses_without_a_published_specification(self):
+        gh = FakeGh()
         team, _ = producer(gh)
         with self.assertRaises(WorkflowError):
-            team.decompose(20, [{"title": "t", "body": "b"}], SPEC_PR)
+            team.decompose(20, [{"title": "t", "body": "b"}])
 
     def test_refuses_an_empty_decomposition(self):
         team, _ = producer()
         with self.assertRaisesRegex(WorkflowError, "at least one"):
-            team.decompose(20, [], SPEC_PR)
+            team.decompose(20, [], SPEC_PATH)
 
 
 class BriefTests(unittest.TestCase):
@@ -392,6 +452,211 @@ class DispatchTests(unittest.TestCase):
         self.assertIn("[expected:(Ready, dev)]", prompt)
         queue_prompt = team.verification_queue()["queue"][0]["kickoff_prompt"]
         self.assertIn("[expected:(In Review, qa)]", queue_prompt)
+
+
+class NextActionsTests(unittest.TestCase):
+    def test_plans_architect_dev_resume_and_qa_as_bounded_spawns(self):
+        items = board_with(
+            (3, "Shape", "Backlog", "architect"),
+            (4, "Build", "Ready", "dev"),
+            (5, "Fix", "In Progress", "dev"),
+            (6, "Verify", "In Review", "qa"),
+        )
+        team, _ = producer(FakeGh(items=items))
+        result = team.next_actions()
+        actions = {entry["number"]: entry for entry in result["actions"]}
+        self.assertEqual(set(actions), {3, 4, 5, 6})
+        self.assertEqual(actions[3]["routine"], "authoring-spec")
+        self.assertEqual(actions[4]["routine"], "consuming-card")
+        self.assertIn("Resume", actions[5]["prompt"])
+        self.assertEqual(actions[6]["routine"], "verifying-delivery")
+        for entry in actions.values():
+            self.assertEqual(entry["kind"], "spawn")
+            self.assertIn(f"[board-card:#{entry['number']}]", entry["prompt"])
+
+    def test_reports_only_the_two_human_gates(self):
+        acceptance = ACCEPTANCE_MARKER + "\n\n```json\n" + json.dumps({
+            "acceptance": "protected_change", "head_sha": "a" * 40,
+            "policy_version": "test", "reasons": ["protected file"],
+        }) + "\n```"
+        items = board_with(
+            (20, "Ready decision", "Backlog", "human"),
+            (21, "QA exception", "In Review", "human"),
+        )
+        team, _ = producer(FakeGh(
+            items=items, comments=[SPEC_COMMENT, acceptance]
+        ))
+        result = team.next_actions()
+        self.assertEqual(result["actions"], [])
+        gates = {entry["number"]: entry["gate"] for entry in result["human_gates"]}
+        self.assertEqual(gates, {20: "readiness", 21: "qa_exception"})
+        readiness = next(g for g in result["human_gates"] if g["number"] == 20)
+        self.assertEqual(readiness["field"], "Status")
+        self.assertEqual(readiness["value"], "Ready")
+        self.assertNotIn("command", readiness)
+
+    def test_confirmed_eligible_merge_becomes_automatic_reconciliation(self):
+        acceptance = ACCEPTANCE_MARKER + "\n\n```json\n" + json.dumps({
+            "acceptance": "eligible", "head_sha": "a" * 40,
+            "policy_version": "test", "reasons": ["green"],
+        }) + "\n```"
+        merged = {"state": "MERGED", "mergedAt": "now",
+                  "mergeCommit": {"oid": "d" * 40}}
+        team, _ = producer(FakeGh(
+            items=board_with((21, "Delivery", "In Review", "qa")),
+            comments=[acceptance], pr_state=merged,
+        ))
+        actions = team.next_actions()["actions"]
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0]["kind"], "reconcile")
+        self.assertEqual(actions[0]["argv"], ["reconcile-done", "21"])
+
+    def test_armed_exact_head_is_monitored_in_the_current_session(self):
+        acceptance = ACCEPTANCE_MARKER + "\n\n```json\n" + json.dumps({
+            "acceptance": "eligible", "head_sha": "a" * 40,
+            "policy_version": "test", "reasons": ["green"],
+        }) + "\n```"
+        pr_view = {
+            **FakeGh().pr_view,
+            "autoMergeRequest": {"enabledAt": "now"},
+        }
+        team, _ = producer(FakeGh(
+            items=board_with((21, "Delivery", "In Review", "qa")),
+            comments=[acceptance],
+            pr_state={"state": "OPEN", "mergedAt": None},
+            pr_view=pr_view,
+        ))
+        action = team.next_actions()["actions"][0]
+        self.assertEqual(action["kind"], "monitor")
+        self.assertEqual(action["poll_after_seconds"], 30)
+
+    def test_unarmed_eligible_acceptance_retries_the_controller(self):
+        acceptance = ACCEPTANCE_MARKER + "\n\n```json\n" + json.dumps({
+            "acceptance": "eligible", "head_sha": "a" * 40,
+            "policy_version": "test", "reasons": ["green"],
+        }) + "\n```"
+        team, _ = producer(FakeGh(
+            items=board_with((21, "Delivery", "In Review", "qa")),
+            comments=[acceptance],
+            pr_state={"state": "OPEN", "mergedAt": None},
+        ))
+        action = team.next_actions()["actions"][0]
+        self.assertEqual(action["kind"], "controller")
+        self.assertEqual(action["argv"], ["accept", "21"])
+
+    def test_changed_head_returns_to_fresh_qa_evidence(self):
+        acceptance = ACCEPTANCE_MARKER + "\n\n```json\n" + json.dumps({
+            "acceptance": "eligible", "head_sha": "z" * 40,
+            "policy_version": "test", "reasons": ["green"],
+        }) + "\n```"
+        team, _ = producer(FakeGh(
+            items=board_with((21, "Delivery", "In Review", "qa")),
+            comments=[acceptance],
+        ))
+        action = team.next_actions()["actions"][0]
+        self.assertEqual(action["kind"], "spawn")
+        self.assertIn("head changed", action["prompt"])
+
+    def test_changed_head_removes_a_stale_human_exception_automatically(self):
+        acceptance = ACCEPTANCE_MARKER + "\n\n```json\n" + json.dumps({
+            "acceptance": "protected_change", "head_sha": "z" * 40,
+            "policy_version": "test", "reasons": ["protected"],
+        }) + "\n```"
+        team, _ = producer(FakeGh(
+            items=board_with((21, "Delivery", "In Review", "human")),
+            comments=[acceptance],
+        ))
+        result = team.next_actions()
+        self.assertEqual(result["human_gates"], [])
+        self.assertEqual(result["actions"][0]["kind"], "controller")
+        self.assertEqual(
+            result["actions"][0]["argv"], ["refresh-verification", "21"]
+        )
+
+    def test_ready_work_waits_when_board_wip_is_full(self):
+        team, _ = producer(FakeGh(items=board_with(
+            (4, "Build", "Ready", "dev"),
+            (5, "Active", "In Progress", "dev"),
+        )), wip_limit=1)
+        result = team.next_actions()
+        self.assertNotIn(4, [action["number"] for action in result["actions"]])
+        self.assertIn("work-in-progress", next(
+            entry["reason"] for entry in result["waiting"] if entry["number"] == 4
+        ))
+
+    def test_malformed_human_lanes_are_not_advertised_as_approval_gates(self):
+        team, _ = producer(FakeGh(items=board_with(
+            (20, "No spec", "Backlog", "human"),
+            (21, "No acceptance", "In Review", "human"),
+        )))
+        result = team.next_actions()
+        self.assertEqual(result["human_gates"], [])
+        self.assertEqual({entry["number"] for entry in result["waiting"]}, {20, 21})
+
+    def test_only_one_direct_spec_author_runs_at_a_time(self):
+        team, _ = producer(FakeGh(items=board_with(
+            (2, "First", "Backlog", "architect"),
+            (3, "Second", "Backlog", "architect"),
+        )))
+        result = team.next_actions()
+        self.assertEqual([action["number"] for action in result["actions"]], [2])
+        self.assertIn("serialized", result["waiting"][0]["reason"])
+
+    def test_returned_analyst_card_is_clarified_not_re_intaked(self):
+        team, gh = producer(FakeGh(items=board_with(
+            (7, "Clarify export", "Backlog", "analyst"),
+        )))
+        action = team.next_actions()["actions"][0]
+        self.assertIn("Never run intake", action["prompt"])
+        result = team.clarify(7, "CSV means RFC 4180 with a UTF-8 header row.")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["role"], "architect")
+        self.assertEqual(gh.calls_matching("issue", "create"), [])
+
+    def test_completed_decomposition_does_not_respawn_the_architect(self):
+        team, _ = producer(FakeGh(
+            items=board_with((20, "Parent", "Backlog", "architect")),
+            comments=[SPEC_COMMENT, DECOMPOSITION_MARKER],
+        ))
+        result = team.next_actions()
+        self.assertEqual(result["actions"], [])
+        self.assertIn("decomposition is complete", result["waiting"][0]["reason"])
+
+    def test_human_status_edit_becomes_an_automatic_readiness_handoff(self):
+        team, _ = producer(FakeGh(
+            items=board_with((20, "Ready decision", "Ready", "human")),
+            comments=[SPEC_COMMENT],
+        ))
+        action = team.next_actions()["actions"][0]
+        self.assertEqual(action["kind"], "controller")
+        self.assertEqual(action["argv"], ["finalize-readiness", "20"])
+
+    def test_unmet_hard_dependency_is_not_dispatched(self):
+        items = board_with(
+            (2, "Prerequisite", "In Progress", "dev"),
+            (4, "Dependent", "Ready", "dev"),
+            (5, "Independent", "Ready", "dev"),
+        )
+        team, _ = producer(FakeGh(
+            items=items, issue_bodies={4: "depends-on: #2"}
+        ), wip_limit=0)
+        result = team.next_actions()
+        action_numbers = {entry["number"] for entry in result["actions"]}
+        self.assertIn(5, action_numbers)
+        self.assertNotIn(4, action_numbers)
+        dependent = next(
+            entry for entry in result["waiting"] if entry["number"] == 4
+        )
+        self.assertEqual(dependent["dependencies"], [2])
+
+    def test_blocked_card_spawns_one_bounded_lead_triage_stage(self):
+        team, _ = producer(FakeGh(items=board_with(
+            (9, "Blocked delivery", "Blocked", "architect"),
+        )))
+        action = team.next_actions()["actions"][0]
+        self.assertEqual(action["role"], "lead")
+        self.assertEqual(action["routine"], "triaging-board")
+        self.assertIn("[expected:(Blocked, architect)]", action["prompt"])
 
 
 class ReleaseClaimTests(unittest.TestCase):

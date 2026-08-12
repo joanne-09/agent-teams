@@ -14,6 +14,7 @@ from __future__ import annotations
 from .errors import AgentTeamsError
 
 import json
+import re
 from dataclasses import replace
 from typing import Any
 
@@ -22,8 +23,9 @@ from .config import Config
 from .git import claim_branch
 from .github import Gh, GitHubError, fetch_all_items
 from .model import (
-    ACCEPTANCE_MARKER, Acceptance, Card, DomainError, HANDOFF_MARKER, Handoff,
-    Role, Status, VERDICT_MARKER, Verdict,
+    ACCEPTANCE_MARKER, Acceptance, Card, DECOMPOSED_CHILD_MARKER,
+    DECOMPOSITION_MARKER, DomainError, HANDOFF_MARKER, Handoff, Role,
+    SPECIFICATION_MARKER, Status, VERDICT_MARKER, Verdict,
 )
 
 
@@ -223,6 +225,13 @@ class Board:
                 bodies.append(entry)
         return bodies
 
+    def issue_body(self, number: int) -> str:
+        payload = self.gh.json(
+            ["issue", "view", str(number), "--repo", self.config.repo,
+             "--json", "body"]
+        )
+        return str(payload.get("body", "")) if isinstance(payload, dict) else ""
+
     def handoff_count(self, number: int) -> int:
         """How many structured handoffs this Card has already absorbed."""
         try:
@@ -274,6 +283,11 @@ class Board:
         or Done are governed decisions in their own right rather than plain
         lifecycle moves.
         """
+        if target is Status.DONE:
+            raise BoardError(
+                "Done is reachable only through reconcile-done after an exact-head "
+                "acceptance and a confirmed merge"
+            )
         policy.check_action(policy.action_for_transition(target), acting_role)
         card = self.card(number)
         policy.check_transition(card.status, target)
@@ -286,6 +300,27 @@ class Board:
             "url": card.url,
             "status_before": card.status.value if card.status else None,
             "status": target.value,
+            "role": card.role.value if card.role else None,
+        }
+
+    def reconcile_done_status(
+        self, number: int, acting_role: Role
+    ) -> dict[str, Any]:
+        """Set Done for a caller that already proved acceptance and merge.
+
+        This primitive is intentionally separate from ``transition_card`` so
+        the generic CLI cannot manufacture completion without merge evidence.
+        """
+        policy.check_action("reconcile_done", acting_role)
+        card = self.card(number)
+        policy.check_transition(card.status, Status.DONE)
+        if not card.item_id:
+            raise BoardError(f"Issue #{number} Project item has no id")
+        self.set_status(str(card.item_id), Status.DONE)
+        return {
+            "ok": True, "issue": number, "url": card.url,
+            "status_before": card.status.value if card.status else None,
+            "status": Status.DONE.value,
             "role": card.role.value if card.role else None,
         }
 
@@ -342,10 +377,53 @@ class Board:
             "comment": comment,
         }
 
+    def return_stale_exception_to_qa(
+        self, number: int, accepted_head: str, current_head: str, pr_url: str
+    ) -> dict[str, Any]:
+        """Controller route when a human exception's reviewed head is stale.
+
+        This is not the controller acting as the human. The exception decision
+        no longer exists for the new head, so the deterministic safety route
+        removes the Card from the human gate and requests fresh QA evidence.
+        """
+        if not accepted_head or not current_head or accepted_head == current_head:
+            raise BoardError("stale-exception return requires two different heads")
+        card = self.card(number)
+        if card.status is not Status.IN_REVIEW or card.role is not Role.HUMAN:
+            raise BoardError(
+                f"Issue #{number} is {card.routing_state}; stale-exception "
+                "return requires (In Review, human)"
+            )
+        count = self.handoff_count(number)
+        policy.check_handoff(Role.HUMAN, Role.QA, count, self.config.handoff_cap)
+        if not card.item_id:
+            raise BoardError(f"Issue #{number} Project item has no id")
+        handoff = Handoff(
+            Role.HUMAN, Role.QA,
+            "Controller invalidated the exception because the Pull Request "
+            "head changed after QA evidence.",
+            needs="review the current head and publish fresh evidence",
+            artifacts=pr_url,
+        )
+        comment = handoff.render()
+        self.set_role(str(card.item_id), Role.QA)
+        try:
+            self.comment_on_card(number, comment)
+        except GitHubError as exc:
+            raise PartialHandoff(number, Role.QA, comment, str(exc)) from exc
+        return {
+            "ok": True, "issue": number, "role": Role.QA.value,
+            "accepted_head": accepted_head, "current_head": current_head,
+            "comment": comment,
+        }
+
     # --------------------------------------------------------- pull requests
 
     #: Everything the acceptance evaluator needs, in one round trip.
-    _PR_FIELDS = "number,url,headRefOid,state,mergeable,isDraft,files,statusCheckRollup"
+    _PR_FIELDS = (
+        "number,url,headRefOid,state,mergeable,isDraft,files,statusCheckRollup,"
+        "autoMergeRequest"
+    )
 
     def pull_request(self, number: int, card_title: str) -> dict[str, Any]:
         """The Card's Pull Request, normalised. Raw gh shapes stop here.
@@ -371,7 +449,9 @@ class Board:
             "head_sha": str(raw.get("headRefOid", "")),
             "state": str(raw.get("state", "")),
             "mergeable": str(raw.get("mergeable", "")).upper() == "MERGEABLE",
+            "mergeable_state": str(raw.get("mergeable", "")).upper(),
             "draft": bool(raw.get("isDraft", False)),
+            "auto_merge_enabled": bool(raw.get("autoMergeRequest")),
             "changed_files": tuple(
                 str(entry.get("path", ""))
                 for entry in (raw.get("files") or [])
@@ -410,6 +490,11 @@ class Board:
     def record_verdict(self, number: int, verdict: Verdict) -> None:
         self.comment_on_card(number, _render_block(VERDICT_MARKER, verdict.to_dict()))
 
+    def record_specification(self, number: int, specification: dict[str, Any]) -> None:
+        self.comment_on_card(
+            number, _render_block(SPECIFICATION_MARKER, specification)
+        )
+
     def record_acceptance(self, number: int, acceptance: Acceptance) -> None:
         self.comment_on_card(
             number, _render_block(ACCEPTANCE_MARKER, acceptance.to_dict())
@@ -435,6 +520,70 @@ class Board:
                 continue
         return None
 
+    def latest_specification(self, number: int) -> dict[str, Any] | None:
+        """The newest direct-to-Git spec record from comments or Issue body.
+
+        Decomposed children inherit the record inside their body, avoiding a
+        second mutation that could leave a created child permanently unable to
+        pass readiness.
+        """
+        payload = self.gh.json(
+            ["issue", "view", str(number), "--repo", self.config.repo,
+             "--json", "body,comments"]
+        )
+        bodies = [str(payload.get("body", ""))]
+        bodies += [
+            str(entry.get("body", ""))
+            for entry in (payload.get("comments", []) or [])
+            if isinstance(entry, dict) and entry.get("body")
+        ]
+        for body in reversed(bodies):
+            if SPECIFICATION_MARKER not in body:
+                continue
+            record = _parse_block(body, SPECIFICATION_MARKER)
+            if not isinstance(record, dict):
+                continue
+            path = str(record.get("path") or "").strip()
+            commit = str(record.get("commit") or "").strip()
+            if path and commit:
+                return {**record, "path": path, "commit": commit}
+        return None
+
+    def hard_dependencies(self, number: int) -> tuple[int, ...]:
+        """Machine-readable depends-on: #N edges from one Card body."""
+        body = self.issue_body(number)
+        dependencies = {
+            int(match.group(1))
+            for match in re.finditer(
+                r"(?im)^\s*depends-on\s*:\s*#(\d+)\b", body
+            )
+        }
+        dependencies.discard(number)
+        return tuple(sorted(dependencies))
+
+    def decomposed_child(self, number: int) -> dict[str, Any] | None:
+        body = self.issue_body(number)
+        if DECOMPOSED_CHILD_MARKER not in body:
+            return None
+        return _parse_block(body, DECOMPOSED_CHILD_MARKER)
+
+    def decomposition_complete(self, number: int) -> bool:
+        return any(DECOMPOSITION_MARKER in body for body in self.comments(number))
+
+    def latest_acceptance(self, number: int) -> "Acceptance | None":
+        """The newest parseable deterministic acceptance record."""
+        for body in reversed(self.comments(number)):
+            if ACCEPTANCE_MARKER not in body:
+                continue
+            payload = _parse_block(body)
+            if payload is None:
+                continue
+            try:
+                return Acceptance.from_dict(payload)
+            except (DomainError, TypeError, ValueError):
+                continue
+        return None
+
     def arm_auto_merge(self, pr_number: int, method: str) -> dict[str, Any]:
         """Hand the merge to GitHub, which owns retesting against the base.
 
@@ -448,6 +597,20 @@ class Board:
              "--auto", f"--{method}", "--delete-branch"]
         )
         return {"ok": True, "pull_request": pr_number, "method": method, "armed": True}
+
+    def merge_pull_request(
+        self, pr_number: int, method: str, expected_head: str
+    ) -> dict[str, Any]:
+        """Merge an exact Pull Request after the human exception gate."""
+        self.gh.run(
+            ["pr", "merge", str(pr_number), "--repo", self.config.repo,
+             f"--{method}", "--delete-branch", "--match-head-commit",
+             expected_head]
+        )
+        return {
+            "ok": True, "pull_request": pr_number, "method": method,
+            "expected_head": expected_head,
+        }
 
     def merge_state(self, pr_number: int) -> dict[str, Any]:
         raw = self.gh.json(
@@ -573,7 +736,7 @@ class Board:
             "roles_validated": [role.value for role in Role],
             "wip_limit": self.config.wip_limit,
             "handoff_cap": self.config.handoff_cap,
-            "spec_completion": self.config.spec_completion,
+            "specification_mode": "direct-to-git",
         }
 
 
@@ -587,8 +750,11 @@ def _render_block(marker: str, payload: dict[str, Any]) -> str:
     return marker + "\n\n```json\n" + json.dumps(payload, indent=2) + "\n```"
 
 
-def _parse_block(body: str) -> "dict[str, Any] | None":
-    start = body.find("```json")
+def _parse_block(
+    body: str, marker: str | None = None
+) -> "dict[str, Any] | None":
+    offset = body.find(marker) + len(marker) if marker and marker in body else 0
+    start = body.find("```json", offset)
     end = body.find("```", start + 7)
     if start < 0 or end < 0:
         return None

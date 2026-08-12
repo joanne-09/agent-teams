@@ -3,16 +3,17 @@
 Status: active plan for evolving the Producer minimum viable product into the
 proposed Phase 1 agent team
 Applies to: `mvp/producer-from-scratch`
-Last updated: 2026-08-05
+Last updated: 2026-08-12
 
 ## 1. Outcome
 
 The desired outcome is a small but complete Claude Code agent team in which:
 
 1. a System Analyst creates and shapes a requirement;
-2. a System Architect produces the durable specification and makes
-   implementation work Ready;
-3. a Tech Lead dispatches the next legal seat;
+2. a System Architect publishes the durable specification directly on the
+   current Git branch and hands shaped Cards to the human readiness gate;
+3. the current Tech Lead session plans and starts the next legal bounded
+   subagent without human prompt transport;
 4. a Developer claims one Card, works through
    test-driven development, and opens one Pull Request;
 5. a separate Quality Assurance engineer session performs multidimensional,
@@ -21,12 +22,28 @@ The desired outcome is a small but complete Claude Code agent team in which:
    defect back to the Developer, or a protected change to the human exception
    lane;
 7. standing repository context plus live board state is sufficient for every
-   next session to reconstruct its role-appropriate project view and resume.
+   bounded worker to reconstruct its role-appropriate project view and resume.
 
 This plan started from a four-skill, one-script minimum viable product. The
-Producer surface is now complete: seven skills over a six-module deterministic
-package. It does not assume the larger `board-superpowers` implementation is
-present.
+Producer and Consumer surfaces are now connected by a deterministic
+`next-actions` planner, one plugin worker agent, and a flat current-session
+coordinator. It does not assume the larger `board-superpowers` implementation
+is present.
+
+### 1.1 Automation extension (2026-08-12)
+
+This extension supersedes older milestone text that leaves human launch,
+specification Pull Requests, or routine reconciliation as defaults.
+
+| Work item | Status | Enforcement |
+|---|---|---|
+| Direct product spec on current branch; no spec PR | Implemented, uncommitted | `Git.publish_specification`, `publish-spec`, exact Card record |
+| Same-session bounded worker launch; no prompt copy | Implemented, uncommitted | `next-actions`, `dispatching-work`, `agents/agent-teams-worker.md` |
+| Two human gates only | Implemented, uncommitted | readiness policy and protected-change `approve-exception` |
+| WIP-aware ordering and serialized direct-spec authors | Implemented, uncommitted | `Producer.next_actions` |
+| Delayed merge monitoring and automatic reconciliation | Implemented, uncommitted | typed `monitor` / `reconcile` controller actions |
+| Exact-head safety and no generic Done bypass | Implemented, uncommitted | `--match-head-commit`, merge-evidence-only reconciliation |
+| Returned analyst Card clarification without duplicate intake | Implemented, uncommitted | `clarify` command and analyst worker route |
 
 The plan follows the design relationship defined in
 [`ARCHITECTURE.md` Appendix B](./ARCHITECTURE.md#appendix-b--lineage):
@@ -788,10 +805,11 @@ correctness to autonomous spawning.
 - [ ] defer per-seat caps until live starvation or overload is observed;
 - [ ] make over-cap dispatch explicit rather than silently suppressing work.
 
-#### M6.3 Dispatch safety
+#### M6.3 Dispatch safety *(historical; superseded by the automation extension)*
 
 - [ ] refuse dispatch when the target seat has no legal next action;
-- [ ] distinguish "prompt rendered" from "session started";
+- [x] distinguish a planned action, started bounded worker, and durable GitHub
+      completion state;
 - [ ] include reason and required artifact in every queue entry;
 - [ ] keep deterministic ordering;
 - [ ] support one Role filter and a machine-readable JSON format.
@@ -1153,7 +1171,8 @@ Required principles:
 - critical policy and transition changes have no unexplained surviving mutants
   and no untested legal or illegal state transition;
 - no test depends on an installed audit DB client;
-- tests distinguish "prompt rendered" from "session started";
+- tests distinguish planned actions, started bounded workers, and durable
+  GitHub completion state;
 - success claims always cite the latest observed run.
 
 ## 19. Dependency and sequencing rules
@@ -1164,7 +1183,8 @@ Required principles:
 4. M4 claim precedes parallel Developer execution.
 5. M5 Quality Assurance remains a separate session from Developer; its
    structured evidence contract precedes deterministic eligibility and merge.
-6. M6 keeps human launch as the default carrier.
+6. M6 uses the current-session bounded subagent coordinator as the default
+   carrier; human launch is a troubleshooting fallback.
 6a. M6.5 follows M4: a resolver cannot verify claim, worktree, or Pull Request
     preconditions that do not exist yet, and one built against absent state
     would be re-derived rather than extended.

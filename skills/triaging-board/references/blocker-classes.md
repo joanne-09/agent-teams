@@ -1,10 +1,10 @@
 <!-- Derived near-verbatim from board-superpowers `triaging-board`
      references/triage-detail.md (MIT, (c) 2026 PanQiWei,
      github.com/PanQiWei/board-superpowers). Routing outcomes are adapted to
-     agent-teams seats, and the two-step release is replaced by our single
-     policy-gated `release-claim` command. -->
+     agent-teams seats; session loss resumes the Card-owned durable claim
+     instead of adding a human release gate. -->
 
-# Blocker classes and release evidence — triaging-board reference
+# Blocker classes and resume evidence — triaging-board reference
 
 Read this at workflow steps 4–5 when classifying a blocker or assembling
 release evidence.
@@ -56,18 +56,16 @@ If the age computation fails (no commits, shallow clone): note the failure
 and flag the branch as *potentially* stale. Do NOT recommend release without
 evidence.
 
-## Assembling the release recommendation
+## Resuming an interrupted claim
 
-The release is one command, and it is the human's — `release_claim` refuses
-every agent seat:
+Do not delete or re-Ready the branch. It belongs to the Card and may contain
+recoverable work. A bounded Consumer materialises it with:
 
 ```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" release-claim <number> \
-  --branch <claim-branch> \
-  --note "<age>, <commit count> commits past the claim marker; owner flagged on <date>"
+python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" resume <number> \
+  --acting-role <dev|architect>
 ```
 
-The `--note` is the evidence trail: age, commit count, and when the owner was
-warned. One command replaces the source's two separate mutations (branch
-delete, then Status flip) precisely so the pair can never be half-approved —
-the command's own partial-failure envelope reports if GitHub fails midway.
+If the remote branch is absent, record the missing ref and expected branch as a
+durable repository inconsistency. Do not convert that mechanical failure into a
+human lifecycle gate.

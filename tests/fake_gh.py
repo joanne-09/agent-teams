@@ -93,7 +93,7 @@ class FakeGh:
 
     def __init__(
         self, *, fail_on=None, comments=None, pr_state=None, items=None,
-        pr_view=None, open_prs=None, auto_merge_allowed=True,
+        pr_view=None, open_prs=None, auto_merge_allowed=True, issue_bodies=None,
     ):
         #: subcommand pair (e.g. "issue comment") -> message, or
         #: (message, nth) to fail only the nth occurrence. The nth form is how
@@ -101,6 +101,7 @@ class FakeGh:
         #: Role write are both ``project item-edit`` -- gets exercised.
         self.fail_on = dict(fail_on or {})
         self.comments = list(comments or [])
+        self.issue_bodies = dict(issue_bodies or {})
         self.pr_state = pr_state or {"state": "MERGED", "mergedAt": "2026-07-30T00:00:00Z"}
         self.items = items if items is not None else ITEMS
         #: The review facts `Board.pull_request` normalises.
@@ -161,14 +162,24 @@ class FakeGh:
         if head == ["auth", "status"]:
             return "authenticated"
         if head == ["issue", "create"]:
+            if "--body" in args:
+                self.issue_bodies[42] = str(args[args.index("--body") + 1])
             return f"https://github.com/{REPO}/issues/42"
-        if head in (["project", "item-edit"], ["issue", "comment"]):
+        if head == ["issue", "comment"]:
+            if "--body" in args:
+                self.comments.append(str(args[args.index("--body") + 1]))
+            return ""
+        if head == ["project", "item-edit"]:
             return ""
         if head == ["api", "-X"]:  # gh api -X DELETE repos/.../git/refs/heads/...
             return ""
         if head == ["pr", "create"]:
             return f"https://github.com/{REPO}/pull/57"
-        if head in (["pr", "merge"], ["pr", "edit"]):
+        if head == ["pr", "merge"]:
+            if "--auto" in args:
+                self.pr_view["autoMergeRequest"] = {"enabledAt": "now"}
+            return ""
+        if head == ["pr", "edit"]:
             return ""
         if head == ["repo", "view"]:
             return str(self.auto_merge_allowed).casefold()
@@ -186,7 +197,11 @@ class FakeGh:
         if head == ["project", "item-add"]:
             return {"id": "ITEM_42"}
         if head == ["issue", "view"]:
-            return {"comments": [{"body": body} for body in self.comments]}
+            number = int(args[2])
+            return {
+                "body": self.issue_bodies.get(number, ""),
+                "comments": [{"body": body} for body in self.comments],
+            }
         if head == ["pr", "view"]:
             # Two callers with different --json field sets: pull_request()
             # asks for the review facts, merge_state() for the merge outcome.
@@ -207,10 +222,18 @@ class FakeGit:
     failure on demand.
     """
 
-    def __init__(self, *, race_lost=False, worktree_error=None, publish_error=None):
+    def __init__(self, *, race_lost=False, worktree_error=None, publish_error=None,
+                 specification=None, remote_sha=None):
         self.race_lost = race_lost
         self.worktree_error = worktree_error
         self.publish_error = publish_error
+        self.remote_sha = remote_sha or "c" * 40
+        self.specification_artifact = specification or {
+            "ok": True, "path": "docs/specs/card-20.md",
+            "commit": "e" * 40, "head_sha": "e" * 40,
+            "branch": "main", "state": "TRACKED", "committed": True,
+            "pushed": True,
+        }
         self.calls: list[tuple] = []
 
     def claim(self, number, title, seat, session_id=None):
@@ -223,6 +246,10 @@ class FakeGit:
             "ref": f"refs/heads/claim/{number}-x",
             "base_sha": "b" * 40, "claim_sha": "c" * 40, "session": "s1",
         }
+
+    def remote_branch_sha(self, branch):
+        self.calls.append(("remote_branch_sha", branch))
+        return self.remote_sha
 
     def add_worktree(self, path, branch, sha):
         self.calls.append(("worktree", str(path)))
@@ -237,6 +264,18 @@ class FakeGit:
         if self.publish_error:
             raise self.publish_error
         return {"ok": True, "pushed": True, "head_sha": "d" * 40}
+
+    def specification(self, reference):
+        self.calls.append(("specification", reference))
+        result = dict(self.specification_artifact)
+        result["path"] = reference
+        return result
+
+    def publish_specification(self, number, title, reference):
+        self.calls.append(("publish_specification", number, reference))
+        result = dict(self.specification_artifact)
+        result["path"] = reference
+        return result
 
     def remove_worktree(self, path, force=False):
         self.calls.append(("remove", str(path)))

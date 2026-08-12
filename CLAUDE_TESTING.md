@@ -1,20 +1,39 @@
-# Testing the agent-teams Producer MVP in Claude Code
+# Testing agent-teams automation in Claude Code
 
-Last updated: 2026-07-30
+Last updated: 2026-08-12
 
 ## Current plugin
 
 - Source directory:
-  `C:\Users\User\Documents\intern\ITRI\agent-teams`
+  `C:\Users\User\Documents\intern\ITRI\agent-teams-project\agent-teams`
 - Branch: `mvp/producer-from-scratch`
 - Plugin: `agent-teams`
-- Version: `0.1.0`
-- Skills: 4
+- Version: `0.2.0`
+- Skills: 9, plus one bounded worker agent
+
+## Current automation contract
+
+This section supersedes any older example below that asks a person to merge a
+specification Pull Request, open another Claude session, paste a kickoff prompt,
+or manually reconcile a routine eligible merge.
+
+- Product specs publish directly below `docs/` on the current branch with
+  `publish-spec`; no spec PR exists.
+- The user's current Claude session runs `next-actions`, spawns
+  `agent-teams:agent-teams-worker` for each admitted Card stage, and executes
+  controller/reconcile actions itself.
+- A `monitor` action keeps the same session alive and rechecks delayed
+  auto-merge; it is not a stop condition.
+- Human interaction is limited to moving the specified Card's Status to
+  `Ready` and, only for a protected or ambiguous QA result, approving the
+  exception. The controller performs the resulting role handoff.
+- `Done` requires current exact-head eligible evidence plus a confirmed merge;
+  generic `transition --to Done` must refuse.
 
 Before testing, verify that the source directory is still on the MVP branch:
 
 ```powershell
-cd C:\Users\User\Documents\intern\ITRI\agent-teams
+cd C:\Users\User\Documents\intern\ITRI\agent-teams-project\agent-teams
 git branch --show-current
 ```
 
@@ -160,9 +179,11 @@ Do not run tools, create a branch, or change files.
 Expected:
 
 - Claude selects `authoring-spec`;
-- it describes a docs-only specification PR;
+- it describes a direct `docs/*.md` write on the current branch followed by
+  `publish-spec`;
 - it refuses to implement production code in this routine;
-- it hands the Card to Dev only after a specification PR exists.
+- it creates no spec branch, worktree, or Pull Request and stops at readiness
+  or decomposition.
 
 ## 7. Test Lead routing
 
@@ -335,39 +356,41 @@ Expected JSON includes:
 If `doctor` fails, fix the reported field, option, authentication, or access
 problem before asking Claude to mutate the Project.
 
-## 12. Read-only live dispatch test
+## 12. Read-only planning and current-session launch test
 
 This command accesses GitHub but does not mutate the Project:
 
 ```powershell
-python "C:\Users\User\Documents\intern\ITRI\agent-teams\scripts\producer_board.py" dispatch `
-  --format json
+python "C:\Users\User\Documents\intern\ITRI\agent-teams-project\agent-teams\scripts\producer_board.py" next-actions
 ```
 
 Expected:
 
 - only Cards from the configured repository;
-- only Cards whose Status is Ready;
-- only configured dispatch roles;
-- deterministic role/Issue ordering;
-- a prompt containing `[role:<role>] [board-card:#<number>]`.
+- only legal actions for current live routing pairs;
+- Ready work admitted only under configured WIP limits and dispatch ordering;
+- at most one direct-spec authoring action because spec workers share checkout;
+- each spawn prompt contains `[role:<role>] [board-card:#<number>]`;
+- `human_gates` contains only readiness or protected QA exceptions.
 
 An empty JSON array is valid when there is no Ready work.
 
 Then test through Claude:
 
 ```powershell
-claude --plugin-dir "C:\Users\User\Documents\intern\ITRI\agent-teams"
+claude --plugin-dir "C:\Users\User\Documents\intern\ITRI\agent-teams-project\agent-teams"
 ```
 
 Inside Claude:
 
 ```text
-[role:lead] Show the dispatch queue.
+Run the team until a human decision is genuinely needed.
 ```
 
-Claude should use the same CLI and present the returned prompts without
-changing Role or Status.
+Claude should stay in this session, start bounded workers itself, re-read
+GitHub after every child, run deterministic controller actions, and stop only
+at a readiness gate, protected/ambiguous QA exception, or durable blocker. It
+must not display a prompt for the human to carry elsewhere.
 
 ## 13. Live intake test
 
@@ -509,14 +532,14 @@ required checks, and auto-merge enabled:
 
 - [ ] `doctor` reports no `acceptance_problems`;
 - [ ] one claim, one Pull Request, one verdict, one `accept`;
-- [ ] an eligible delivery merges and `reconcile-done` reaches `(Done, lead)`;
+- [ ] an eligible delivery is monitored and automatically reconciles to `(Done, lead)`;
 - [ ] a defect returns `(In Progress, dev)` on the same Pull Request;
 - [ ] a protected-path change routes `(In Review, human)`;
 - [ ] a push after a verdict makes `accept` refuse as stale.
 
 ### Optional persistent installation
 
-- [ ] installed plugin version is `0.1.0`;
+- [ ] installed plugin version is `0.2.0`;
 - [ ] plugin is enabled;
 - [ ] `claude plugin list --json` contains no errors;
 - [ ] commands remain available without `--plugin-dir`.
@@ -524,11 +547,13 @@ required checks, and auto-merge enabled:
 ### Optional live board verification
 
 - [ ] `doctor` passes;
-- [ ] dispatch is read-only and deterministic;
+- [ ] `next-actions` is read-only, deterministic, WIP-aware, and emits typed actions;
 - [ ] intake creates a Backlog Card;
 - [ ] intake ends with architect ownership;
-- [ ] architect handoff requires a specification PR;
-- [ ] final architect handoff assigns Dev;
+- [ ] architect publishes the product spec directly on the current branch and records its exact commit;
+- [ ] decomposed children inherit that structured spec record and need only a
+  human Status change to `Ready`;
+- [ ] the current session starts the Dev worker after human readiness;
 - [ ] structured handoff comments exist.
 
 For basic proof that the current agent-teams MVP works in Claude, only the

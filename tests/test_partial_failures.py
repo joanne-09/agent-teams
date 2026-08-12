@@ -8,6 +8,7 @@ and does the recovery advice match reality?
 The recurring anti-requirement: nothing may claim a rollback that did not run.
 """
 
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -17,20 +18,27 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from agent_teams.board import Board  # noqa: E402
 from agent_teams.config import Config  # noqa: E402
-from agent_teams.model import Role, Status  # noqa: E402
+from agent_teams.model import Role, SPECIFICATION_MARKER, Status  # noqa: E402
 from agent_teams.workflows import Producer  # noqa: E402
-from fake_gh import REPO, FakeGh, board_with  # noqa: E402
+from fake_gh import REPO, FakeGh, FakeGit, board_with  # noqa: E402
 
 #: A shaped Card sitting at the human readiness gate -- the state `promote`
 #: acts on now that no agent seat may open it.
 AT_THE_GATE = board_with((20, "Shaped requirement", "Backlog", "human"))
+SPEC_PATH = "docs/specs/card-20.md"
+SPEC_COMMENT = (
+    SPECIFICATION_MARKER + "\n\n```json\n"
+    + json.dumps({"card": 20, "path": SPEC_PATH, "commit": "e" * 40,
+                  "branch": "main"})
+    + "\n```"
+)
 
 
 def producer(gh):
     config = Config.from_dict(
         {"repo": REPO, "project_owner": "acme", "project_number": 1}
     )
-    return Producer(config, Board(config, gh)), config
+    return Producer(config, Board(config, gh), git=FakeGit()), config
 
 
 class IntakeFailureTests(unittest.TestCase):
@@ -134,10 +142,11 @@ class PromoteFailureTests(unittest.TestCase):
         # Status write succeeds; the Role write inside the handoff fails.
         gh = FakeGh(
             items=AT_THE_GATE,
+            comments=[SPEC_COMMENT],
             fail_on={"project item-edit": ("field write refused", 2)},
         )
         result, _ = producer(gh)
-        outcome = result.promote(20, "https://github.com/acme/widgets/pull/57")
+        outcome = result.promote(20)
         self.assertFalse(outcome["ok"])
         self.assertEqual(outcome["completed"], ["status_set"])
         self.assertEqual(outcome["failed"], "role_set")
@@ -149,10 +158,11 @@ class PromoteFailureTests(unittest.TestCase):
     def test_status_failure_changes_nothing(self):
         gh = FakeGh(
             items=AT_THE_GATE,
+            comments=[SPEC_COMMENT],
             fail_on={"project item-edit": ("field write refused", 1)},
         )
         result, _ = producer(gh)
-        outcome = result.promote(20, "https://github.com/acme/widgets/pull/57")
+        outcome = result.promote(20)
         self.assertEqual(outcome["completed"], [])
         self.assertIn("Nothing changed", " ".join(outcome["recovery"]))
 
@@ -208,7 +218,10 @@ class ReleaseClaimFailureTests(unittest.TestCase):
 class DecomposeFailureTests(unittest.TestCase):
     def test_partial_creation_warns_about_duplicates_on_retry(self):
         # Second child's Issue creation fails.
-        gh = FakeGh(fail_on={"issue create": ("rate limited", 2)})
+        gh = FakeGh(
+            comments=[SPEC_COMMENT],
+            fail_on={"issue create": ("rate limited", 2)},
+        )
         result, _ = producer(gh)
         outcome = result.decompose(
             20,
@@ -216,21 +229,21 @@ class DecomposeFailureTests(unittest.TestCase):
                 {"title": "Parser core", "body": "Acceptance: parses JSON."},
                 {"title": "Parser errors", "body": "Acceptance: reports position."},
             ],
-            "https://github.com/acme/widgets/pull/57",
         )
         self.assertFalse(outcome["ok"])
         self.assertTrue(outcome["partial"])
         self.assertEqual(len(outcome["created"]), 1)
         self.assertEqual(len(outcome["failed"]), 1)
-        self.assertIn("duplicates", " ".join(outcome["recovery"]))
+        recovery = " ".join(outcome["recovery"])
+        self.assertIn("reused", recovery)
+        self.assertIn("rather than duplicated", recovery)
 
     def test_a_child_missing_a_body_is_rejected_without_calling_github(self):
-        gh = FakeGh()
+        gh = FakeGh(comments=[SPEC_COMMENT])
         result, _ = producer(gh)
         outcome = result.decompose(
             20,
             [{"title": "No body"}],
-            "https://github.com/acme/widgets/pull/57",
         )
         self.assertFalse(outcome["ok"])
         self.assertEqual(gh.calls_matching("issue", "create"), [])

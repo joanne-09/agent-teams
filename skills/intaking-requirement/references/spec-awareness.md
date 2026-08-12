@@ -42,7 +42,7 @@ boundary:
   transition table);
 - the board schema: Status and Role option sets, Card body sections, the
   handoff comment format;
-- the specification-gate configuration (`spec_completion`);
+- the direct-to-Git specification record and readiness-gate contract;
 - result-envelope semantics (`ok` / `partial` / `completed` / `recovery`);
 - plugin manifest and skill instruction files;
 - ADR-level architecture decisions.
@@ -77,24 +77,23 @@ Do NOT use this template when the decision is locked per the table above,
 when only one option is viable, or when an existing specification already
 dictates the answer.
 
-## Sequencing a spec edit
+## Publishing a product specification
 
-When a requirement needs a specification or ADR change, the architect
-chooses:
+When a product requirement needs a specification or ADR change, the architect
+writes it under `docs/` in the current checkout and publishes it directly on
+the current Git branch with `publish-spec`. The Card records the exact path and
+last-changing commit. There is no specification branch or specification Pull
+Request, and no human merge step before readiness.
 
-- **Separate PR, sequenced**: the spec PR lands; the Card is promoted against
-  the merged spec; implementation claims it. Highest discipline; use when the
-  spec change is shared across several downstream Cards.
-- **Same PR, paired**: spec edit and implementation land together. Use when
-  the change is local to one Card and not shared.
-- **Spec-only work**: the work IS the spec — the Card's Goal is "land this
-  document", and its acceptance criteria describe the document.
+If the work itself is documentation rather than a product specification for
+downstream Cards, it may remain an ordinary one-Card Consumer delivery. Do not
+confuse that delivery path with the direct product-spec path.
 
 ## Anti-patterns
 
 - **Discovering the spec edit mid-implementation**: stop; surface to the
-  architect. The spec edit routes back through intake; the Card resumes after
-  it lands.
+  architect. The architect publishes the updated direct spec and the Card
+  resumes only against the newly recorded commit.
 - **Backfilling spec after the fact**: spec edits become archaeology. Catch
   them at intake.
 

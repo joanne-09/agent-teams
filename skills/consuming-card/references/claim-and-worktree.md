@@ -39,19 +39,20 @@ Exit code 1. This is a **normal outcome**, not a failure to recover from:
 
 - **Do not retry.** The ref exists; retrying cannot change that.
 - **Do not force-push.** That steals a claim from a session doing the work.
-- **Do not delete the branch.** Releasing a claim is a human action
-  (`release-claim`), because it destroys someone's branch and re-opens the
-  readiness decision.
+- **Do not delete the branch.** It is the Card's durable work, not a session's.
 - **Do pick up different work** — `dispatch` will name some.
 
-Note it as an observation if the holder looks abandoned. Triage assembles the
-`release-claim` command; the human runs it.
+The coordinator re-reads the board. Once the Card is In Progress, a later
+bounded worker materialises that same durable branch with:
+
+```bash
+producer_board.py resume N --acting-role dev
+```
 
 ## Resuming an interrupted session
 
-Claiming again for a Card you already hold **resumes** rather than fails. The
-existing worktree is reused with whatever it already contains — recreating
-would discard work.
+`resume` resolves the remote claim SHA, reuses the existing worktree when
+present, or recreates it from the durable remote branch in another session.
 
 This is why an interrupted Consumer picks up the *same logical assignment*
 rather than starting a second delivery chain. The claim branch, the worktree,

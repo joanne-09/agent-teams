@@ -1,10 +1,10 @@
 # HANDOFF: agent-teams
 
-> A Claude Code plugin for a GitHub-Project-coordinated artificial intelligence engineering team. Both halves are now implemented — a Producer shapes work, a Consumer resolves one Card through claim, delivery, evidence-grounded review, and deterministic acceptance. What remains is live-GitHub proof.
+> A Claude Code plugin whose current session automatically coordinates bounded engineering subagents through GitHub state, retaining only readiness and exceptional QA human gates.
 
 **Stack**: Claude Code plugin / Python 3.12 standard library / GitHub CLI / GitHub Projects v2 / Git / Slidev
 
-**Last updated**: 2026-08-07 — session 6, both tracks (Joanne's side: Consumer implementation; Lee's side: skill-content migration, `release-claim`, live verification)
+**Last updated**: 2026-08-12 — session 7 automation implementation, uncommitted
 
 ---
 
@@ -14,11 +14,11 @@ This orphan branch builds agent-teams from an empty tree, deliberately not inher
 
 The durable coordination surface is one GitHub Project. Cards are GitHub Issues carrying two orthogonal single-select fields: `Status` (where the work is) and `Role` (whose turn it is).
 
-The system no longer spends human attention on every passing delivery. Readiness remains the mandatory human gate. QA independently reviews the implementation, publishes evidence for the exact Pull Request head, and a separate deterministic evaluator routes `eligible` to auto-merge, `defect` back to `dev`, and `protected_change` to `human`. No agent seat directly merges or selects its own merge route.
+The system no longer spends human attention on specification merges, prompt transport, routine implementation merges, defect routing, or reconciliation. Product specifications publish directly on the current Git branch. The current session plans work and spawns bounded subagents. Readiness remains the mandatory human gate. QA independently reviews the exact Pull Request head; deterministic policy routes `eligible` through monitored auto-merge, `defect` back to `dev`, and `protected_change` to the exceptional human gate.
 
 Normative design lives in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md); delivery status and the milestone ledger live in [`docs/IMPLEMENTATION_PLAN.md`](./docs/IMPLEMENTATION_PLAN.md). **Do not restate milestone detail here — that plan is the single status ledger.**
 
-Still intentionally excluded: audit database, schema migrations, lifecycle hooks, automatic field provisioning, Codex packaging, multiple board backends, autonomous agent spawning. Additions need evidence from an observed failure, not inheritance from the earlier implementation.
+Still intentionally excluded: audit database, schema migrations, lifecycle hooks, automatic field provisioning, Codex packaging, multiple board backends, persistent daemons, and recursive agent trees. Flat current-session bounded subagent spawning is now the default carrier.
 
 The earlier full implementation is a **separate sibling repository**, `../agent-teams-main` (the board-superpowers fork). Its `docs/agent-team-adaptation/` dossier is the source of this adaptation's intent and is worth reading before changing the authority model.
 
@@ -29,6 +29,8 @@ The earlier full implementation is a **separate sibling repository**, `../agent-
 - **This repository is the plugin.** Consuming repositories only hold `.agent-teams/config.json`.
 - **Claude-only surface.** `.claude-plugin/plugin.json` names `agent-teams` v0.2.0; local marketplace is `agent-teams-local`. No Codex manifest on this branch.
 - **Nine skills — seven Producer, two Consumer.** `using-agent-teams` runs the mandatory read-only bootstrap, then **infers the seat and routine from the user's plain-language intent** — a person never names a seat. Producer: `intaking-requirement` (analyst), `authoring-spec` (architect), `briefing-board` / `triaging-board` / `dispatching-work` (lead), `inspecting-queue` (qa). Consumer: `consuming-card` (dev and architect-documentation routines), `verifying-delivery` (qa).
+- **One plugin worker agent plus deterministic planning.** `Producer.next_actions` emits typed `spawn`, `controller`, `monitor`, and `reconcile` actions. `dispatching-work` executes them in the user's current session; no person opens a second session or copies a kickoff prompt. Workers cannot spawn grandchildren.
+- **Product specs go directly to Git.** `publish-spec` stages only one `docs/*.md` path, commits and pushes it on the current branch, then records its exact last-changing commit on the Card. No spec PR, branch, worktree, or merge gate exists. Decomposed children inherit the structured spec record in their Issue bodies.
 - **A Consumer request must name a Card.** `[board-card:#N]`, "work on 12", "verify #21". Without one it is not a Consumer request — orient first. The router never picks a Card on the user's behalf.
 - **Orientation is the default and is directly callable.** A session that opens with no specific request runs `briefing-board` unprompted. Read-only, so it is always safe to repeat.
 - **The router may never infer `human`** (ARCHITECTURE §10.2). Every other seat is safe to infer because choosing one grants nothing — policy re-checks regardless. **This boundary is instruction-level, not code-enforced, and cannot be**: the adapter cannot distinguish a seat token a person supplied from one a session supplied.
@@ -76,7 +78,7 @@ The earlier full implementation is a **separate sibling repository**, `../agent-
 - Tests use an injected fake `gh` (`tests/fake_gh.py`) and a fake Git (`tests/fake_gh.FakeGit`). The claim-race tests are the exception: they drive **real git** against a local bare repository, because a fake would have agreed with the wrong implementation.
 - **Evidence must be structured to be checkable.** `test_strength` entries are objects with a `dimension` from a closed vocabulary, `evidence`, and optionally `falsified_by`. Free prose is refused — a substring search for "branch" accepts "no branch coverage".
 - Intake leaves Status `Backlog` and Role `architect`. No agent seat may make a Card Ready. `decompose` creates children at `(Backlog, human)`.
-- Dispatch is read-only and deterministic: configured seat order, then Card number. Say "prompt rendered", never "session started".
+- `dispatch` remains a read-only compatibility view. Automation uses WIP-aware `next-actions`: current-session workers are actually started, direct-spec authoring is serialized, and durable GitHub state—not child prose—decides completion.
 - When superseding a test, leave a comment saying what changed and why. Sessions 4 and 6 both did this; the reasons are inline in `tests/test_policy.py` and `tests/test_consumer.py`.
 
 ---
@@ -116,6 +118,19 @@ Live board tests need a disposable repository and Project with all six `Status` 
 ---
 
 ## Progress
+
+Session 7 implements the automation extension on
+`mvp/producer-from-scratch`; all work is intentionally uncommitted. The older
+session-6 snapshot below is retained as historical live-run evidence, but its
+spec-PR and human-carrier description is superseded.
+
+| Automation extension | Status | Notes |
+|---|---|---|
+| Direct spec publication | Implemented, uncommitted | Current branch only; exact path/commit Card record; no PR |
+| Same-session subagent coordinator | Implemented, uncommitted | Typed `next-actions`; flat bounded workers; no prompt copy |
+| Minimal human surface | Implemented, uncommitted | `promote N`; `approve-exception N` only for protected/ambiguous QA |
+| Automatic delivery tail | Implemented, uncommitted | defect loop, auto-merge retry/monitor, confirmed merge reconciliation |
+| Governance hardening | Implemented, uncommitted | exact-head human merge; generic create/transition cannot reach Done |
 
 Both surfaces implemented and hermetically tested. **Consumer code has never touched a live board** — that is the main remaining risk. The Producer surface has been live-verified on Lee's side (live board reads, refusals, headless probes, and the full 毒油地圖 Producer run of 2026-08-06/07).
 
@@ -162,6 +177,13 @@ Both surfaces implemented and hermetically tested. **Consumer code has never tou
 
 ## Test Status
 
+Current session: focused syntax checks passed; the 241-test automation
+regression set passed; and the final full hermetic suite passed **385 tests in
+93.795s**. Coverage includes direct spec publication, inherited child specs,
+retry-safe decomposition, WIP admission, same-session planner actions, delayed
+merge monitoring, exact-head exception merge, and merge-evidence-only Done.
+`claude plugin validate .` also passes and `git diff --check` is clean.
+
 `python -m unittest discover -s tests -p "test_*.py"` — **344 passed**, ~40s, no network. Run on HEAD `6024d9a` at the end of session 6 (Joanne's side).
 
 Split: `test_consumer` 77, `test_acceptance` 68, `test_producer_board` 56, `test_workflows` 48, `test_policy` 43, `test_git` 23, `test_partial_failures` 16.
@@ -196,10 +218,8 @@ Live verification (Lee's environment — macOS, `gh` authenticated as Windmill10
 - **Pagination strategy is an assumption** (`github.fetch_all_items`) — escalates `--limit` until a response returns short.
 - **Handoff remains partially non-atomic** (`board.handoff_card`) — Role changes before the comment posts; `PartialHandoff` preserves replay material.
 - **`handoff_count` and `latest_verdict` fail open** — an unreadable comment counts as zero / not-a-verdict. Avoids stalling; can under-count.
-- **No automatic field provisioning, WIP enforcement, or audit store** — `doctor` validates, `brief` reports, GitHub artifacts are the trail.
-- **Specification-gate gaps remain** — an unverified non-PR spec pointer is accepted.
+- **No automatic field provisioning or audit store** — `doctor` validates and GitHub artifacts remain the trail. WIP admission is now enforced by `next-actions`.
 - **`../.worktrees` is shared** between development worktrees and Consumer claim worktrees.
-- **`workflows._recommend` lacks a readiness-queue rung** (found by live testing, Lee's side) — with Cards at `(Backlog, human)` it says "the board is clear"; the merge queue is checked but the promote queue is not, and the brief payload has no `awaiting_readiness` field. The briefing skill's prose ladder masks it in practice, but the JSON field actively misleads. Small fix: add the rung ranked first, expose the queue, one test.
 - **Three notation/contract items need Joanne's blessing** (Lee's side): the `depends-on (soft): #N` body convention referenced in intake/authoring-spec references; the `[expected:(Status, Role)]` kickoff stamp as the Consumer preflight input; and the `release_claim` policy action (her Consumer work landed after these — confirm she accepts them rather than assuming).
 - **Board hygiene observed live**: #4 is Done with no Role (harmless). Whether a parent Card closes when its children ship remains an open reconcile-design question (#12 is the live case now).
 
@@ -207,13 +227,19 @@ Live verification (Lee's environment — macOS, `gh` authenticated as Windmill10
 
 ## Open Decisions
 
+The 2026-08-07 human-intervention item immediately below is **resolved by
+session 7** and retained only as the problem statement that motivated the
+implementation. Product specs now publish directly, the current session starts
+workers and monitors eligible merge, and the only human commands are
+`promote N` plus `approve-exception N` when policy escalates QA.
+
 - **Human-intervention count is too high (Lee's live-run finding, 2026-08-07)** — the first full loop (#14: intake → spec → decompose → promote → dispatch → dev → QA fail → defect → fix → QA pass → merge → Done) required five human command points: merge the spec PR, `promote`, merge the implementation PR, `reconcile-done`, plus carrier duties (launching every seat's session and pasting kickoffs). Operating it, this feels like too many steps and too much command surface; the target is **at most 2–3 interventions, each a simple command**. Consolidation candidates, none decided: (a) fold spec-PR merge + `promote` into one approval command (promote is already refused until the spec is merged, so the two are sequenced anyway — one command could merge then promote); (b) fold implementation merge + `reconcile-done` into one command, or auto-reconcile once the merge is detected — reconcile is bookkeeping with no judgment content, the strongest automation candidate; (c) on a repo with CI + branch protection the routine implementation merge already disappears (auto-merge armed by acceptance), which alone brings a clean run down to spec-approval + promote; (d) the carrier cost (session launches + kickoff pasting) is the other felt burden — a launcher wrapper around `dispatch` output would cut it without touching the no-autonomous-spawning decision. Target end shape: answer intake questions, one readiness approval, one merge decision only when policy escalates.
 - **The skill-direction slide versus invariant 10** — `slides/2026-08-06-weekly.md` says agent-teams will *reuse* skills from board-superpowers, superpowers, and gstack, and its presenter note says "we did not finish the integration". What shipped is *derivation with attribution*; invariant 10 forbids runtime calls. Options: soften the slide to "adopt/derive", or amend invariant 10 and Appendix A.1 to permit runtime composition. **Needs**: a decision on whether correctness may depend on a sibling plugin being installed. This is the one substantive gap between the deck and the code.
 - **Shadow-rollout exit criteria** — the PR sample, seeded-defect suite, precision/recall targets, false-negative budget, and rollback trigger before routine human review is trusted to be gone. Nothing here is calibrated.
 - **Mutation-testing infrastructure** — whether to adopt a tool so `falsified_by` can be machine-checked rather than attested.
 - **Pagination ceiling and persistent installation** — retain as live-verification decisions.
 
-**Settled** (rationale in `docs/ARCHITECTURE.md` Appendix A.2–A.3; do not relitigate without new evidence): `architect → analyst` is legal (1); `spec_completion` defaults to `merged` (2, readiness half superseded by 6); decomposition is by shape (3); transition authority keys off the destination (4); creation obeys the same rule on both axes (5); only `human` opens `Backlog → Ready` (6); the plugin infers agent seats but never `human` (7); the routine second human gate is replaced by QA evidence plus deterministic acceptance (8, now implemented). Settled in session 6: merge backend is GitHub auto-merge armed by the controller; `Done` is owned by `lead`; protected categories are the seven in `config.DEFAULT_PROTECTED_PATHS`.
+**Settled** (rationale in `docs/ARCHITECTURE.md` Appendix A.2–A.3; do not relitigate without new evidence): `architect → analyst` is legal (1); product specs publish directly on the current branch and legacy `spec_completion` is ignored (2); decomposition is by shape (3); transition authority keys off the destination (4); creation obeys the same rule on both axes (5); only `human` opens `Backlog → Ready` (6); the plugin infers agent seats but never `human` (7); routine QA acceptance is deterministic while protected/ambiguous changes use the exceptional human gate (8). Session 7 also settles current-session flat subagent spawning, serialized direct-spec authors, exact-head exception merge, and merge-evidence-only `Done`.
 
 ---
 
@@ -234,6 +260,11 @@ Live verification (Lee's environment — macOS, `gh` authenticated as Windmill10
 
 ## Blockers / Waiting On
 
+No local implementation blocker. Live GitHub proof still requires a disposable
+repository with branch protection, required checks, and auto-merge enabled.
+Do not push, commit, create a branch, or create a worktree for the current
+session's changes unless the user explicitly asks.
+
 - **Authenticated live GitHub verification for the Consumer half** — on Joanne's Windows environment `gh` is installed but not logged in; on Lee's macOS side `gh` is authenticated (Windmill10) and the live 毒油地圖 board is available. The Consumer live test can run on Lee's side against `agent-teams-test`.
 - **A repository configured for acceptance** — the merge path needs auto-merge enabled, branch protection with required checks, and matching `required_checks` in config. `agent-teams-test` does not have these yet; without them nothing is ever `eligible` (fails closed).
 - **The skill-direction decision** — see Open Decisions. Blocks nothing technically, but the deck and the architecture currently say different things.
@@ -242,6 +273,23 @@ Live verification (Lee's environment — macOS, `gh` authenticated as Windmill10
 ---
 
 ## Current State
+
+As of 2026-08-12 the direct checkout is on
+`mvp/producer-from-scratch`. Session 7 has a substantial uncommitted diff and
+has created no commit, branch, worktree, or Pull Request. The active code now
+supports direct current-branch specification publication, structured inherited
+spec records for decomposed children, idempotent decomposition replay,
+WIP-aware typed next actions, flat current-session subagent work, existing-Card
+analyst clarification, delayed auto-merge monitoring/retry, exact-head
+exception merge, and merge-evidence-only reconciliation to Done.
+
+Focused and full verification are green (241 focused; 385 full). Normative
+README, USAGE, architecture, implementation plan, testing guide, active skills,
+and this handoff are updated. Plugin validation passes and the final diff check
+is clean. No local implementation work remains; everything is intentionally
+uncommitted.
+
+### Historical session-6 snapshot
 
 Branch `mvp/producer-from-scratch` is at `9c75666` upstream (Joanne's slides update on top of `6024d9a` `feat: finish consumer (qa, dev) implementation`), with Lee's session work merged locally on top — clarification loop in `intaking-requirement`, the authoring-spec closing-keyword rule, and this conflict resolution — **uncommitted as of this update**. Joanne's session-6 commits are `6d77238` (docs) and `6024d9a` (implementation, skills, tests); the assistant commit `35c1d6e` added the design spec and plan.
 
@@ -252,6 +300,12 @@ The live demo board (Lee's side) holds the 毒油地圖 run: #12 `(Backlog, arch
 ---
 
 ## Next Steps
+
+1. Review and commit the current uncommitted diff only when the user chooses.
+2. Live-test later in a disposable GitHub repository; do not use a production
+   Project for first proof.
+
+### Historical session-6 list (superseded where it conflicts)
 
 0. Near-term leftovers (Lee's side): fix `workflows._recommend`'s missing readiness rung (+ `awaiting_readiness` in the brief payload, + test); settle the three Joanne-blessing items (soft-depends notation, expected-pair preflight contract, `release_claim` policy row); update the weekly deck's run table and screenshots to the 毒油地圖 numbers (#12–#16) after the run completes.
 1. Decide the skill-direction question in Open Decisions — either edit the deck to say *derive/adopt* rather than *reuse*, or amend `docs/ARCHITECTURE.md` invariant 10 and Appendix A.1. Do not leave the deck and the architecture contradicting each other.
@@ -273,6 +327,19 @@ No additional plugin or skill runtime is required or desired. Compatible open `S
 ## Session Log
 
 <!-- newest entry at top -->
+
+### 2026-08-12 — Session 7
+
+Implemented the automation extension directly on
+`mvp/producer-from-scratch`, uncommitted: direct current-branch product specs,
+typed WIP-aware next actions, one bounded plugin worker, same-session
+coordination, returned-Card clarification, two human gates, monitored auto-merge,
+and automatic reconciliation. Audit-driven fixes made decomposed children
+promotable and retries idempotent, closed generic Done bypasses, and added
+GitHub exact-head merge protection. Focused 241-test and full 385-test suites
+are green; plugin validation passes; `git diff --check` is clean.
+
+---
 
 ### 2026-08-07 — Session 6 (Joanne's side)
 

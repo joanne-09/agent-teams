@@ -18,6 +18,21 @@ not technical design — resist solving it. Intake is a gateway, not a design
 session: its job is to judge the shape of the work and capture it faithfully,
 then hand it to the seat whose job the next decision is.
 
+## Existing returned Card
+
+If the kickoff binds `[board-card:#N]` at expected `(Backlog, analyst)`, this is
+clarification of an existing Card, not intake. Research or resolve the named
+question, write the answer to a UTF-8 file, and run:
+
+```bash
+python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" clarify N \
+  --note-file "<temporary-file>"
+```
+
+Require `"ok": true` and stop after the same Card is handed to `architect`.
+Never run `intake`, never create a replacement Issue, and never discard the
+existing Card's history.
+
 ## Workflow
 
 1. Bootstrap as `analyst`. Check the `backlog` view first: if this requirement

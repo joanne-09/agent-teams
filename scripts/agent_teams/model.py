@@ -107,6 +107,10 @@ STATUSES: tuple[str, ...] = tuple(status.value for status in Status)
 
 HANDOFF_MARKER = "<!-- agent-teams:handoff -->"
 PR_MARKER = "<!-- agent-teams:pr -->"
+SPECIFICATION_MARKER = "<!-- agent-teams:specification -->"
+DECOMPOSITION_MARKER = "<!-- agent-teams:decomposition-complete -->"
+DECOMPOSED_CHILD_MARKER = "<!-- agent-teams:decomposed-child -->"
+CLARIFICATION_MARKER = "<!-- agent-teams:clarification -->"
 VERDICT_MARKER = "<!-- agent-teams:verdict -->"
 ACCEPTANCE_MARKER = "<!-- agent-teams:acceptance -->"
 
@@ -312,6 +316,15 @@ class Acceptance:
             "policy_version": self.policy_version,
             "reasons": list(self.reasons),
         }
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> "Acceptance":
+        return cls(
+            acceptance=str(raw.get("acceptance", "")),
+            head_sha=str(raw.get("head_sha", "")),
+            policy_version=str(raw.get("policy_version", "")),
+            reasons=tuple(str(value) for value in raw.get("reasons", ()) or ()),
+        )
 
 
 @dataclass

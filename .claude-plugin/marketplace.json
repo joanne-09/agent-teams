@@ -8,7 +8,7 @@
     {
       "name": "agent-teams",
       "source": "./",
-      "description": "Producer workflows for Claude Code over GitHub Projects.",
+      "description": "Automated GitHub-Project engineering workflow with bounded subagents and two human gates.",
       "version": "0.2.0"
     }
   ]

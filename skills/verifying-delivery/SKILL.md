@@ -156,9 +156,10 @@ Which returns exactly one of:
 | `protected_change` | `(In Review, human)` | A human decides; the reasons name the exact files that tripped the rule |
 
 If the platform merges later — a slow required check, or a merge queue —
-`accept` returns `"merge": "armed"` and the Card waits at `(In Review, qa)`
-until `reconcile-done` records the merge. **`Done` is never reached on an
-assumption**: the merge state is re-read, and armed is not merged.
+`accept` returns `"merge": "armed"`. The coordinating session observes it via
+`next-actions` and runs `reconcile-done` automatically after GitHub confirms the
+exact head is merged. **`Done` is never reached on an assumption**: armed is not
+merged.
 
 If `accept` refuses, it is telling you the evidence is stale or incomplete.
 Re-review the current head and publish again — do not argue with it, and do not

@@ -110,12 +110,11 @@ def _build_parser() -> argparse.ArgumentParser:
     init.add_argument("--wip-limit", type=int, default=5)
     init.add_argument("--handoff-cap", type=int, default=6)
     init.add_argument(
-        "--spec-completion",
-        choices=("merged", "opened"),
-        default="merged",
-        help="whether a Card may become Ready on an opened or only a merged spec",
+        "--required-check",
+        action="append",
+        default=[],
+        help="required GitHub check name; repeat for each automated-merge check",
     )
-
     sub.add_parser("doctor", help="validate gh access, Project fields, and options")
 
     boot = sub.add_parser(
@@ -142,11 +141,25 @@ def _build_parser() -> argparse.ArgumentParser:
     dispatch.add_argument("--role", choices=ROLES)
     dispatch.add_argument("--format", choices=("text", "json"), default="text")
 
+    next_actions = sub.add_parser(
+        "next-actions", help="plan runnable subagent stages and the two human gates"
+    )
+    next_actions.add_argument("issue", type=int, nargs="?")
+
     intake = sub.add_parser("intake", help="create and hand off a requirement")
     intake.add_argument("--title", required=True)
     body = intake.add_mutually_exclusive_group(required=True)
     body.add_argument("--body")
     body.add_argument("--body-file")
+
+    clarify = sub.add_parser(
+        "clarify", help="record clarification on an existing returned Card"
+    )
+    clarify.add_argument("issue", type=int)
+    clarification = clarify.add_mutually_exclusive_group(required=True)
+    clarification.add_argument("--note")
+    clarification.add_argument("--note-file")
+    clarify.add_argument("--acting-role", default="analyst", choices=["analyst"])
 
     create = sub.add_parser("create-card", help="create one Card in an explicit state")
     create.add_argument("--title", required=True)
@@ -165,8 +178,7 @@ def _build_parser() -> argparse.ArgumentParser:
     promote.add_argument("issue", type=int)
     promote.add_argument(
         "--spec",
-        required=True,
-        help="specification Pull Request URL, #number, or durable path",
+        help="optional override; defaults to the direct spec recorded on the Card",
     )
     promote.add_argument("--acting-role", default="human", choices=ROLES)
     promote.add_argument("--note", default="")
@@ -175,7 +187,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "decompose", help="create flat implementation Cards from a specification"
     )
     decompose.add_argument("parent", type=int)
-    decompose.add_argument("--spec", required=True)
+    decompose.add_argument(
+        "--spec", help="optional override; defaults to the spec recorded on the Card"
+    )
     decompose.add_argument(
         "--children",
         required=True,
@@ -183,10 +197,23 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     decompose.add_argument("--acting-role", default="architect", choices=ROLES)
 
+    publish_spec = sub.add_parser(
+        "publish-spec",
+        help="commit and push one docs specification on the current branch",
+    )
+    publish_spec.add_argument("issue", type=int)
+    publish_spec.add_argument("--path", required=True)
+    publish_spec.add_argument("--acting-role", default="architect", choices=ROLES)
+
+    finalize = sub.add_parser(
+        "finalize-readiness", help="hand a human-readied specified Card to dev"
+    )
+    finalize.add_argument("issue", type=int)
+
     release = sub.add_parser(
         "release-claim",
-        help="human recovery gate: delete an abandoned claim branch and return "
-        "the Card to Ready for re-claim",
+        help="deprecated emergency cleanup: delete an abandoned claim branch; "
+        "normal interrupted work resumes the existing branch automatically",
     )
     release.add_argument("issue", type=int)
     release.add_argument(
@@ -220,6 +247,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="the two seats that author a delivery",
     )
 
+    resume = sub.add_parser(
+        "resume", help="materialise an In Progress Card's durable claim worktree"
+    )
+    resume.add_argument("issue", type=int)
+    resume.add_argument(
+        "--acting-role", required=True, choices=["dev", "architect"]
+    )
+
     submit = sub.add_parser(
         "submit-pr", help="open or update one Pull Request and hand off to qa"
     )
@@ -247,11 +282,24 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     accept.add_argument("issue", type=int)
 
+    refresh = sub.add_parser(
+        "refresh-verification",
+        help="return a stale protected-change exception to QA",
+    )
+    refresh.add_argument("issue", type=int)
+
     reconcile = sub.add_parser(
         "reconcile-done", help="record a confirmed merge and clean the claim"
     )
     reconcile.add_argument("issue", type=int)
     reconcile.add_argument("--acting-role", default="lead", choices=ROLES)
+
+    exception = sub.add_parser(
+        "approve-exception",
+        help="human final gate: merge the exact protected head and reconcile Done",
+    )
+    exception.add_argument("issue", type=int)
+    exception.add_argument("--acting-role", default="human", choices=ROLES)
 
     worktrees = sub.add_parser(
         "worktree-status", help="claims, worktrees, and presence (read-only)"
@@ -322,7 +370,7 @@ def main(
                     "project_number": args.project_number,
                     "wip_limit": args.wip_limit,
                     "handoff_cap": args.handoff_cap,
-                    "spec_completion": args.spec_completion,
+                    "required_checks": args.required_check,
                 }
             )
             config.write(args.config)
@@ -331,7 +379,7 @@ def main(
 
         config = Config.load(args.config)
         board = Board(config, gh=gh)
-        producer = Producer(config, board)
+        producer = Producer(config, board, git=git)
         consumer = Consumer(config, board, git=git)
 
         if args.command == "doctor":
@@ -370,8 +418,22 @@ def main(
             else:
                 _dispatch_text(queue)
 
+        elif args.command == "next-actions":
+            _print(producer.next_actions(args.issue))
+
         elif args.command == "intake":
             result = producer.intake(args.title, _read_body(args))
+            _print(result)
+            return 0 if result.get("ok") else 1
+
+        elif args.command == "clarify":
+            note = (
+                Path(args.note_file).read_text(encoding="utf-8")
+                if args.note_file else args.note
+            )
+            result = producer.clarify(
+                args.issue, note, Role.parse(args.acting_role)
+            )
             _print(result)
             return 0 if result.get("ok") else 1
 
@@ -389,7 +451,7 @@ def main(
         elif args.command == "promote":
             result = producer.promote(
                 args.issue,
-                args.spec,
+                args.spec or "",
                 Role.parse(args.acting_role),
                 reason=args.note,
             )
@@ -400,9 +462,21 @@ def main(
             result = producer.decompose(
                 args.parent,
                 _read_children(args.children),
-                args.spec,
+                args.spec or "",
                 Role.parse(args.acting_role),
             )
+            _print(result)
+            return 0 if result.get("ok") else 1
+
+        elif args.command == "publish-spec":
+            result = producer.publish_specification(
+                args.issue, args.path, Role.parse(args.acting_role)
+            )
+            _print(result)
+            return 0 if result.get("ok") else 1
+
+        elif args.command == "finalize-readiness":
+            result = producer.finalize_readiness(args.issue)
             _print(result)
             return 0 if result.get("ok") else 1
 
@@ -442,6 +516,11 @@ def main(
             _print(result)
             return 0 if result.get("ok") else 1
 
+        elif args.command == "resume":
+            result = consumer.resume(args.issue, Role.parse(args.acting_role))
+            _print(result)
+            return 0 if result.get("ok") else 1
+
         elif args.command == "submit-pr":
             result = consumer.submit(
                 args.issue,
@@ -462,8 +541,20 @@ def main(
             _print(result)
             return 0 if result.get("ok") else 1
 
+        elif args.command == "refresh-verification":
+            result = consumer.refresh_verification(args.issue)
+            _print(result)
+            return 0 if result.get("ok") else 1
+
         elif args.command == "reconcile-done":
             result = consumer.reconcile(args.issue, Role.parse(args.acting_role))
+            _print(result)
+            return 0 if result.get("ok") else 1
+
+        elif args.command == "approve-exception":
+            result = consumer.approve_exception(
+                args.issue, Role.parse(args.acting_role)
+            )
             _print(result)
             return 0 if result.get("ok") else 1
 

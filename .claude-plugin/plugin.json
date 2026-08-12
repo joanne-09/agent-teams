@@ -1,7 +1,7 @@
 {
   "name": "agent-teams",
   "version": "0.2.0",
-  "description": "Producer workflows for Claude Code over GitHub Projects: session bootstrap, requirement intake, architect specification and readiness, Lead briefing, triage and dispatch, and QA queue inspection.",
+  "description": "Automated Claude Code engineering teams over GitHub Projects: direct Git specifications, one human readiness gate, bounded dev/QA subagents, deterministic acceptance, and exceptional human QA review.",
   "author": {
     "name": "agent-teams contributors"
   },

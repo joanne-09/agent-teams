@@ -43,9 +43,9 @@ class ClaimRaceLost(AgentTeamsError):
     def __init__(self, number: int, branch: str):
         super().__init__(
             f"claim race lost for #{number}: `{branch}` already exists on the "
-            f"remote. Another session owns this Card. Do not retry -- pick up "
-            f"different work, or ask the human to run release-claim if the "
-            f"holder is abandoned."
+            f"remote. Another session owns this Card. Do not retry or delete "
+            f"the branch; the coordinator will resume the Card's durable claim "
+            f"after it reaches In Progress."
         )
         self.number = number
         self.branch = branch
@@ -98,6 +98,111 @@ class Git:
 
     def head_sha(self) -> str:
         return self._run(["rev-parse", "HEAD"]).stdout.strip()
+
+    def _specification_path(self, reference: str) -> tuple[Path, str]:
+        """Resolve one repository-relative Markdown specification safely."""
+        raw = str(reference or "").strip().replace(chr(92), "/")
+        if not raw or raw.startswith("/") or re.match(r"^[A-Za-z]:", raw):
+            raise GitError("specification path must be repository-relative")
+        target = (self.root / raw).resolve()
+        root = self.root.resolve()
+        try:
+            relative = target.relative_to(root).as_posix()
+        except ValueError as exc:
+            raise GitError("specification path escapes the repository") from exc
+        if not relative.startswith("docs/") or not relative.endswith(".md"):
+            raise GitError("specification path must be a Markdown file below docs/")
+        return target, relative
+
+    def specification(self, reference: str) -> dict[str, Any]:
+        """Verify that a direct specification is tracked in current HEAD."""
+        _target, relative = self._specification_path(reference)
+        tracked = self._run(
+            ["ls-files", "--error-unmatch", "--", relative], check=False
+        )
+        if tracked.returncode != 0:
+            raise GitError(
+                f"specification `{relative}` is not tracked in the current branch"
+            )
+        commit = self._run(["log", "-1", "--format=%H", "--", relative]).stdout.strip()
+        if not commit:
+            raise GitError(f"specification `{relative}` has no committed Git version")
+        return {
+            "ok": True,
+            "path": relative,
+            "commit": commit,
+            "head_sha": self.head_sha(),
+            "state": "TRACKED",
+        }
+
+    def publish_specification(
+        self, number: int, title: str, reference: str
+    ) -> dict[str, Any]:
+        """Commit and push one spec on the checkout's current branch.
+
+        No branch or Pull Request is created. The checkout may be dirty only
+        at the requested specification path, and only that path is staged.
+        """
+        target, relative = self._specification_path(reference)
+        if not target.is_file() or not target.read_text(encoding="utf-8").strip():
+            raise GitError(f"specification `{relative}` is missing or empty")
+
+        branch = self._run(
+            ["symbolic-ref", "--quiet", "--short", "HEAD"], check=False
+        ).stdout.strip()
+        if not branch:
+            raise GitError(
+                "cannot publish a specification from a detached HEAD; check out "
+                "the branch that should receive it"
+            )
+
+        dirty_lines = [
+            line for line in self._run(
+                ["status", "--porcelain", "--untracked-files=all"]
+            ).stdout.splitlines()
+            if line.strip()
+        ]
+        unrelated = []
+        for line in dirty_lines:
+            if " -> " in line:
+                unrelated.append(line)
+                continue
+            changed = line[3:].strip().replace(chr(92), "/")
+            if changed != relative:
+                unrelated.append(line)
+        if unrelated:
+            raise GitError(
+                "cannot publish a specification while unrelated checkout changes "
+                "exist; preserve or finish them first:\n" + "\n".join(unrelated)
+            )
+
+        self._run(["add", "--", relative])
+        changed = self._run(["diff", "--cached", "--quiet"], check=False)
+        committed = changed.returncode != 0
+        if committed:
+            self._run(
+                ["commit", "-m", f"spec: document #{number} {str(title).strip()}",
+                 "--", relative]
+            )
+
+        commit = self.specification(relative)["commit"]
+        pushed = self._run(
+            ["push", "origin", f"HEAD:refs/heads/{branch}"], check=False
+        )
+        if pushed.returncode != 0:
+            raise GitError(
+                f"specification is committed locally as {commit}, but pushing "
+                f"current branch `{branch}` failed: {pushed.stderr.strip()}"
+            )
+        return {
+            "ok": True,
+            "path": relative,
+            "commit": commit,
+            "branch": branch,
+            "committed": committed,
+            "pushed": True,
+            "state": "TRACKED",
+        }
 
     def _claim_message(
         self, number: int, title: str, seat: str, session_id: str, base: str
@@ -159,6 +264,23 @@ class Git:
             "claim_sha": claim_sha,
             "session": session_id,
         }
+
+    def remote_branch_sha(self, branch: str) -> str:
+        """Resolve a durable remote claim without changing local state."""
+        ref = f"refs/heads/{branch}"
+        result = self._run(["ls-remote", "--heads", "origin", ref], check=False)
+        if result.returncode != 0:
+            raise GitError(
+                f"cannot inspect remote claim {branch}: {result.stderr.strip()}"
+            )
+        line = next((line for line in result.stdout.splitlines() if line.strip()), "")
+        sha = line.split()[0] if line else ""
+        if not re.fullmatch(r"[0-9a-fA-F]{40,64}", sha):
+            raise GitError(
+                f"remote claim {branch} does not exist; re-read the Card before "
+                "trying to resume it"
+            )
+        return sha
 
     # -------------------------------------------------------------- worktrees
 

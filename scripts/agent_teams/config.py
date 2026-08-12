@@ -23,11 +23,6 @@ from .model import Role, Status
 
 DEFAULT_CONFIG = Path(".agent-teams/config.json")
 
-#: How an architect signals that implementation work may become Ready.
-#: ``merged``  -- the specification must be durable on the target branch first
-#: ``opened``  -- a linked specification Pull Request is enough
-SPEC_COMPLETION_VALUES = ("merged", "opened")
-
 _REPO_PATTERN = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 
 #: How the deterministic merge controller closes an eligible Pull Request.
@@ -73,7 +68,6 @@ class Config:
     dispatch_roles: tuple[str, ...] = ("architect", "dev", "qa")
     wip_limit: int = 5
     handoff_cap: int = 6
-    spec_completion: str = "merged"
     #: Canonical Status value -> the option name this Project actually uses.
     #: Absent entries fall back to the canonical name.
     status_overrides: Mapping[str, str] = field(default_factory=dict)
@@ -107,10 +101,6 @@ class Config:
     def dispatch_role_values(self) -> tuple[Role, ...]:
         return tuple(Role.parse(name) for name in self.dispatch_roles)
 
-    @property
-    def requires_merged_spec(self) -> bool:
-        return self.spec_completion == "merged"
-
     # -------------------------------------------------------- serialisation
 
     def to_dict(self) -> dict[str, Any]:
@@ -125,7 +115,6 @@ class Config:
             "dispatch_roles": list(self.dispatch_roles),
             "wip_limit": self.wip_limit,
             "handoff_cap": self.handoff_cap,
-            "spec_completion": self.spec_completion,
         }
         if self.status_overrides:
             payload["status_overrides"] = dict(self.status_overrides)
@@ -203,14 +192,6 @@ class Config:
         handoff_cap = _non_negative_int(
             raw.get("handoff_cap", 6), "handoff_cap", problems
         )
-
-        spec_completion = str(raw.get("spec_completion", "merged")).strip().casefold()
-        if spec_completion not in SPEC_COMPLETION_VALUES:
-            problems.append(
-                "spec_completion must be one of "
-                + ", ".join(SPEC_COMPLETION_VALUES)
-                + f"; got {spec_completion!r}"
-            )
 
         overrides_raw = raw.get("status_overrides", {}) or {}
         overrides: dict[str, str] = {}
@@ -298,7 +279,6 @@ class Config:
             dispatch_roles=roles,
             wip_limit=wip_limit,
             handoff_cap=handoff_cap,
-            spec_completion=spec_completion,
             status_overrides=overrides,
             workspace=workspace,
             protected_paths=protected,

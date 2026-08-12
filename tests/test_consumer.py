@@ -16,7 +16,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 from agent_teams.board import Board  # noqa: E402
 from agent_teams.config import Config  # noqa: E402
 from agent_teams.model import (  # noqa: E402
-    Acceptance, REQUIRED_DIMENSIONS, Role, VERDICT_MARKER, Verdict,
+    ACCEPTANCE_MARKER, Acceptance, REQUIRED_DIMENSIONS, Role, VERDICT_MARKER,
+    Verdict,
 )
 from fake_gh import REPO, FakeGh, FakeGit, board_with  # noqa: E402
 
@@ -53,6 +54,14 @@ def verdict_comment(**overrides):
     return VERDICT_MARKER + "\n\n```json\n" + json.dumps(payload) + "\n```"
 
 
+def acceptance_comment(acceptance="protected_change", head_sha="a" * 40):
+    payload = {
+        "acceptance": acceptance, "head_sha": head_sha,
+        "policy_version": "test", "reasons": ["protected file"],
+    }
+    return ACCEPTANCE_MARKER + "\n\n```json\n" + json.dumps(payload) + "\n```"
+
+
 def status_written(gh):
     """The option id of the last Status write, for asserting transitions."""
     edits = gh.calls_matching("project", "item-edit")
@@ -84,6 +93,18 @@ class ClaimTests(unittest.TestCase):
     def test_an_architect_may_claim_a_documentation_card(self):
         consumer, _ = self._consumer(board_with((8, "Specify parser", "Ready", "architect")))
         self.assertTrue(consumer.claim(8, Role.ARCHITECT)["ok"])
+
+    def test_an_interrupted_in_progress_card_resumes_its_durable_claim(self):
+        git = FakeGit(remote_sha="f" * 40)
+        consumer, gh = self._consumer(
+            board_with((12, "Implement parser", "In Progress", "dev")),
+            git=git,
+        )
+        result = consumer.resume(12, Role.DEV)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["claim_sha"], "f" * 40)
+        self.assertIn(("remote_branch_sha", "claim/12-implement-parser"), git.calls)
+        self.assertEqual(gh.calls_matching("project", "item-edit"), [])
 
     def test_a_card_in_the_wrong_status_is_refused_before_any_git_call(self):
         git = FakeGit()
@@ -590,7 +611,7 @@ class AcceptTests(unittest.TestCase):
         self.assertEqual(result["status"], "In Review")
         self.assertEqual(result["role"], "qa")
         self.assertEqual(gh.calls_matching("project", "item-edit"), [])
-        self.assertTrue(any("reconcile-done" in step for step in result["next"]))
+        self.assertTrue(any("coordinator" in step for step in result["next"]))
 
     def test_done_is_never_reached_without_a_confirmed_merge(self):
         # The whole point of re-reading state after arming: armed is not merged.
@@ -693,13 +714,31 @@ class AcceptTests(unittest.TestCase):
         self.assertEqual(result["acceptance"], "defect")
         self.assertEqual(gh.calls_matching("pr", "merge"), [])
 
+    def test_a_pending_required_check_is_monitored_not_routed_to_dev(self):
+        consumer, gh = self._consumer([verdict_comment()])
+        gh.pr_view = {
+            **gh.pr_view,
+            "statusCheckRollup": [
+                {"name": "build", "conclusion": "SUCCESS"},
+                {"name": "test", "conclusion": None},
+            ],
+        }
+        result = consumer.accept(21)
+        self.assertEqual(result["acceptance"], "waiting")
+        self.assertEqual(result["status"], "In Review")
+        self.assertEqual(result["role"], "qa")
+        self.assertEqual(gh.calls_matching("pr", "merge"), [])
+        self.assertEqual(gh.calls_matching("project", "item-edit"), [])
+        self.assertEqual(gh.calls_matching("issue", "comment"), [])
+
 
 class ReconcileTests(unittest.TestCase):
     def _consumer(self, pr_state, role="qa", git=None, config=None):
         from agent_teams.workflows import Consumer
         config = config or a_config()
         gh = FakeGh(
-            items=board_with((21, "Delivery", "In Review", role)), pr_state=pr_state
+            items=board_with((21, "Delivery", "In Review", role)),
+            comments=[acceptance_comment("eligible")], pr_state=pr_state,
         )
         return Consumer(config, Board(config, gh=gh), git=git or FakeGit()), gh
 
@@ -755,6 +794,75 @@ class ReconcileTests(unittest.TestCase):
         consumer, gh = self._consumer(self.MERGED)
         with self.assertRaises(Exception):
             consumer.reconcile(21, Role.DEV)
+        self.assertEqual(gh.calls_matching("project", "item-edit"), [])
+
+    def test_merge_without_eligible_acceptance_cannot_reach_done(self):
+        consumer, gh = self._consumer(self.MERGED)
+        gh.comments.clear()
+        with self.assertRaisesRegex(Exception, "no eligible acceptance"):
+            consumer.reconcile(21, Role.LEAD)
+        self.assertEqual(gh.calls_matching("project", "item-edit"), [])
+
+    def test_changed_head_cannot_be_reconciled_even_if_merged(self):
+        consumer, gh = self._consumer(self.MERGED)
+        gh.comments[:] = [acceptance_comment("eligible", head_sha="z" * 40)]
+        with self.assertRaisesRegex(Exception, "differs"):
+            consumer.reconcile(21, Role.LEAD)
+        self.assertEqual(gh.calls_matching("project", "item-edit"), [])
+
+
+class ApproveExceptionTests(unittest.TestCase):
+    MERGED = {"state": "MERGED", "mergedAt": "2026-08-06T00:00:00Z",
+              "mergeCommit": {"oid": "d" * 40}}
+
+    def _consumer(self, *, comments=None, role="human", pr_view=None):
+        from agent_teams.workflows import Consumer
+        config = a_config()
+        gh = FakeGh(
+            items=board_with((21, "Delivery", "In Review", role)),
+            comments=comments or [acceptance_comment()], pr_state=self.MERGED,
+            pr_view=pr_view,
+        )
+        return Consumer(config, Board(config, gh=gh), git=FakeGit()), gh
+
+    def test_human_command_merges_exact_head_and_reconciles_done(self):
+        consumer, gh = self._consumer()
+        result = consumer.approve_exception(21, Role.HUMAN)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"], "Done")
+        self.assertEqual(result["role"], "lead")
+        self.assertEqual(len(gh.calls_matching("pr", "merge")), 1)
+        merge = gh.calls_matching("pr", "merge")[0]
+        self.assertEqual(
+            merge[merge.index("--match-head-commit") + 1], "a" * 40
+        )
+
+    def test_agent_seat_is_refused_before_github(self):
+        consumer, gh = self._consumer()
+        with self.assertRaises(Exception):
+            consumer.approve_exception(21, Role.LEAD)
+        self.assertEqual(gh.calls, [])
+
+    def test_changed_head_is_refused_before_merge(self):
+        consumer, gh = self._consumer(comments=[acceptance_comment(head_sha="z" * 40)])
+        with self.assertRaisesRegex(Exception, "head changed"):
+            consumer.approve_exception(21, Role.HUMAN)
+        self.assertEqual(gh.calls_matching("pr", "merge"), [])
+
+    def test_controller_returns_changed_exception_head_to_qa(self):
+        consumer, gh = self._consumer(
+            comments=[acceptance_comment(head_sha="z" * 40)]
+        )
+        result = consumer.refresh_verification(21)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["role"], "qa")
+        self.assertEqual(len(gh.calls_matching("project", "item-edit")), 1)
+        self.assertEqual(gh.calls_matching("pr", "merge"), [])
+
+    def test_controller_does_not_remove_a_current_exception(self):
+        consumer, gh = self._consumer()
+        with self.assertRaisesRegex(Exception, "still matches"):
+            consumer.refresh_verification(21)
         self.assertEqual(gh.calls_matching("project", "item-edit"), [])
 
 

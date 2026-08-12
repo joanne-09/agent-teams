@@ -2,7 +2,7 @@
 
 Status: normative architecture for the complete Phase 1 team
 Applies to: `agent-teams` (Claude Code plugin, v0.2.0)
-Last updated: 2026-08-05
+Last updated: 2026-08-12
 Delivery status: [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) — the sole status ledger
 Operating guide: [`USAGE.md`](./USAGE.md) — how a human actually drives this
 
@@ -23,6 +23,36 @@ Operating guide: [`USAGE.md`](./USAGE.md) — how a human actually drives this
 · [Appendix A — Settled decisions](#appendix-a--settled-decisions)
 · [Appendix B — Lineage](#appendix-b--lineage)
 · [Appendix C — Completion criteria](#appendix-c--completion-criteria)
+
+---
+
+## 0. Current automation contract
+
+This section supersedes any older Phase 1 wording below that describes
+specification Pull Requests, human-carried kickoff prompts, or manual routine
+merge reconciliation.
+
+1. Product specifications are written below `docs/` in the current checkout,
+   committed and pushed directly to the current branch by `publish-spec`, and
+   recorded on the Card by exact path and last-changing commit. No spec branch,
+   worktree, Pull Request, or human merge is created. Legacy
+   `spec_completion` config keys are accepted and ignored.
+2. The user's current session is the coordinator. It repeatedly calls the
+   deterministic `next-actions` planner and directly starts one bounded,
+   no-grandchildren subagent per admitted Card stage. The human never copies a
+   prompt or opens another session.
+3. Direct spec authors are serialized because they share the current checkout.
+   Independent implementation and QA workers may run in parallel only when the
+   planner admits them under the configured WIP limit.
+4. The only human gates are moving a specified Card Status to `Ready` and
+   protected or genuinely ambiguous QA exceptions (`approve-exception N`).
+   The readiness ownership handoff is automatic. Routine QA
+   defects, eligible auto-merge, delayed merge observation, and confirmed-merge
+   reconciliation are automatic controller paths.
+5. Generic Card creation and transition cannot reach `Done`. Only
+   reconciliation backed by current exact-head eligible acceptance and a
+   confirmed merged Pull Request can do so. Human exception merge also uses
+   GitHub's exact-head guard.
 
 ---
 
@@ -134,12 +164,12 @@ where the exact Project field or prompt representation matters.
 | **Handoff cap** | The configured per-Card limit on handoffs. Exceeding it routes the Card to `(Blocked, lead)` rather than letting it ping-pong (§11.4). |
 | **Claim** | An exclusive reservation of one Card, represented by a *remote* branch `claim/<n>-<slug>`. The remote push is the lock; a local worktree is not a claim. |
 | **Worktree** | The isolated checkout a claiming Consumer works in. One Consumer, one worktree, one branch — the blast radius of a delivery. |
-| **Dispatch artifact** / **kickoff prompt** | A deterministic, carrier-neutral prompt naming seat, Card identity, required action, and resume context. Rendering one is not starting a session. |
-| **Carrier** | Whatever actually starts a session: a human opening a terminal, a bounded subagent, a scheduler. The architecture is carrier-neutral. |
+| **Dispatch artifact** / **kickoff prompt** | A deterministic prompt naming seat, Card identity, required action, and resume context. `next-actions` hands it directly to a bounded worker in the current session. |
+| **Carrier** | The current-session coordinator that starts bounded subagents and executes deterministic controller actions. |
 | **Verdict** | A Quality Assurance engineer's evidence-backed `pass`, `fail`, or `blocked` result for one delivery (§9.6). "Looks good" is not a verdict. |
 | **Standing repository context** | Durable project instructions every session can reload: repository rules, product overview, architecture index, active decisions, team configuration. |
 | **Context bootstrap** | The mandatory read-only startup sequence: load standing context, bind identity, query live board state, build the seat-specific orientation (§3.5). |
-| **Specification gate** | The check that a durable specification exists before a Card may become Ready. Configurable via `spec_completion` (Appendix A, decision 2). |
+| **Specification gate** | The check that the Card records a direct-to-Git `docs/*.md` specification at its exact last-changing commit before it may become Ready. |
 | **Hard floor** | A refusal no configuration or user override may widen. Merge and readiness are the two (§4.5). |
 | **Partial-failure envelope** | The result shape returned when a multi-step mutation fails midway: what completed, what failed, and the exact recovery recipe (§11.2). |
 | **Failure class** | Which of the four kinds of "failed" occurred — refusal, partial mutation, work failure, or blocked. Determines the recovery; independent of the stage that produced it (§11.6). |
@@ -155,7 +185,7 @@ where the exact Project field or prompt representation matters.
 |---|---|---|
 | Purpose | Create, refine, decompose, prioritise, route, or maintain work. | Resolve exactly one Card with a delivery or a recorded rejection or blocker. |
 | Board scope | A bounded queue or several related Cards, as the routine permits. | One bound Card. Others may be read for context, never mutated. |
-| Repository writes | None. Does not author implementation commits or push claim branches. | Commits only inside the bound worktree and branch. |
+| Repository writes | No implementation writes. The Architect Producer may publish only the bound product specification directly on the current branch. | Commits only inside the bound worktree and branch. |
 | Normal result | New or revised Issues, Cards, specifications, transitions, handoffs, priorities, or dispatch prompts. | One Pull Request, one verdict, or one terminal blocked result. |
 | End condition | The intended board-shaping result is durable and verified. | The bound Card reaches its stage boundary and the next seat has durable context. |
 | Merge authority | None. | None. |
@@ -256,9 +286,9 @@ board state and the recommended next action. Orientation is read-only, so it is
 always safe to repeat, and it is a first-class request at any point.
 
 A marker such as `[role:architect]` remains valid, but it is a **machine
-channel** — the deterministic form of a dispatch artifact that a carrier pastes
-verbatim into a fresh session (§3.7). It is honoured as an explicit human
-override. It is not the expected human interface.
+channel**: the deterministic form of a dispatch artifact the current
+coordinator passes directly to a bounded worker (§3.7). It is honoured as an
+explicit human override. It is not the expected human interface.
 
 Inference is safe because **selecting a seat grants nothing.** Prompt text and
 router inference request a route; only durable Project fields and policy checks
@@ -330,8 +360,8 @@ correctness.
 
 | Carrier | Behaviour | Intended use |
 |---|---|---|
-| Human launch | Dispatch renders a kickoff prompt; a human opens a session. | Default Phase 1 carrier, and the safest way to observe early operation. |
-| Bounded subagent | A session starts one short-lived child for a bounded pass and waits for its result. | Optional short verification or triage work; correctness still lands on GitHub. |
+| Current-session bounded subagent | The coordinator starts one child for one Card stage and waits for durable GitHub state. | Default carrier for architect, analyst clarification, development, and QA work. |
+| Human launch | A human directly invokes one Card routine. | Explicit troubleshooting or direct-work fallback, never the normal transport between stages. |
 | Scheduled command | A scheduler starts a seat-specific non-interactive session. | Later unattended operation, once policy and recovery are proven. |
 
 ### 3.7 Kickoff and completion envelopes
@@ -482,7 +512,7 @@ mutation.
 
 | Boundary | Action | Authority |
 |---|---|---|
-| **Readiness gate** | `Backlog -> Ready` | Human-only. Declaring work ready commits the team to build it. An agent seat shapes the Card and hands it to `human`; the human approves it into `Ready`, which also hands it to `dev`. |
+| **Readiness gate** | `Backlog -> Ready` | Human-only. Declaring work ready commits the team to build it. The human changes only Status; the controller validates the recorded spec commit and hands the Ready Card to `dev`. |
 | **Automated acceptance** | Merge an eligible Pull Request | A deterministic controller evaluates the structured QA verdict, evidence completeness, protected-change policy, and current Pull Request head before merging. No agent seat directly merges. |
 | **Protected-change exception** | Accept or reject a protected or ambiguous Pull Request | Human-only. QA routes here when automation cannot establish eligibility without judgment. |
 
@@ -721,8 +751,9 @@ The Tech Lead operates the whole-team queue:
 4. Order dispatch candidates **deterministically**: configured seat order, then
    Card number.
 5. Refuse dispatch when the target seat has no legal next action.
-6. Produce carrier-neutral kickoff prompts. **Say "prompt rendered", never
-   "session started".**
+6. Produce typed `spawn`, `controller`, `monitor`, or `reconcile` actions. The
+   current-session coordinator executes them; it never hands a prompt to the
+   human.
 7. Rebalance or escalate only through legal handoffs with written reasons.
 8. Route handoff-cap breaches and unrecoverable ownership ambiguity to
    `(Blocked, lead)`.
@@ -821,17 +852,15 @@ without hiding or deleting work.
 
 ### 7.3 System Architect — documentation delivery
 
-When a specification or Architecture Decision Record is itself a repository
-deliverable, a separate Architect Consumer session binds one documentation Card,
-claims one branch and worktree, researches the codebase, authors only
-documentation and supporting diagrams or decision records, validates links and
-internal consistency, opens one documentation Pull Request under the standard
-contract, routes it through review and the protected-change human lane, and
-stops.
+When documentation is itself the one-Card deliverable rather than the product
+specification that gates downstream implementation, an Architect Consumer may
+claim one branch and worktree, author only documentation and supporting
+diagrams or decision records, open one governed Pull Request, route it through
+review, and stop.
 
-A later Architect **Producer** session observes the merged specification and
-performs decomposition. Combining documentation delivery with multi-Card
-decomposition in one session would blend the two shapes and is prohibited.
+Product specifications used for readiness and decomposition do **not** use this
+Consumer route. They follow the direct current-branch publication contract in
+§0 and §6.4.
 
 ### 7.4 Quality Assurance engineer — verification
 
@@ -913,56 +942,32 @@ mutation, merging, or selecting another Card.
 
 ```mermaid
 flowchart LR
-    HumanRequest[Human request]
-    AnalystProducer[System Analyst Producer]
-    BoardBacklog[Card: Backlog, architect]
-    ArchitectProducer[System Architect Producer]
-    SpecDecision{Repository specification required?}
-    SpecCard[One documentation Card]
-    ArchitectConsumer[System Architect Consumer]
-    SpecPullRequest[Documentation Pull Request]
-    HumanSpec[Human specification merge]
-    ShapedCards[Cards: Backlog, human]
-    HumanGate[Human readiness gate: promote]
-    ReadyCards[Cards: Ready, dev]
-    ManagerProducer[Tech Lead Producer]
-    DevelopmentConsumer[Developer Consumer]
-    CodePullRequest[Implementation Pull Request]
-    QualityConsumer[Quality Assurance Consumer]
-    HumanReview[Protected Card: In Review, human]
-    HumanMerge[Human exception decision and merge]
+    Request[Human request]
+    Analyst[Bounded analyst worker]
+    Architect[Bounded architect worker]
+    Spec[Specification committed directly to Git]
+    Shaped[Card: Backlog, human]
+    ReadyGate[Human changes Status to Ready]
+    Finalize[Controller validates spec and hands to dev]
+    Dev[Bounded developer worker]
+    PullRequest[Implementation Pull Request]
+    QA[Bounded QA worker]
+    Wait[Controller monitors pending checks]
+    Merge[Eligible exact-head auto-merge]
+    Exception[Human protected-change exception]
     Done[Card: Done]
 
-    HumanRequest --> AnalystProducer
-    AnalystProducer --> BoardBacklog
-    BoardBacklog --> ArchitectProducer
-    ArchitectProducer --> SpecDecision
-    SpecDecision -->|yes| SpecCard
-    SpecCard --> ArchitectConsumer
-    ArchitectConsumer --> SpecPullRequest
-    SpecPullRequest --> HumanSpec
-    HumanSpec --> ArchitectProducer
-    SpecDecision -->|specification already durable| ShapedCards
-    ArchitectProducer --> ShapedCards
-    ShapedCards --> HumanGate
-    HumanGate --> ReadyCards
-    ReadyCards --> ManagerProducer
-    ManagerProducer --> DevelopmentConsumer
-    DevelopmentConsumer --> CodePullRequest
-    CodePullRequest --> QualityConsumer
-    QualityConsumer -->|eligible| AcceptancePolicy[Deterministic acceptance]
-    AcceptancePolicy --> AutomatedMerge[Merge controller]
-    AutomatedMerge --> Done
-    QualityConsumer -->|protected change| HumanReview
-    HumanReview --> HumanMerge
-    HumanMerge --> Done
-    QualityConsumer -->|fail| DevelopmentConsumer
+    Request --> Analyst --> Architect --> Spec --> Shaped --> ReadyGate
+    ReadyGate --> Finalize --> Dev --> PullRequest --> QA
+    QA -->|checks pending| Wait --> QA
+    QA -->|defect| Dev
+    QA -->|eligible| Merge --> Done
+    QA -->|protected or ambiguous| Exception --> Done
 ```
 
-Each node is a **separate session**. Returning to a prior node means launching
-a new session that reconstructs context from GitHub. Readiness remains the
-mandatory human gate; human review after QA is an exception path for protected
-or ambiguous changes.
+The current session coordinates every bounded worker and reconstructs progress
+from GitHub after each stage. Readiness is the sole routine human gate; protected
+or ambiguous QA review is the only exceptional human gate.
 
 ### 8.2 Session by session
 
@@ -970,10 +975,10 @@ or ambiguous changes.
 |---|---|---|---|---|
 | 1 | Analyst Producer | Human request, repository identity, intake policy. | Issue, Project item, `(Backlog, architect)`, handoff comment. | Card appears in the Architect lane. |
 | 2 | Architect Producer | Issue, acceptance criteria, repository architecture, dependencies. | Specification pointer, decisions, decomposition plan, or one documentation Card. | Either an Architect Consumer is dispatchable, or Cards can be shaped for the readiness gate. |
-| 3 | Architect Consumer *(when needed)* | One documentation Card and repository context. | Documentation commits, one Pull Request, verification evidence. | Human reviews and merges the specification. |
-| 4 | Architect Producer | Merged specification and intake Card. | Flat implementation Cards, dependencies, `(Backlog, human)`, handoff comments. | Cards appear in the human readiness queue. |
-| 5 | **Human — readiness gate** | Each shaped Card, its specification and acceptance criteria. | `(Ready, dev)` via `promote`. | Ready Cards appear in the development lane. |
-| 6 | Tech Lead Producer | Complete projection, priority, dependencies, work-in-progress counts. | Dispatch queue and optional legal rebalancing handoffs. | A carrier starts one Developer Consumer per selected Card. |
+| 3 | Architect Producer | Intake Card and repository context. | Direct specification commit on the current branch plus an exact Card record. | The same worker decomposes it or hands a single Card to readiness. |
+| 4 | Architect Producer | Published direct specification and intake Card. | Flat implementation Cards that inherit the spec record, dependencies, `(Backlog, human)`, handoff comments. | Cards appear in the human readiness queue. |
+| 5 | **Human — readiness gate** | Each shaped Card, its specification and acceptance criteria. | Change Status to `Ready`. | The controller validates the spec and hands the Card to `dev`. |
+| 6 | Tech Lead Producer | Complete projection, priority, dependencies, work-in-progress counts. | Deterministic actions under WIP limits. | The current session starts one bounded Developer Consumer per admitted Card. |
 | 7 | Developer Consumer | One Card, specification, claim state, worktree, tests. | Claim branch, commits, tests, one Pull Request, `(In Review, qa)`, handoff comment. | Card appears in the QA lane. |
 | 8 | QA Consumer | One Card, Pull Request, checks, acceptance criteria, approved design and delivery evidence. | Structured verdict, conformance report, review coverage, challenged findings, and test-strength metrics. | Deterministic acceptance, correction, or protected-change review becomes dispatchable. |
 | 9a | Automated acceptance and merge controller | Current Pull Request head, QA verdict, required checks, protected-change policy, and branch state. | Eligibility decision, merge attempt, and final `Done` reconciliation after confirmed merge. | Completed Card, or a durable blocked/return path. |
@@ -1248,7 +1253,7 @@ identifiers and no ad hoc GitHub commands.
 | Blocker resolution skill (`resolving-issues`) | **designed** | §11.7; plan M6.5. Classifies a blocker, verifies recovery preconditions deterministically, emits fix-forward commands. Proposes only. |
 | Git claim and worktree service | built | `scripts/agent_teams/git.py` |
 | Pull Request contract service | built | `workflows.validate_pr_body`, `board.create_or_update_pull_request` |
-| Dispatch carrier adapters beyond human launch | **designed** | §3.6 |
+| Current-session bounded subagent carrier | built | `agents/agent-teams-worker.md`, `skills/dispatching-work/`, `Producer.next_actions` |
 | Audit and recovery log | **excluded** | Deliberately not built. The partial-failure envelope (§11.2) is not a substitute; revisit under plan M7 with evidence from a real run. |
 | Automatic Project field provisioning | **excluded** | `doctor` validates and explains; it never creates. |
 | Multiple board backends | **excluded** | §9.8. |
@@ -1393,13 +1398,13 @@ cap, normal handoff refuses and routes the Card to `(Blocked, lead)`. This is wh
 prevents an endless QA → development → architecture loop.
 
 Active work is derived from governed Status values, normally `In Progress` plus
-`In Review`. Dispatch applies configured global and per-seat limits before
-emitting new prompts. Overrides require an explicit reason.
+`In Review`. `next-actions` applies configured global and per-seat limits before
+admitting new worker actions. Overrides require an explicit reason.
 
 ### 11.5 Stale and interrupted sessions
 
-Durable state distinguishes a dispatch prompt rendered but never started, an
-active remote claim, a resumable local worktree, a Pull Request awaiting review,
+Durable state distinguishes a planned action not yet started, an active remote
+claim, a resumable local worktree, a Pull Request awaiting review or auto-merge,
 a stale claim requiring authorised release, and a Blocked Card with recoverable
 artifacts.
 
@@ -1429,12 +1434,12 @@ Only class 2 is a defect in this system. Class 1 is enforcement working; classes
 | Stage | Representative failure | Class | Lands at |
 |---|---|---|---|
 | Intake | No testable acceptance criteria. | 3 | `(Backlog, analyst)` with open questions and a named decision owner. |
-| Specification | The specification Pull Request fails review. | 3 | The same documentation Card: `In Review -> In Progress`. A specification delivery is an ordinary Consumer delivery (§7.3) and takes the ordinary rejection path. |
+| Product specification | Direct publication or Card recording fails. | 2 | The partial envelope distinguishes the committed/pushed document from the missing Card record; replay is idempotent. |
 | Readiness gate | `promote` while the specification is not durable. | 1 | Refused before any write (Appendix A, decision 2). |
 | Decomposition | Child Card *n* created, child *n+1* fails. | 2 | Partial envelope naming the created children; replay creates only the missing ones. |
 | Implementation | The verification chain will not pass. | 3, escalating to 4 | `(Blocked, architect)` with the claim and worktree intact. |
 | Verification | Verdict `fail` with reproducible findings. | 3 | `(In Progress, dev)` on the same Pull Request (§7.4). |
-| Merge gate | Human requests changes. | 3 | `(In Progress, dev)`, same branch. |
+| QA exception | Human requests changes to a protected or ambiguous delivery. | 3 | `(In Progress, dev)`, same branch. |
 | Any | The Card exceeds the handoff cap. | 4 | `(Blocked, lead)` (§11.4). |
 
 ### 11.7 The escalation ladder
@@ -1548,11 +1553,11 @@ implemented together.
 | # | Question | Decision | Rationale |
 |---|---|---|---|
 | 1 | Is `architect -> analyst` a legal handoff? | **Yes.** | §4.3 and the adaptation dossier's authority matrix both grant it. An architect that cannot return an under-specified Card must either guess at the requirement or block it, and both are worse than asking. The pre-package implementation omitted this edge; that omission was a defect, not a policy. |
-| 2 | Does specification completion mean the Pull Request is opened or merged? | **Merged**, configurable per repository via `spec_completion`. | Implementation work becomes Ready only once the specification is durable on the target branch, so development never builds against a document review may still change. Because a specification changes protected architecture, it follows the human exception path before merge. A repository may set `spec_completion=opened` deliberately. |
+| 2 | How does a product specification become durable? | **Directly on the current Git branch.** `publish-spec` commits and pushes only the requested `docs/*.md` path, then records its exact last-changing commit on the Card. | This removes a non-judgmental human merge and prevents development from building against an untracked or subsequently changed document. `spec_completion` is legacy input and has no effect. |
 | 3 | Does the intake Card become the implementation Card, or does decomposition create new ones? | **Both, by shape.** A genuine single-Card change is promoted in place. A specification with several independently shippable slices creates flat implementation Cards, and the intake Card keeps a summary comment. | Reusing the intake Card for a multi-slice specification would force one Consumer session to deliver several Pull Requests, breaking the one-Card-one-delivery invariant. Creating a second Card for a genuinely single change adds a hop that carries no information. |
 | 4 | Which seat authority governs a generic Status transition? | The **destination** decides. Moving to `Ready` is checked as `promote_to_ready`; moving to `Done` as `reconcile_done`; every other move as `transition_card`. | Without this, a generic `transition` is a hole through which any seat takes an action its own policy row forbids — an analyst could reach `Ready` despite `promote_to_ready` refusing that seat. Keying the check to the destination keeps one rule in one place. |
 | 5 | Does that destination rule apply to Card *creation* as well as movement? | **Yes, on both axes.** Creating a Card writes a whole `(Status, Role)` routing state, so `create_card` asks the destination Status's action question and — when the new Card is owned by a seat other than the creator — the destination Role's handoff question. Keeping a Card one creates is not a handoff. | Decision 4 was enforced only where a Card *moved*. Creation reached the same states by a different door: an analyst refused `promote_to_ready` could create a Card already `Ready`, and one refused the `analyst -> dev` edge of §4.3 could create one already sitting in the development lane. A rule that governs only one of the two ways to reach a state is not a rule. |
-| 6 | Who opens `Backlog -> Ready`? | **Only the human.** `promote_to_ready` refuses every artificial intelligence seat, including `lead`. An agent seat shapes the Card and hands it to `human`; the human approves it into `Ready`, which also hands it to `dev`. Decomposition therefore creates children at `(Backlog, human)`, not `(Ready, dev)`. | This reverses the readiness half of decision 2. The architecture claimed two human gates and had one: the only hard floor was merge, and every path to `Ready` — `promote`, `transition`, `create-card`, `decompose` — was open to the architect. `spec_completion=merged` was an indirect gate at best, and it lapses entirely when the specification reference is a path rather than a Pull Request, because a path is accepted as durable without checking it exists. A gate a routine argument steps around is not a gate. A `review`-class entry would not have worked either: a review classification is permitted, so only a refusal gates (§4.4). Because decision 4 keys authority to the destination, closing `promote` closed `transition` and `create-card` on the same rule. |
+| 6 | Who opens `Backlog -> Ready`? | **Only the human.** `promote_to_ready` refuses every artificial intelligence seat, including `lead`. An agent seat shapes the Card and hands it to `human`; the human changes only the Card Status to `Ready`, then the controller validates the exact spec record and hands it to `dev`. Decomposition therefore creates children at `(Backlog, human)`, not `(Ready, dev)`. | This reverses the readiness half of decision 2. The architecture claimed two human gates and had one: the only hard floor was merge, and every path to `Ready` — `promote`, `transition`, `create-card`, `decompose` — was open to the architect. `spec_completion=merged` was an indirect gate at best, and it lapses entirely when the specification reference is a path rather than a Pull Request, because a path is accepted as durable without checking it exists. A gate a routine argument steps around is not a gate. A `review`-class entry would not have worked either: a review classification is permitted, so only a refusal gates (§4.4). Because decision 4 keys authority to the destination, closing `promote` closed `transition` and `create-card` on the same rule. |
 | 7 | Does the user name the seat, or does the plugin choose it? | **The plugin chooses.** A person states intent in ordinary language; the entry router infers seat and routine from that intent plus live board state, and defaults to orientation when intent is unstated. `[role:<seat>]` remains the dispatch-artifact format and an explicit override, not the human interface. The router may never infer `human`. | Seats are an authority model, and asking a user to classify themselves exposes internal machinery as a menu. Inference is safe because selecting a seat grants nothing — `policy.py` evaluates the same rules however the seat was chosen — with one exception: `human` holds both gates, so a router able to adopt it could approve its own readiness decision. This matches the reference project, whose entry skill routes "what should I work on" / "new requirement" / "what's blocked" straight to a routine; it never asks the user to name a role, because it has none to name. |
 
 ---
@@ -1623,11 +1628,11 @@ following with no undocumented board edits:
 1. An Analyst Producer creates a durable `(Backlog, architect)` Card.
 2. An Architect can return an under-specified Card, or produce a durable
    specification and shaped implementation Cards.
-3. An Architect documentation Consumer delivers one specification Pull Request
-   without mixing in decomposition.
+3. An Architect Producer publishes one product specification directly on the
+   current branch without creating a branch, worktree, or Pull Request.
 4. Every agent path to `Ready` is refused, and the human's `promote` opens it.
-5. A Tech Lead Producer inspects all lanes, applies work-in-progress
-   policy, and renders deterministic dispatch artifacts.
+5. A Tech Lead coordinator inspects all lanes, applies work-in-progress
+   policy, and starts the admitted bounded subagents in the current session.
 6. Two Developer Consumers racing for one Card produce exactly one winner.
 7. The winning Consumer resumes from durable state, completes test-driven
    development, and creates one governed Pull Request.
