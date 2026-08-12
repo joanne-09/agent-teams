@@ -173,6 +173,8 @@ class FakeGh:
             return ""
         if head == ["api", "-X"]:  # gh api -X DELETE repos/.../git/refs/heads/...
             return ""
+        if head == ["api", f"repos/{REPO}"]:  # REST repo object: allow_auto_merge
+            return str(self.auto_merge_allowed).casefold()
         if head == ["pr", "create"]:
             return f"https://github.com/{REPO}/pull/57"
         if head == ["pr", "merge"]:
@@ -181,8 +183,6 @@ class FakeGh:
             return ""
         if head == ["pr", "edit"]:
             return ""
-        if head == ["repo", "view"]:
-            return str(self.auto_merge_allowed).casefold()
         raise AssertionError(f"unexpected gh run call: {args}")
 
     def json(self, args):
