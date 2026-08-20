@@ -42,7 +42,7 @@ boundary:
   transition table);
 - the board schema: Status and Role option sets, Card body sections, the
   handoff comment format;
-- the direct-to-Git specification record and readiness-gate contract;
+- the configured specification publication record and readiness-gate contract;
 - result-envelope semantics (`ok` / `partial` / `completed` / `recovery`);
 - plugin manifest and skill instruction files;
 - ADR-level architecture decisions.

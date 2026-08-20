@@ -17,12 +17,14 @@ response shapes never escape ``github.py``.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
+import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 from .errors import AgentTeamsError
 
@@ -65,6 +67,10 @@ def slugify(title: str, limit: int = 40) -> str:
 def claim_branch(number: int, title: str) -> str:
     return f"claim/{number}-{slugify(title)}"
 
+def specification_branch(number: int, title: str) -> str:
+    return f"spec/{number}-{slugify(title)}"
+
+
 
 def worktree_path(workspace: Path, number: int, title: str) -> Path:
     return Path(workspace) / f"claim-{number}-{slugify(title)}"
@@ -83,11 +89,13 @@ class Git:
         self.root = Path(root)
 
     def _run(
-        self, args: Iterable[str], check: bool = True
+        self, args: Iterable[str], check: bool = True,
+        env: Mapping[str, str] | None = None,
     ) -> subprocess.CompletedProcess:
         args = [str(arg) for arg in args]
         result = subprocess.run(
-            ["git", *args], cwd=str(self.root), capture_output=True, text=True
+            ["git", *args], cwd=str(self.root), capture_output=True, text=True,
+            env=dict(env) if env is not None else None,
         )
         if check and result.returncode != 0:
             raise GitError(
@@ -204,6 +212,155 @@ class Git:
             "state": "TRACKED",
         }
 
+    def publish_specification_for_review(
+        self, number: int, title: str, reference: str
+    ) -> dict[str, Any]:
+        """Publish only one specification on a deterministic review branch.
+
+        A temporary index builds the commit without moving the current branch
+        or mixing in the caller's real index. After the remote branch owns the
+        exact content, the local path is restored to current HEAD so the shared
+        checkout stays clean while the user reviews the Pull Request.
+        """
+        target, relative = self._specification_path(reference)
+        if not target.is_file() or not target.read_text(encoding="utf-8").strip():
+            raise GitError(f"specification `{relative}` is missing or empty")
+
+        base_branch = self._run(
+            ["symbolic-ref", "--quiet", "--short", "HEAD"], check=False
+        ).stdout.strip()
+        if not base_branch:
+            raise GitError(
+                "cannot publish a specification from a detached HEAD; check out "
+                "the branch the specification Pull Request should target"
+            )
+
+        dirty_lines = [
+            line for line in self._run(
+                ["status", "--porcelain", "--untracked-files=all"]
+            ).stdout.splitlines()
+            if line.strip()
+        ]
+        unrelated = []
+        for line in dirty_lines:
+            if " -> " in line:
+                unrelated.append(line)
+                continue
+            changed = line[3:].strip().replace(chr(92), "/")
+            if changed != relative:
+                unrelated.append(line)
+        if unrelated:
+            raise GitError(
+                "cannot publish a specification while unrelated checkout changes "
+                "exist; preserve or finish them first:\n" + "\n".join(unrelated)
+            )
+
+        base_sha = self.head_sha()
+        base_tree = self._run(["rev-parse", f"{base_sha}^{{tree}}"]).stdout.strip()
+        with tempfile.TemporaryDirectory(prefix="agent-teams-spec-index-") as temp:
+            environment = os.environ.copy()
+            environment["GIT_INDEX_FILE"] = str(Path(temp) / "index")
+            self._run(["read-tree", base_sha], env=environment)
+            self._run(["add", "--", relative], env=environment)
+            tree = self._run(["write-tree"], env=environment).stdout.strip()
+            if tree == base_tree:
+                raise GitError(
+                    f"specification `{relative}` does not differ from "
+                    f"`{base_branch}`; there is no review change to publish"
+                )
+            commit = self._run(
+                [
+                    "commit-tree", tree, "-p", base_sha, "-m",
+                    f"spec: document #{number} {str(title).strip()}",
+                ],
+                env=environment,
+            ).stdout.strip()
+
+        branch = specification_branch(number, title)
+        ref = f"refs/heads/{branch}"
+        remote = self._run(["ls-remote", "--heads", "origin", ref], check=False)
+        if remote.returncode != 0:
+            raise GitError(
+                f"cannot inspect specification branch `{branch}`: "
+                f"{remote.stderr.strip()}"
+            )
+        remote_line = next(
+            (line for line in remote.stdout.splitlines() if line.strip()), ""
+        )
+        remote_sha = remote_line.split()[0] if remote_line else ""
+        pushed = self._run(
+            [
+                "push", "origin", f"{commit}:{ref}",
+                f"--force-with-lease={ref}:{remote_sha}",
+            ],
+            check=False,
+        )
+        if pushed.returncode != 0:
+            raise GitError(
+                f"specification review branch `{branch}` was not updated: "
+                f"{pushed.stderr.strip()}"
+            )
+
+        tracked = self._run(
+            ["ls-files", "--error-unmatch", "--", relative], check=False
+        ).returncode == 0
+        if tracked:
+            self._run(
+                ["restore", "--staged", "--worktree", "--source=HEAD", "--", relative]
+            )
+        else:
+            self._run(["reset", "--", relative], check=False)
+            target.unlink()
+
+        return {
+            "ok": True, "path": relative, "commit": commit, "branch": branch,
+            "base_branch": base_branch, "base_sha": base_sha, "pushed": True,
+            "state": "PULL_REQUEST_PENDING",
+        }
+
+    def sync_merged_specification(
+        self, reference: str, base_branch: str
+    ) -> dict[str, Any]:
+        """Fast-forward the clean shared checkout after a spec PR is merged."""
+        _target, relative = self._specification_path(reference)
+        current = self._run(
+            ["symbolic-ref", "--quiet", "--short", "HEAD"], check=False
+        ).stdout.strip()
+        if current != base_branch:
+            raise GitError(
+                f"cannot sync merged specification on `{current or 'detached HEAD'}`; "
+                f"check out recorded base branch `{base_branch}`"
+            )
+        dirty = self._run(
+            ["status", "--porcelain", "--untracked-files=all"]
+        ).stdout.strip()
+        if dirty:
+            raise GitError(
+                "cannot sync a merged specification while checkout changes exist:\n"
+                + dirty
+            )
+        remote_ref = f"refs/remotes/origin/{base_branch}"
+        fetched = self._run(
+            ["fetch", "origin", f"refs/heads/{base_branch}:{remote_ref}"],
+            check=False,
+        )
+        if fetched.returncode != 0:
+            raise GitError(
+                f"cannot fetch merged specification base `{base_branch}`: "
+                f"{fetched.stderr.strip()}"
+            )
+        ancestor = self._run(
+            ["merge-base", "--is-ancestor", "HEAD", remote_ref], check=False
+        )
+        if ancestor.returncode != 0:
+            raise GitError(
+                f"local `{base_branch}` diverged from `origin/{base_branch}`; "
+                "resolve it before finalizing the specification merge"
+            )
+        self._run(["merge", "--ff-only", remote_ref])
+        artifact = self.specification(relative)
+        return {**artifact, "branch": base_branch, "synced": True}
+
     def _claim_message(
         self, number: int, title: str, seat: str, session_id: str, base: str
     ) -> str:
@@ -301,6 +458,21 @@ class Git:
             entries.append(current)
         return entries
 
+    def worktree_for_branch(self, branch: str) -> Path | None:
+        """Find an existing claim checkout even if workspace config changed."""
+        wanted = f"refs/heads/{branch}"
+        matches = [
+            Path(entry["worktree"]).resolve()
+            for entry in self.worktrees()
+            if entry.get("branch") == wanted and entry.get("worktree")
+        ]
+        if len(matches) > 1:
+            raise GitError(
+                f"branch `{branch}` is checked out in multiple worktrees: "
+                + ", ".join(str(path) for path in matches)
+            )
+        return matches[0] if matches else None
+
     def _known_worktrees(self) -> set[Path]:
         return {
             Path(entry["worktree"]).resolve()
@@ -316,11 +488,17 @@ class Git:
         discard whatever it had already written.
         """
         path = Path(path)
-        if path.resolve() in self._known_worktrees():
+        existing_path = self.worktree_for_branch(branch)
+        if existing_path is not None:
             return {
                 "ok": True, "resumed": True,
-                "worktree": str(path), "branch": branch,
+                "worktree": str(existing_path), "branch": branch,
             }
+        if path.resolve() in self._known_worktrees():
+            raise GitError(
+                f"{path} is already a worktree for another branch; refusing "
+                f"to replace it while materializing `{branch}`"
+            )
         path.parent.mkdir(parents=True, exist_ok=True)
         existing = self._run(
             ["rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"], check=False

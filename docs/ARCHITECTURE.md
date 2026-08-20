@@ -2,7 +2,7 @@
 
 Status: normative architecture for the complete Phase 1 team
 Applies to: `agent-teams` (Claude Code plugin, v0.2.0)
-Last updated: 2026-08-12
+Last updated: 2026-08-20
 Delivery status: [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) — the sole status ledger
 Operating guide: [`USAGE.md`](./USAGE.md) — how a human actually drives this
 
@@ -32,23 +32,28 @@ This section supersedes any older Phase 1 wording below that describes
 specification Pull Requests, human-carried kickoff prompts, or manual routine
 merge reconciliation.
 
-1. Product specifications are written below `docs/` in the current checkout,
-   committed and pushed directly to the current branch by `publish-spec`, and
-   recorded on the Card by exact path and last-changing commit. No spec branch,
-   worktree, Pull Request, or human merge is created. Legacy
-   `spec_completion` config keys are accepted and ignored.
+1. Product specifications are written below `docs/` in the current checkout
+   and published by `publish-spec`. The default `spec_merge_mode=direct`
+   commits and pushes only that file to the current branch. With
+   `spec_merge_mode=manual`, the command creates a deterministic spec branch
+   and Pull Request; the user merges it, then the controller verifies the exact
+   head, synchronizes the base branch, and records its durable commit. Legacy
+   `spec_completion` keys are accepted and ignored.
 2. The user's current session is the coordinator. It repeatedly calls the
    deterministic `next-actions` planner and directly starts one bounded,
    no-grandchildren subagent per admitted Card stage. The human never copies a
    prompt or opens another session.
-3. Direct spec authors are serialized because they share the current checkout.
+3. Specification authors are serialized because they share the current checkout.
    Independent implementation and QA workers may run in parallel only when the
    planner admits them under the configured WIP limit.
-4. The only human gates are moving a specified Card Status to `Ready` and
-   protected or genuinely ambiguous QA exceptions (`approve-exception N`).
-   The readiness ownership handoff is automatic. Routine QA
-   defects, eligible auto-merge, delayed merge observation, and confirmed-merge
-   reconciliation are automatic controller paths.
+4. In the default `spec_merge_mode=direct` and `merge_mode=automatic`
+   combination, the only human gates are moving a specified Card Status to
+   `Ready` and protected or genuinely ambiguous QA exceptions
+   (`approve-exception N`). `spec_merge_mode=manual` adds a `spec_merge`
+   gate before shaping continues. `merge_mode=manual` independently adds a
+   `manual_merge` gate for an eligible implementation Pull Request. Readiness
+   handoff, routine QA defects, and confirmed-merge reconciliation remain
+   automatic controller paths.
 5. Generic Card creation and transition cannot reach `Done`. Only
    reconciliation backed by current exact-head eligible acceptance and a
    confirmed merged Pull Request can do so. Human exception merge also uses
@@ -136,6 +141,10 @@ which enforcement points are delivered and which remain pending.
 | 9 | Sessions are runtime peers. The org chart is authority over board state, never a call stack. | §3.3 |
 | 10 | agent-teams calls no other plugin. Correctness never depends on a sibling being installed. | §10.1 |
 
+In invariant 5, "deterministic policy merges" includes the configured
+`manual` route: policy exposes only the accepted exact head, the user performs
+the merge, and the controller reconciles only after GitHub confirms `MERGED`.
+
 ---
 
 ## 2. Vocabulary
@@ -169,7 +178,7 @@ where the exact Project field or prompt representation matters.
 | **Verdict** | A Quality Assurance engineer's evidence-backed `pass`, `fail`, or `blocked` result for one delivery (§9.6). "Looks good" is not a verdict. |
 | **Standing repository context** | Durable project instructions every session can reload: repository rules, product overview, architecture index, active decisions, team configuration. |
 | **Context bootstrap** | The mandatory read-only startup sequence: load standing context, bind identity, query live board state, build the seat-specific orientation (§3.5). |
-| **Specification gate** | The check that the Card records a direct-to-Git `docs/*.md` specification at its exact last-changing commit before it may become Ready. |
+| **Specification gate** | The check that the Card records a base-branch `docs/*.md` specification at its exact last-changing commit before it may become Ready. |
 | **Hard floor** | A refusal no configuration or user override may widen. Merge and readiness are the two (§4.5). |
 | **Partial-failure envelope** | The result shape returned when a multi-step mutation fails midway: what completed, what failed, and the exact recovery recipe (§11.2). |
 | **Failure class** | Which of the four kinds of "failed" occurred — refusal, partial mutation, work failure, or blocked. Determines the recovery; independent of the stage that produced it (§11.6). |
@@ -185,7 +194,7 @@ where the exact Project field or prompt representation matters.
 |---|---|---|
 | Purpose | Create, refine, decompose, prioritise, route, or maintain work. | Resolve exactly one Card with a delivery or a recorded rejection or blocker. |
 | Board scope | A bounded queue or several related Cards, as the routine permits. | One bound Card. Others may be read for context, never mutated. |
-| Repository writes | No implementation writes. The Architect Producer may publish only the bound product specification directly on the current branch. | Commits only inside the bound worktree and branch. |
+| Repository writes | No implementation writes. The Architect Producer may publish only the bound product specification through the configured direct or manual-PR route. | Commits only inside the bound worktree and branch. |
 | Normal result | New or revised Issues, Cards, specifications, transitions, handoffs, priorities, or dispatch prompts. | One Pull Request, one verdict, or one terminal blocked result. |
 | End condition | The intended board-shaping result is durable and verified. | The bound Card reaches its stage boundary and the next seat has durable context. |
 | Merge authority | None. | None. |
@@ -859,7 +868,7 @@ diagrams or decision records, open one governed Pull Request, route it through
 review, and stop.
 
 Product specifications used for readiness and decomposition do **not** use this
-Consumer route. They follow the direct current-branch publication contract in
+Consumer route. They follow the configured Producer publication contract in
 §0 and §6.4.
 
 ### 7.4 Quality Assurance engineer — verification
@@ -945,7 +954,7 @@ flowchart LR
     Request[Human request]
     Analyst[Bounded analyst worker]
     Architect[Bounded architect worker]
-    Spec[Specification committed directly to Git]
+    Spec[Durable specification on base branch]
     Shaped[Card: Backlog, human]
     ReadyGate[Human changes Status to Ready]
     Finalize[Controller validates spec and hands to dev]
@@ -966,8 +975,14 @@ flowchart LR
 ```
 
 The current session coordinates every bounded worker and reconstructs progress
-from GitHub after each stage. Readiness is the sole routine human gate; protected
-or ambiguous QA review is the only exceptional human gate.
+from GitHub after each stage. The diagram depicts the default
+`spec_merge_mode=direct` route, where readiness is the sole routine human
+gate; protected or ambiguous QA review is exceptional. With
+`spec_merge_mode=manual`, a user merge gate sits between Architect and Spec,
+after which architect shaping resumes. With `merge_mode=manual`,
+the eligible auto-merge node is replaced by an explicit user merge gate; both
+routes converge on automatic confirmed-merge reconciliation.
+
 
 ### 8.2 Session by session
 
@@ -975,8 +990,8 @@ or ambiguous QA review is the only exceptional human gate.
 |---|---|---|---|---|
 | 1 | Analyst Producer | Human request, repository identity, intake policy. | Issue, Project item, `(Backlog, architect)`, handoff comment. | Card appears in the Architect lane. |
 | 2 | Architect Producer | Issue, acceptance criteria, repository architecture, dependencies. | Specification pointer, decisions, decomposition plan, or one documentation Card. | Either an Architect Consumer is dispatchable, or Cards can be shaped for the readiness gate. |
-| 3 | Architect Producer | Intake Card and repository context. | Direct specification commit on the current branch plus an exact Card record. | The same worker decomposes it or hands a single Card to readiness. |
-| 4 | Architect Producer | Published direct specification and intake Card. | Flat implementation Cards that inherit the spec record, dependencies, `(Backlog, human)`, handoff comments. | Cards appear in the human readiness queue. |
+| 3 | Architect Producer | Intake Card and repository context. | Direct specification commit by default, or an exact spec PR record and user merge in manual mode. | Once durable on the base branch, architect shaping continues. |
+| 4 | Architect Producer | Published durable specification and intake Card. | Flat implementation Cards that inherit the spec record, dependencies, `(Backlog, human)`, handoff comments. | Cards appear in the human readiness queue. |
 | 5 | **Human — readiness gate** | Each shaped Card, its specification and acceptance criteria. | Change Status to `Ready`. | The controller validates the spec and hands the Card to `dev`. |
 | 6 | Tech Lead Producer | Complete projection, priority, dependencies, work-in-progress counts. | Deterministic actions under WIP limits. | The current session starts one bounded Developer Consumer per admitted Card. |
 | 7 | Developer Consumer | One Card, specification, claim state, worktree, tests. | Claim branch, commits, tests, one Pull Request, `(In Review, qa)`, handoff comment. | Card appears in the QA lane. |
@@ -1298,7 +1313,7 @@ producer_board.py + policy.py             deterministic authority and mutation
 This retains the useful separation found in the source projects: entry routing
 stays small, workflow skills load only for the selected job, and detailed
 discipline loads from references on demand. Agent-teams adds the architecture
-they do not provide: direct-to-Git specification records, the human Status-only
+they do not provide: durable specification records, the human Status-only
 Ready gate, `(Status, Role)` authority, durable claim/resume, partial-failure
 envelopes, exact-head acceptance, same-session subagent orchestration, and
 automatic reconciliation.
@@ -1470,7 +1485,7 @@ Only class 2 is a defect in this system. Class 1 is enforcement working; classes
 | Stage | Representative failure | Class | Lands at |
 |---|---|---|---|
 | Intake | No testable acceptance criteria. | 3 | `(Backlog, analyst)` with open questions and a named decision owner. |
-| Product specification | Direct publication or Card recording fails. | 2 | The partial envelope distinguishes the committed/pushed document from the missing Card record; replay is idempotent. |
+| Product specification | Publication, spec PR, finalization, or Card recording fails. | 2 | The partial envelope names the completed prefix and exact fix-forward route; ambiguous mutations are not blindly replayed. |
 | Readiness gate | `promote` while the specification is not durable. | 1 | Refused before any write (Appendix A, decision 2). |
 | Decomposition | Child Card *n* created, child *n+1* fails. | 2 | Partial envelope naming the created children; replay creates only the missing ones. |
 | Implementation | The verification chain will not pass. | 3, escalating to 4 | `(Blocked, architect)` with the claim and worktree intact. |
@@ -1484,8 +1499,9 @@ Recovery climbs one rung at a time, and each rung costs strictly more attention
 than the one below it. A session may not skip rungs to reach a human faster.
 
 ```text
-1  retry, bounded          same session; two failed attempts on one symptom means
-                           the diagnosis is wrong, not that the fix needs another try
+1  retry, bounded          same session; the external recovery policy sets the
+                           retry count and capped exponential-backoff schedule;
+                           exhaustion is reported and stops the action
 2  hand to the owner       Role moves: dev -> architect, architect -> analyst,
                            qa -> architect. The comment carries what was tried
 3  Blocked, work preserved  Status moves; claim branch and worktree stay
@@ -1508,8 +1524,16 @@ self-resolving:
 | Decision pending | A seat or the human must decide before work can continue. | Route to that seat. If the question is really a new requirement, route to intake. |
 | Stale block | The blocker cleared and nobody moved the Card. | Propose `Blocked -> In Progress`. Proposed, never applied silently. |
 
-One honest limit remains. The rung-1 bound is a **discipline carried in skill
-prose**, not a counter enforced in code; nothing today counts attempts.
+The rung-1 settings live in `.agent-teams/config.json` under `recovery`.
+`next-actions` emits both those values and the derived delay sequence, and the
+coordinator counts action attempts during the current run. The counter is not a
+durable cross-session artifact; durable Card, claim, branch, Pull Request, and
+routing state still decide what resumes after a new session starts.
+
+The GitHub adapter applies the same schedule only to classified transient
+failures on unambiguously read-only commands. It never blindly retries a
+mutation: a lost response can conceal a successful remote write, and replaying
+Issue or Pull Request creation could duplicate durable artifacts.
 
 Stale-claim detection — the other half of rung 3 — was blocked on claims
 existing and is now possible: `worktree-status` reports each In Progress Card's
@@ -1589,7 +1613,7 @@ implemented together.
 | # | Question | Decision | Rationale |
 |---|---|---|---|
 | 1 | Is `architect -> analyst` a legal handoff? | **Yes.** | §4.3 and the adaptation dossier's authority matrix both grant it. An architect that cannot return an under-specified Card must either guess at the requirement or block it, and both are worse than asking. The pre-package implementation omitted this edge; that omission was a defect, not a policy. |
-| 2 | How does a product specification become durable? | **Directly on the current Git branch.** `publish-spec` commits and pushes only the requested `docs/*.md` path, then records its exact last-changing commit on the Card. | This removes a non-judgmental human merge and prevents development from building against an untracked or subsequently changed document. `spec_completion` is legacy input and has no effect. |
+| 2 | How does a product specification become durable? | **Directly by default, optionally through a user-merged PR.** `spec_merge_mode=direct` commits and pushes only the requested `docs/*.md` path. `spec_merge_mode=manual` creates a deterministic spec PR; after the user merges its exact head, the controller syncs the base. Both routes record the base-branch commit on the Card. | Direct mode keeps the normal workflow to one later Card edit, while manual mode offers explicit review. Neither lets development build against an unmerged or subsequently changed document. `spec_completion` is legacy input and has no effect. |
 | 3 | Does the intake Card become the implementation Card, or does decomposition create new ones? | **Both, by shape.** A genuine single-Card change is promoted in place. A specification with several independently shippable slices creates flat implementation Cards, and the intake Card keeps a summary comment. | Reusing the intake Card for a multi-slice specification would force one Consumer session to deliver several Pull Requests, breaking the one-Card-one-delivery invariant. Creating a second Card for a genuinely single change adds a hop that carries no information. |
 | 4 | Which seat authority governs a generic Status transition? | The **destination** decides. Moving to `Ready` is checked as `promote_to_ready`; moving to `Done` as `reconcile_done`; every other move as `transition_card`. | Without this, a generic `transition` is a hole through which any seat takes an action its own policy row forbids — an analyst could reach `Ready` despite `promote_to_ready` refusing that seat. Keying the check to the destination keeps one rule in one place. |
 | 5 | Does that destination rule apply to Card *creation* as well as movement? | **Yes, on both axes.** Creating a Card writes a whole `(Status, Role)` routing state, so `create_card` asks the destination Status's action question and — when the new Card is owned by a seat other than the creator — the destination Role's handoff question. Keeping a Card one creates is not a handoff. | Decision 4 was enforced only where a Card *moved*. Creation reached the same states by a different door: an analyst refused `promote_to_ready` could create a Card already `Ready`, and one refused the `analyst -> dev` edge of §4.3 could create one already sitting in the development lane. A rule that governs only one of the two ways to reach a state is not a rule. |
@@ -1607,6 +1631,9 @@ implemented together.
 Decision 8 supersedes earlier references to the human holding both gates. Those
 references now mean readiness authority plus protected-change exception
 authority; routine eligible merge is no longer a human gate.
+That statement describes the default `automatic` mode. `manual` deliberately
+adds a user merge gate for eligible Pull Requests without changing acceptance.
+
 
 **Decision 8 is implemented.** One clarification the implementation forced,
 recorded here because it reads as a contradiction otherwise:
@@ -1621,6 +1648,10 @@ state. A companion action `request_automated_merge` exists in the policy table
 refused to **every** seat, including `human`, so that "no seat may request a
 merge" is an assertion the test suite makes rather than an absence nobody
 notices going missing.
+With `merge_mode=manual`, the same deterministic `eligible` result exposes
+the accepted exact head to the user and the controller issues no merge command.
+This does not grant merge authority to any agent seat.
+
 
 Two operational preconditions this design depends on, both reported by
 `doctor` and neither creatable by it: the repository must have auto-merge
@@ -1628,6 +1659,10 @@ enabled, and `required_checks` must be non-empty. An empty `required_checks`
 fails closed — no delivery is ever `eligible` — because without required checks
 `--auto` merges immediately and the retest-against-current-base guarantee is
 vacuous.
+`manual` mode narrows those preconditions: `required_checks` remains
+mandatory for eligibility, while repository auto-merge is unnecessary because
+the user performs the merge.
+
 
 ---
 
@@ -1654,6 +1689,10 @@ authority model. `03-target-architecture.md` §5.2 is the authority matrix;
 | Engineering disciplines | Composed from board-superpowers, superpowers, and gstack. | **Not composed** — referenced by name only (§10.1). |
 | Merge | Consumer cannot self-merge. | No agent seat can directly merge. A deterministic controller merges only eligible, currently reviewed heads; protected changes route to the human exception lane. |
 
+The adaptation table describes the default. In `manual` mode the human also
+executes eligible merges, while deterministic policy still selects the exact
+accepted Pull Request and the controller still reconciles confirmed merges.
+
 ---
 
 ## Appendix C — Completion criteria
@@ -1664,8 +1703,9 @@ following with no undocumented board edits:
 1. An Analyst Producer creates a durable `(Backlog, architect)` Card.
 2. An Architect can return an under-specified Card, or produce a durable
    specification and shaped implementation Cards.
-3. An Architect Producer publishes one product specification directly on the
-   current branch without creating a branch, worktree, or Pull Request.
+3. An Architect Producer publishes one product specification directly by
+   default, while manual spec mode creates an exact-head Pull Request that only
+   the user merges before shaping resumes.
 4. Every agent path to `Ready` is refused, and the human's `promote` opens it.
 5. A Tech Lead coordinator inspects all lanes, applies work-in-progress
    policy, and starts the admitted bounded subagents in the current session.

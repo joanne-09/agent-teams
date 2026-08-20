@@ -199,11 +199,17 @@ def _build_parser() -> argparse.ArgumentParser:
 
     publish_spec = sub.add_parser(
         "publish-spec",
-        help="commit and push one docs specification on the current branch",
+        help="publish one docs specification through the configured merge mode",
     )
     publish_spec.add_argument("issue", type=int)
     publish_spec.add_argument("--path", required=True)
     publish_spec.add_argument("--acting-role", default="architect", choices=ROLES)
+
+    finalize_spec = sub.add_parser(
+        "finalize-spec-merge",
+        help="sync and record a user-merged specification Pull Request",
+    )
+    finalize_spec.add_argument("issue", type=int)
 
     finalize = sub.add_parser(
         "finalize-readiness", help="hand a human-readied specified Card to dev"
@@ -472,6 +478,11 @@ def main(
             result = producer.publish_specification(
                 args.issue, args.path, Role.parse(args.acting_role)
             )
+            _print(result)
+            return 0 if result.get("ok") else 1
+
+        elif args.command == "finalize-spec-merge":
+            result = producer.finalize_specification_merge(args.issue)
             _print(result)
             return 0 if result.get("ok") else 1
 

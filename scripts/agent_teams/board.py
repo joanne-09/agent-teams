@@ -52,7 +52,7 @@ def _value_name(value: Any) -> str | None:
 class Board:
     def __init__(self, config: Config, gh: Gh | None = None):
         self.config = config
-        self.gh = gh or Gh()
+        self.gh = gh or Gh(recovery=config.recovery)
         self._project_id: str | None = None
         self._fields: list[dict[str, Any]] | None = None
 
@@ -197,7 +197,12 @@ class Board:
 
     def cards(self) -> list[Card]:
         """Every Card on the Project belonging to the configured repository."""
-        items = fetch_all_items(self._raw_items, what="Project items")
+        items = fetch_all_items(
+            self._raw_items,
+            page_limit=self.config.board_page_limit,
+            max_items=self.config.board_max_items,
+            what="Project items",
+        )
         normalised = (
             self._normalise_item(item) for item in items if isinstance(item, dict)
         )
@@ -487,6 +492,60 @@ class Board:
              "--title", title, "--body", body]
         ).strip()
 
+    def create_or_update_specification_pull_request(
+        self, branch: str, base_branch: str, title: str, body: str
+    ) -> str:
+        """Create the one user-merged specification PR for a stable branch."""
+        existing = self.gh.json(
+            [
+                "pr", "list", "--repo", self.config.repo, "--head", branch,
+                "--state", "open", "--json", "number,url",
+            ]
+        )
+        if existing:
+            self.gh.run(
+                [
+                    "pr", "edit", str(existing[0]["number"]),
+                    "--repo", self.config.repo, "--base", base_branch,
+                    "--title", title, "--body", body,
+                ]
+            )
+            return str(existing[0].get("url", ""))
+        return self.gh.run(
+            [
+                "pr", "create", "--repo", self.config.repo,
+                "--head", branch, "--base", base_branch,
+                "--title", title, "--body", body,
+            ]
+        ).strip()
+
+    def specification_pull_request(self, reference: str) -> dict[str, Any]:
+        """Normalize the exact specification PR recorded on a Card."""
+        text = str(reference or "").strip()
+        match = re.search(r"(?:/pull/|#)?(\d+)(?:\D|$)", text)
+        if match is None:
+            raise BoardError(
+                f"invalid specification Pull Request reference: {reference!r}"
+            )
+        raw = self.gh.json(
+            [
+                "pr", "view", match.group(1), "--repo", self.config.repo,
+                "--json",
+                "number,url,headRefOid,baseRefName,state,mergedAt,mergeCommit",
+            ]
+        )
+        state = str(raw.get("state") or "").upper()
+        return {
+            "number": raw.get("number"),
+            "url": str(raw.get("url") or text),
+            "head_sha": str(raw.get("headRefOid") or ""),
+            "base_branch": str(raw.get("baseRefName") or ""),
+            "state": state,
+            "merged": bool(raw.get("mergedAt")) or state == "MERGED",
+            "merged_at": raw.get("mergedAt"),
+            "merge_commit": (raw.get("mergeCommit") or {}).get("oid"),
+        }
+
     def record_verdict(self, number: int, verdict: Verdict) -> None:
         self.comment_on_card(number, _render_block(VERDICT_MARKER, verdict.to_dict()))
 
@@ -521,7 +580,7 @@ class Board:
         return None
 
     def latest_specification(self, number: int) -> dict[str, Any] | None:
-        """The newest direct-to-Git spec record from comments or Issue body.
+        """The newest durable spec record from comments or Issue body.
 
         Decomposed children inherit the record inside their body, avoiding a
         second mutation that could leave a created child permanently unable to
@@ -705,10 +764,10 @@ class Board:
         if not self.config.required_checks:
             acceptance_problems.append(
                 "required_checks is empty, so no delivery can ever be eligible "
-                "for automated acceptance; every pass will route to the human "
+                "for deterministic acceptance; every pass will route to the human "
                 "protected-change lane. Name the checks that must be green."
             )
-        else:
+        elif self.config.merge_mode == "automatic":
             try:
                 if not self.auto_merge_enabled():
                     acceptance_problems.append(
@@ -727,6 +786,7 @@ class Board:
 
         return {
             "ok": True,
+            "config_revision": self.config.revision,
             "acceptance_problems": acceptance_problems,
             "repo": self.config.repo,
             "project_owner": self.config.project_owner,
@@ -738,7 +798,14 @@ class Board:
             "roles_validated": [role.value for role in Role],
             "wip_limit": self.config.wip_limit,
             "handoff_cap": self.config.handoff_cap,
-            "specification_mode": "direct-to-git",
+            "monitor_poll_seconds": self.config.monitor_poll_seconds,
+            "board_page_limit": self.config.board_page_limit,
+            "board_max_items": self.config.board_max_items,
+            "recovery": self.config.recovery.to_dict(),
+            "spec_merge_mode": self.config.spec_merge_mode,
+            "merge_mode": self.config.merge_mode,
+            "merge_method": self.config.merge_method,
+            "specification_mode": self.config.spec_merge_mode,
         }
 
 

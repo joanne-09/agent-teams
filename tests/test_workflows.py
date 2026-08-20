@@ -26,6 +26,23 @@ SPEC_COMMENT = (
                 "branch": "main"}) + "\n```"
 )
 
+def manual_spec_comment(state="OPEN", commit="f" * 40):
+    payload = {
+        "card": 20,
+        "path": SPEC_PATH,
+        "commit": commit,
+        "branch": "spec/20-shaped-requirement",
+        "base_branch": "main",
+        "mode": "manual",
+        "state": state,
+        "pull_request": f"https://github.com/{REPO}/pull/57",
+    }
+    return (
+        SPECIFICATION_MARKER + "\n\n```json\n"
+        + json.dumps(payload) + "\n```"
+    )
+
+
 
 def producer(gh=None, git=None, **config_overrides):
     gh = gh or FakeGh()
@@ -49,7 +66,7 @@ class SpecGateTests(unittest.TestCase):
         team, gh = producer()
         gate = team.check_spec_gate("https://github.com/acme/widgets/pull/57")
         self.assertFalse(gate["satisfied"])
-        self.assertIn("no longer part of the workflow", gate["explanation"])
+        self.assertIn("not a readiness artifact", gate["explanation"])
         self.assertEqual(gh.calls_matching("pr", "view"), [])
 
     def test_no_reference_refuses(self):
@@ -116,6 +133,25 @@ class PublishSpecificationTests(unittest.TestCase):
             SPECIFICATION_MARKER in call[-1]
             for call in gh.calls_matching("issue", "comment")
         ))
+    def test_manual_mode_publishes_a_spec_pr_and_records_its_exact_head(self):
+        items = board_with((20, "Shaped requirement", "Backlog", "architect"))
+        git = FakeGit()
+        team, gh = producer(
+            FakeGh(items=items), git=git, spec_merge_mode="manual"
+        )
+        result = team.publish_specification(20, SPEC_PATH)
+        self.assertTrue(result["ok"])
+        self.assertIn(
+            ("publish_specification_for_review", 20, SPEC_PATH), git.calls
+        )
+        self.assertEqual(len(gh.calls_matching("pr", "create")), 1)
+        self.assertEqual(result["specification"]["mode"], "manual")
+        self.assertEqual(result["specification"]["commit"], "f" * 40)
+        self.assertEqual(
+            result["specification"]["pull_request"],
+            f"https://github.com/{REPO}/pull/57",
+        )
+
 
     def test_non_architect_is_refused_before_git_or_github(self):
         items = board_with((20, "Shaped requirement", "Backlog", "architect"))
@@ -125,6 +161,51 @@ class PublishSpecificationTests(unittest.TestCase):
             team.publish_specification(20, SPEC_PATH, Role.DEV)
         self.assertEqual(git.calls, [])
         self.assertEqual(gh.calls, [])
+
+class FinalizeSpecificationMergeTests(unittest.TestCase):
+    def _team(self, *, merged=True, head_sha="f" * 40):
+        pr_view = {
+            **FakeGh().pr_view,
+            "headRefOid": head_sha,
+            "baseRefName": "main",
+        }
+        pr_state = {
+            "state": "MERGED" if merged else "OPEN",
+            "mergedAt": "now" if merged else None,
+            "mergeCommit": {"oid": "d" * 40} if merged else None,
+        }
+        git = FakeGit()
+        team, gh = producer(
+            FakeGh(
+                items=board_with(
+                    (20, "Shaped requirement", "Backlog", "architect")
+                ),
+                comments=[manual_spec_comment()],
+                pr_view=pr_view,
+                pr_state=pr_state,
+            ),
+            git=git,
+            spec_merge_mode="manual",
+        )
+        return team, gh, git
+
+    def test_confirmed_user_merge_syncs_and_records_the_base_commit(self):
+        team, gh, git = self._team()
+        result = team.finalize_specification_merge(20)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["specification"]["state"], "MERGED")
+        self.assertEqual(result["specification"]["commit"], SPEC_COMMIT)
+        self.assertIn(("sync_merged_specification", SPEC_PATH, "main"), git.calls)
+        self.assertEqual(len(gh.calls_matching("issue", "comment")), 1)
+
+    def test_open_specification_pr_is_refused_before_git_sync(self):
+        team, _, git = self._team(merged=False)
+        with self.assertRaisesRegex(WorkflowError, "must merge"):
+            team.finalize_specification_merge(20)
+        self.assertEqual(
+            [call for call in git.calls if call[0] == "sync_merged_specification"],
+            [],
+        )
 
 
 class PromoteAuthorityTests(unittest.TestCase):
@@ -527,10 +608,33 @@ class NextActionsTests(unittest.TestCase):
             comments=[acceptance],
             pr_state={"state": "OPEN", "mergedAt": None},
             pr_view=pr_view,
-        ))
+        ), monitor_poll_seconds=9)
         action = team.next_actions()["actions"][0]
         self.assertEqual(action["kind"], "monitor")
-        self.assertEqual(action["poll_after_seconds"], 30)
+        self.assertEqual(action["poll_after_seconds"], 9)
+
+    def test_next_actions_exposes_the_configured_recovery_policy(self):
+        team, _ = producer(
+            FakeGh(items=[]),
+            recovery={
+                "max_retries": 3,
+                "initial_backoff_seconds": 2,
+                "backoff_multiplier": 3,
+                "max_backoff_seconds": 10,
+            },
+        )
+        result = team.next_actions()
+        self.assertEqual(result["config_revision"], team.config.revision)
+        self.assertEqual(
+            result["recovery_policy"],
+            {
+                "max_retries": 3,
+                "initial_backoff_seconds": 2.0,
+                "backoff_multiplier": 3.0,
+                "max_backoff_seconds": 10.0,
+                "retry_delays_seconds": [2.0, 6.0, 10.0],
+            },
+        )
 
     def test_unarmed_eligible_acceptance_retries_the_controller(self):
         acceptance = ACCEPTANCE_MARKER + "\n\n```json\n" + json.dumps({
@@ -545,6 +649,77 @@ class NextActionsTests(unittest.TestCase):
         action = team.next_actions()["actions"][0]
         self.assertEqual(action["kind"], "controller")
         self.assertEqual(action["argv"], ["accept", "21"])
+
+    def test_manual_merge_mode_exposes_an_explicit_human_gate(self):
+        acceptance = ACCEPTANCE_MARKER + "\n\n```json\n" + json.dumps({
+            "acceptance": "eligible", "head_sha": "a" * 40,
+            "policy_version": "test", "reasons": ["green"],
+        }) + "\n```"
+        team, _ = producer(
+            FakeGh(
+                items=board_with((21, "Delivery", "In Review", "qa")),
+                comments=[acceptance],
+                pr_state={"state": "OPEN", "mergedAt": None},
+            ),
+            merge_mode="manual",
+        )
+        result = team.next_actions()
+        self.assertEqual(result["actions"], [])
+        self.assertEqual(len(result["human_gates"]), 1)
+        gate = result["human_gates"][0]
+        self.assertEqual(gate["gate"], "manual_merge")
+        self.assertEqual(
+            gate["pull_request"], f"https://github.com/{REPO}/pull/57"
+        )
+
+    def test_manual_spec_mode_waits_at_an_exact_pull_request_gate(self):
+        pr_view = {
+            **FakeGh().pr_view,
+            "headRefOid": "f" * 40,
+            "baseRefName": "main",
+        }
+        team, _ = producer(
+            FakeGh(
+                items=board_with(
+                    (20, "Shaped requirement", "Backlog", "architect")
+                ),
+                comments=[manual_spec_comment()],
+                pr_view=pr_view,
+                pr_state={"state": "OPEN", "mergedAt": None},
+            ),
+            spec_merge_mode="manual",
+        )
+        result = team.next_actions()
+        self.assertEqual(result["actions"], [])
+        self.assertEqual(result["human_gates"][0]["gate"], "spec_merge")
+        self.assertEqual(
+            result["human_gates"][0]["pull_request"],
+            f"https://github.com/{REPO}/pull/57",
+        )
+
+    def test_merged_manual_spec_becomes_a_controller_finalization(self):
+        pr_view = {
+            **FakeGh().pr_view,
+            "headRefOid": "f" * 40,
+            "baseRefName": "main",
+        }
+        team, _ = producer(
+            FakeGh(
+                items=board_with(
+                    (20, "Shaped requirement", "Backlog", "architect")
+                ),
+                comments=[manual_spec_comment()],
+                pr_view=pr_view,
+                pr_state={
+                    "state": "MERGED", "mergedAt": "now",
+                    "mergeCommit": {"oid": "d" * 40},
+                },
+            ),
+            spec_merge_mode="manual",
+        )
+        action = team.next_actions()["actions"][0]
+        self.assertEqual(action["kind"], "controller")
+        self.assertEqual(action["argv"], ["finalize-spec-merge", "20"])
 
     def test_changed_head_returns_to_fresh_qa_evidence(self):
         acceptance = ACCEPTANCE_MARKER + "\n\n```json\n" + json.dumps({
@@ -673,6 +848,34 @@ class WorkerSkillLoadingTests(unittest.TestCase):
         self.assertNotIn("\nskills:", frontmatter)
         self.assertIn("invoke exactly", worker)
         self.assertIn("[skill:agent-teams:<name>]", worker)
+
+    def test_dispatch_skill_obeys_the_external_recovery_policy(self):
+        skill = (
+            Path(__file__).parents[1]
+            / "skills"
+            / "dispatching-work"
+            / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("recovery_policy", skill)
+        self.assertIn("retry_delays_seconds", skill)
+        self.assertIn("manual_merge", skill)
+        self.assertIn("spec_merge", skill)
+        self.assertIn("config_revision", skill)
+        self.assertIn("discard every unstarted action", skill)
+        self.assertNotIn("retry that identical action at most once", skill)
+        self.assertNotIn("Keep that policy for this run", skill)
+
+    def test_authoring_skill_stops_at_a_manual_specification_merge(self):
+        skill = (
+            Path(__file__).parents[1]
+            / "skills"
+            / "authoring-spec"
+            / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("spec_merge_mode: manual", skill)
+        self.assertIn("finalize-spec-merge", skill)
+        self.assertIn("Do not hand off or decompose yet", skill)
+
 
 
 class ReleaseClaimTests(unittest.TestCase):

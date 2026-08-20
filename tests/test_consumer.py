@@ -106,6 +106,27 @@ class ClaimTests(unittest.TestCase):
         self.assertIn(("remote_branch_sha", "claim/12-implement-parser"), git.calls)
         self.assertEqual(gh.calls_matching("project", "item-edit"), [])
 
+    def test_resume_uses_existing_claim_checkout_after_workspace_change(self):
+        old_target = Path("../old-workspace/claim-12-implement-parser")
+
+        class ExistingWorktreeGit(FakeGit):
+            def worktree_for_branch(self, branch):
+                self.calls.append(("worktree_for_branch", branch))
+                return old_target
+
+        git = ExistingWorktreeGit(remote_sha="f" * 40)
+        consumer, _ = self._consumer(
+            board_with((12, "Implement parser", "In Progress", "dev")),
+            git=git,
+            config=a_config(workspace="../new-workspace"),
+        )
+        result = consumer.resume(12, Role.DEV)
+        self.assertEqual(Path(result["worktree"]), old_target)
+        self.assertIn(
+            ("worktree_for_branch", "claim/12-implement-parser"), git.calls
+        )
+        self.assertIn(("worktree", str(old_target)), git.calls)
+
     def test_a_card_in_the_wrong_status_is_refused_before_any_git_call(self):
         git = FakeGit()
         consumer, gh = self._consumer(board_with((12, "x", "Backlog", "dev")), git=git)
@@ -593,6 +614,29 @@ class AcceptTests(unittest.TestCase):
         self.assertEqual(result["acceptance"], "eligible")
         self.assertEqual(len(gh.calls_matching("pr", "merge")), 1)
 
+    def test_manual_mode_waits_for_the_user_without_issuing_merge(self):
+        consumer, gh = self._consumer(
+            [verdict_comment()],
+            config=a_config(merge_mode="manual"),
+            pr_state=self.OPEN,
+        )
+        result = consumer.accept(21)
+        self.assertEqual(result["acceptance"], "eligible")
+        self.assertEqual(result["merge"], "awaiting_human")
+        self.assertEqual(result["status"], "In Review")
+        self.assertEqual(gh.calls_matching("pr", "merge"), [])
+
+    def test_manual_mode_reconciles_a_merge_the_user_already_completed(self):
+        consumer, gh = self._consumer(
+            [verdict_comment()],
+            config=a_config(merge_mode="manual"),
+            pr_state=self.MERGED,
+        )
+        result = consumer.accept(21)
+        self.assertEqual(result["merge"], "merged")
+        self.assertEqual(result["status"], "Done")
+        self.assertEqual(gh.calls_matching("pr", "merge"), [])
+
     def test_an_eligible_pass_completes_to_done_when_the_merge_has_landed(self):
         consumer, gh = self._consumer([verdict_comment()], pr_state=self.MERGED)
         result = consumer.accept(21)
@@ -883,6 +927,16 @@ class DoctorAcceptanceTests(unittest.TestCase):
         )
         report = Board(a_config(), gh=gh).doctor()
         self.assertTrue(
+            any("auto-merge" in problem for problem in report["acceptance_problems"])
+        )
+
+    def test_manual_mode_does_not_require_repository_auto_merge(self):
+        gh = FakeGh(
+            items=board_with((21, "x", "In Review", "qa")),
+            auto_merge_allowed=False,
+        )
+        report = Board(a_config(merge_mode="manual"), gh=gh).doctor()
+        self.assertFalse(
             any("auto-merge" in problem for problem in report["acceptance_problems"])
         )
 

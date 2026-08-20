@@ -3,15 +3,15 @@
 Status: active plan for evolving the Producer minimum viable product into the
 proposed Phase 1 agent team
 Applies to: `mvp/producer-from-scratch`
-Last updated: 2026-08-12
+Last updated: 2026-08-20
 
 ## 1. Outcome
 
 The desired outcome is a small but complete Claude Code agent team in which:
 
 1. a System Analyst creates and shapes a requirement;
-2. a System Architect publishes the durable specification directly on the
-   current Git branch and hands shaped Cards to the human readiness gate;
+2. a System Architect publishes the durable specification directly by default
+   or through a user-merged spec PR, then shapes Cards for readiness;
 3. the current Tech Lead session plans and starts the next legal bounded
    subagent without human prompt transport;
 4. a Developer claims one Card, works through
@@ -37,13 +37,14 @@ specification Pull Requests, or routine reconciliation as defaults.
 
 | Work item | Status | Enforcement |
 |---|---|---|
-| Direct product spec on current branch; no spec PR | Implemented, uncommitted | `Git.publish_specification`, `publish-spec`, exact Card record |
+| Default direct product spec plus optional user-merged spec PR | Implemented, uncommitted | `spec_merge_mode`, `publish-spec`, `spec_merge`, exact Card record |
 | Same-session bounded worker launch; no prompt copy | Implemented, uncommitted | `next-actions`, `dispatching-work`, `agents/agent-teams-worker.md` |
-| Two human gates only | Implemented, uncommitted | readiness policy and protected-change `approve-exception` |
-| WIP-aware ordering and serialized direct-spec authors | Implemented, uncommitted | `Producer.next_actions` |
+| Default automatic merge plus optional user merge | Implemented, uncommitted | `merge_mode`, `manual_merge` gate, confirmed-merge reconciliation |
+| WIP-aware ordering and serialized spec authors | Implemented, uncommitted | `Producer.next_actions` |
 | Delayed merge monitoring and automatic reconciliation | Implemented, uncommitted | typed `monitor` / `reconcile` controller actions |
 | Exact-head safety and no generic Done bypass | Implemented, uncommitted | `--match-head-commit`, merge-evidence-only reconciliation |
 | Returned analyst Card clarification without duplicate intake | Implemented, uncommitted | `clarify` command and analyst worker route |
+| External operational config and bounded recovery/backoff | Implemented, uncommitted | validated `recovery`, monitor and pagination config; safe-read GitHub retries; planner-emitted schedule |
 
 The plan follows the design relationship defined in
 [`ARCHITECTURE.md` Appendix B](./ARCHITECTURE.md#appendix-b--lineage):

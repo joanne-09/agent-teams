@@ -1,0 +1,301 @@
+# agent-teams configuration reference
+
+`agent-teams` reads configuration from `.agent-teams/config.json` in the
+consuming repository. Pass `--config PATH` before the CLI subcommand to use a
+different file.
+
+Create an initial file with:
+
+```powershell
+python C:\path\to\agent-teams\scripts\producer_board.py init `
+  --repo OWNER/REPO `
+  --project-owner OWNER `
+  --project-number 1 `
+  --required-check build `
+  --required-check test
+```
+
+`init` exposes the identity, WIP, handoff, and required-check settings as
+flags. Edit the generated JSON for the other supported settings, then run:
+
+```powershell
+python C:\path\to\agent-teams\scripts\producer_board.py doctor
+```
+
+`doctor` validates GitHub access, Project fields and options, and the
+preconditions for deterministic acceptance. Configuration parsing reports all
+validation errors together.
+
+## Live dashboard updates
+
+A running coordinator does not cache the config file for the whole session.
+Every `producer_board.py` invocation loads and validates a new snapshot.
+Therefore a dashboard change applies at the next command boundary; no daemon or
+session restart is required.
+
+Every `next-actions`, `bootstrap`, and `doctor` result includes
+`config_revision`, a SHA-256 identity of the normalized active snapshot. The
+coordinator treats the newest `next-actions` result and its
+`recovery_policy` as authoritative. When the revision changes, it discards
+unstarted actions from the older plan and replans from live GitHub state.
+
+One command already in progress finishes with the snapshot it loaded at start.
+The following command uses the dashboard update. This prevents one mutation
+from mixing settings halfway through its transaction.
+
+Dashboard writers must replace the complete JSON file atomically:
+
+1. validate the complete object with `Config.from_dict` or equivalent rules;
+2. write a temporary file in the same directory; and
+3. atomically replace `.agent-teams/config.json`.
+
+`Config.write` implements that sequence. Do not truncate and rewrite the live
+file in place, because a concurrent session could otherwise read partial JSON.
+An invalid replacement is never ignored or merged with old values: the next
+command refuses with all validation errors, and work can continue after the
+dashboard saves a valid snapshot.
+
+Durable in-flight state remains authoritative across a config change. A manual
+specification PR already recorded on a Card must still be merged and finalized;
+changing `spec_merge_mode` does not retroactively bypass it. Existing claim
+worktrees are resolved by their claim branch, so changing `workspace` affects
+new claims while an active claim resumes at its original checkout. Exact-head
+QA and merge evidence remains bound to the recorded head.
+
+`config_revision` is runtime metadata, not a JSON setting.
+
+## Complete example
+
+This example includes every supported setting. `status_overrides` is omitted
+from generated files when it is empty, but an empty object is valid.
+
+```json
+{
+  "repo": "OWNER/REPO",
+  "project_owner": "OWNER",
+  "project_number": 1,
+  "role_field": "Role",
+  "status_field": "Status",
+  "backlog_status": "Backlog",
+  "ready_status": "Ready",
+  "status_overrides": {},
+  "dispatch_roles": [
+    "architect",
+    "dev",
+    "qa"
+  ],
+  "wip_limit": 5,
+  "handoff_cap": 6,
+  "monitor_poll_seconds": 30,
+  "board_page_limit": 100,
+  "board_max_items": 2000,
+  "recovery": {
+    "max_retries": 1,
+    "initial_backoff_seconds": 5.0,
+    "backoff_multiplier": 2.0,
+    "max_backoff_seconds": 60.0
+  },
+  "workspace": "../.worktrees",
+  "protected_paths": {
+    "authority-and-policy": [
+      "scripts/agent_teams/policy.py",
+      "scripts/agent_teams/model.py"
+    ],
+    "acceptance-and-merge": [
+      "scripts/agent_teams/git.py",
+      "scripts/agent_teams/workflows.py"
+    ],
+    "github-workflows-and-credentials": [
+      ".github/workflows/**",
+      "**/*credential*"
+    ],
+    "dependencies-and-manifests": [
+      ".claude-plugin/**",
+      "**/package.json",
+      "**/pyproject.toml",
+      "**/requirements*.txt"
+    ],
+    "agent-instructions": [
+      "skills/**",
+      "CLAUDE.md",
+      "AGENTS.md"
+    ],
+    "security-boundaries": [
+      "**/auth/**",
+      "**/*secret*"
+    ],
+    "architecture-and-design": [
+      "docs/ARCHITECTURE.md",
+      "docs/specs/**"
+    ]
+  },
+  "required_checks": [
+    "build",
+    "test"
+  ],
+  "spec_merge_mode": "direct",
+  "merge_mode": "automatic",
+  "merge_method": "squash",
+  "claim_ttl_hours": 72
+}
+```
+
+## Repository and Project
+
+| Setting | Type | Default | Meaning |
+|---|---|---|---|
+| `repo` | string | required | GitHub repository in `OWNER/REPO` form. |
+| `project_owner` | string | required | User or organization that owns the GitHub Project. |
+| `project_number` | positive integer | required | GitHub Project number, not an Issue number or database ID. |
+| `role_field` | non-empty string | `"Role"` | Project single-select field that stores the current seat. |
+| `status_field` | non-empty string | `"Status"` | Project single-select field that stores lifecycle state. |
+| `backlog_status` | non-empty string | `"Backlog"` | Project option used for canonical `Backlog`. |
+| `ready_status` | non-empty string | `"Ready"` | Project option used for canonical `Ready`. |
+| `status_overrides` | object | `{}` | Maps other canonical Status names to repository-specific option names. |
+
+The Role field must contain these exact option values:
+`analyst`, `architect`, `dev`, `qa`, `lead`, and `human`. Role option
+names cannot currently be remapped.
+
+Valid `status_overrides` keys are `Backlog`, `Ready`, `In Progress`,
+`Blocked`, `In Review`, and `Done`. `backlog_status` and `ready_status`
+take precedence over overrides for those two states. For example:
+
+```json
+{
+  "backlog_status": "Todo",
+  "ready_status": "Approved",
+  "status_overrides": {
+    "In Progress": "Doing",
+    "In Review": "Reviewing",
+    "Done": "Completed"
+  }
+}
+```
+
+## Dispatch and lifecycle limits
+
+| Setting | Type | Default | Meaning |
+|---|---|---|---|
+| `dispatch_roles` | non-empty unique string array | `["architect", "dev", "qa"]` | Allow-list and priority order for Ready work. Values must be valid Role tokens. |
+| `wip_limit` | non-negative integer | `5` | Maximum active Cards admitted before new Ready work waits. Active means `In Progress` plus `In Review`. `0` disables the limit. |
+| `handoff_cap` | non-negative integer | `6` | Refuses another handoff once the Card already has this many handoffs. `0` disables the cap. |
+| `workspace` | non-empty string | `"../.worktrees"` | Parent directory for claim worktrees. It must begin with `..` so worktrees stay outside the repository. |
+| `claim_ttl_hours` | non-negative integer | `72` | Stale-claim observation threshold reported with claim/worktree status. It never authorizes automatic branch or worktree deletion. |
+
+When WIP capacity is limited, earlier entries in `dispatch_roles` sort ahead of
+later entries; Issue number is the deterministic tie-breaker.
+
+## Specification and implementation merges
+
+`spec_merge_mode` and `merge_mode` are independent:
+
+| Setting | Values | Default | Controls |
+|---|---|---|---|
+| `spec_merge_mode` | `direct`, `manual` | `direct` | How a product specification reaches the base branch. |
+| `merge_mode` | `automatic`, `manual` | `automatic` | Who merges an eligible implementation Pull Request after QA. |
+| `merge_method` | `squash`, `merge`, `rebase` | `squash` | Method used when agent-teams executes an implementation merge. |
+
+### `spec_merge_mode`
+
+- `direct`: `publish-spec` commits and pushes only the requested
+  `docs/**/*.md` file to the current branch. Architect shaping continues.
+  The user's normal action is only the later Card Status change to `Ready`.
+- `manual`: `publish-spec` creates a deterministic spec branch and Pull
+  Request, then stops. The user merges the spec PR. The coordinator verifies
+  the exact head and base, runs `finalize-spec-merge`, records the durable
+  base-branch commit, and resumes architect shaping.
+
+### `merge_mode`
+
+- `automatic`: an exact implementation head that passes deterministic
+  acceptance is armed for GitHub auto-merge. The coordinator confirms the
+  merge and reconciles the Card to `Done`.
+- `manual`: the same eligible result creates a `manual_merge` human gate.
+  The user merges the linked implementation PR; the coordinator confirms it
+  and still performs `Done` reconciliation.
+
+`merge_method` does not control a merge performed manually in the GitHub UI,
+including a manual specification PR. It applies when agent-teams issues the
+merge command, including automated eligible merges and approved QA exceptions.
+
+Common combinations:
+
+| Spec | Implementation | Human actions on the routine path |
+|---|---|---|
+| `direct` | `automatic` | Change the shaped Card to `Ready`. |
+| `manual` | `automatic` | Merge the spec PR, then later change the Card to `Ready`. |
+| `direct` | `manual` | Change the Card to `Ready`, then merge the eligible implementation PR. |
+| `manual` | `manual` | Merge the spec PR, change the Card to `Ready`, then merge the eligible implementation PR. |
+
+## Required checks and protected paths
+
+| Setting | Type | Default | Meaning |
+|---|---|---|---|
+| `required_checks` | string array | `[]` | Exact GitHub check names that must conclude `SUCCESS` before an implementation is eligible. |
+| `protected_paths` | object of string arrays | built-in categories | Category-to-glob mapping that routes matching changes to the human QA-exception lane. |
+
+An empty `required_checks` fails closed: no delivery becomes routinely
+eligible, even with a passing QA verdict. Configure the same check names in
+branch protection. `merge_mode: automatic` additionally requires repository
+auto-merge; `doctor` reports missing acceptance preconditions.
+
+Repository `protected_paths` extend the built-in policy:
+
+- patterns added to a built-in category are merged with its defaults;
+- new categories are allowed;
+- duplicate patterns are removed; and
+- a built-in category cannot be emptied or removed through configuration.
+
+Patterns use repository-relative paths. `*` matches within one path segment,
+`**` spans directories, and `?` matches one non-separator character.
+
+Example:
+
+```json
+{
+  "protected_paths": {
+    "security-boundaries": ["infra/**"],
+    "billing": ["src/billing/**", "tests/billing/**"]
+  }
+}
+```
+
+The default security patterns still apply in this example.
+
+## Monitoring, pagination, and recovery
+
+`recovery` is an object containing the four `recovery.*` settings listed
+below.
+
+| Setting | Type | Default | Meaning |
+|---|---|---|---|
+| `monitor_poll_seconds` | positive integer | `30` | Coordinator wait before re-reading pending checks or merge state. |
+| `board_page_limit` | positive integer | `100` | Initial GitHub Project item read limit. |
+| `board_max_items` | positive integer | `2000` | Maximum Project item read limit; must be at least `board_page_limit`. |
+| `recovery.max_retries` | non-negative integer | `1` | Retries after the initial attempt. `0` disables retries. |
+| `recovery.initial_backoff_seconds` | finite non-negative number | `5.0` | Wait before retry 1. |
+| `recovery.backoff_multiplier` | finite number at least `1.0` | `2.0` | Exponential multiplier for later retry delays. |
+| `recovery.max_backoff_seconds` | finite non-negative number | `60.0` | Per-retry delay cap; must be at least the initial delay. |
+
+The retry delay before retry number *n* is:
+
+```text
+min(initial_backoff_seconds * backoff_multiplier^(n - 1),
+    max_backoff_seconds)
+```
+
+The recovery schedule applies to unchanged coordinator actions and transient,
+safe GitHub reads. Authentication, permission, protocol, and policy errors stop
+immediately. GitHub mutations such as Issue creation, field edits, comments,
+Pull Request creation, and merge commands are never blindly replayed.
+
+Project reads start at `board_page_limit` and double until GitHub returns fewer
+items than requested. If a response still saturates `board_max_items`, the
+command refuses to return a possibly truncated board.
+
+## Legacy setting
+
+Older files may contain `spec_completion`. It is accepted for compatibility,
+ignored, and omitted when configuration is written. Use `spec_merge_mode`
+instead.

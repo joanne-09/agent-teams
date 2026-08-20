@@ -206,6 +206,8 @@ class FakeGh:
             # Two callers with different --json field sets: pull_request()
             # asks for the review facts, merge_state() for the merge outcome.
             wanted = args[args.index("--json") + 1] if "--json" in args else ""
+            if "mergedAt" in wanted and "headRefOid" in wanted:
+                return {**self.pr_view, **self.pr_state}
             if "mergedAt" in wanted:
                 return {"number": self.pr_view["number"], **self.pr_state}
             return dict(self.pr_view)
@@ -275,6 +277,25 @@ class FakeGit:
         self.calls.append(("publish_specification", number, reference))
         result = dict(self.specification_artifact)
         result["path"] = reference
+        return result
+
+    def publish_specification_for_review(self, number, title, reference):
+        self.calls.append(("publish_specification_for_review", number, reference))
+        return {
+            "ok": True,
+            "path": reference,
+            "commit": "f" * 40,
+            "branch": f"spec/{number}-shaped-requirement",
+            "base_branch": "main",
+            "base_sha": "e" * 40,
+            "pushed": True,
+            "state": "PULL_REQUEST_PENDING",
+        }
+
+    def sync_merged_specification(self, reference, base_branch):
+        self.calls.append(("sync_merged_specification", reference, base_branch))
+        result = dict(self.specification_artifact)
+        result.update({"path": reference, "branch": base_branch, "synced": True})
         return result
 
     def remove_worktree(self, path, force=False):

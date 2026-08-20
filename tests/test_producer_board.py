@@ -21,7 +21,9 @@ import producer_board  # noqa: E402
 from agent_teams import policy  # noqa: E402
 from agent_teams.config import Config, ConfigError  # noqa: E402
 from agent_teams.github import BoardTruncated  # noqa: E402
-from agent_teams.model import Role, Status  # noqa: E402
+from agent_teams.model import (  # noqa: E402
+    ACCEPTANCE_MARKER, Role, Status,
+)
 from agent_teams.model import REQUIRED_DIMENSIONS, VERDICT_MARKER  # noqa: E402
 from fake_gh import (  # noqa: E402
     FIELDS, REPO, FakeGh, FakeGit, SaturatingGh, board_with,
@@ -73,6 +75,115 @@ class ConfigTests(unittest.TestCase):
         current = config(spec_completion="opened")
         self.assertNotIn("spec_completion", current.to_dict())
 
+    def test_configuration_reference_covers_every_serialized_key(self):
+        reference = (
+            Path(__file__).parents[1] / "docs" / "CONFIGURATION.md"
+        ).read_text(encoding="utf-8")
+        current = config()
+        expected = set(current.to_dict()) | {"status_overrides"}
+        expected.update(
+            f"recovery.{key}" for key in current.recovery.to_dict()
+        )
+        for key in sorted(expected):
+            with self.subTest(key=key):
+                self.assertIn(f"`{key}`", reference)
+
+        readme = (
+            Path(__file__).parents[1] / "README.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "[docs/CONFIGURATION.md](./docs/CONFIGURATION.md)", readme
+        )
+
+    def test_revision_identifies_the_normalized_config_snapshot(self):
+        first = config(required_checks=["build"])
+        equivalent = config(required_checks=[" build "])
+        changed = config(required_checks=["build"], merge_mode="manual")
+        self.assertEqual(first.revision, equivalent.revision)
+        self.assertNotEqual(first.revision, changed.revision)
+        self.assertEqual(len(first.revision), 64)
+
+    def test_write_atomically_replaces_without_leaving_a_temp_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            config(merge_mode="automatic").write(path)
+            replacement = config(merge_mode="manual")
+            replacement.write(path)
+            self.assertEqual(Config.load(path), replacement)
+            self.assertEqual(
+                list(Path(directory).glob(".config.json.*.tmp")),
+                [],
+            )
+
+    def test_operational_defaults_are_externalised(self):
+        current = config()
+        self.assertEqual(current.monitor_poll_seconds, 30)
+        self.assertEqual(current.board_page_limit, 100)
+        self.assertEqual(current.board_max_items, 2000)
+        self.assertEqual(current.merge_mode, "automatic")
+        self.assertEqual(current.spec_merge_mode, "direct")
+        self.assertEqual(current.recovery.max_retries, 1)
+        self.assertEqual(current.recovery.initial_backoff_seconds, 5.0)
+        self.assertEqual(current.recovery.backoff_multiplier, 2.0)
+        self.assertEqual(current.recovery.max_backoff_seconds, 60.0)
+
+    def test_recovery_policy_builds_a_bounded_exponential_schedule(self):
+        current = config(recovery={
+            "max_retries": 4,
+            "initial_backoff_seconds": 3,
+            "backoff_multiplier": 2,
+            "max_backoff_seconds": 10,
+        })
+        self.assertEqual(
+            current.recovery.retry_delays_seconds(),
+            (3.0, 6.0, 10.0, 10.0),
+        )
+
+    def test_operational_settings_survive_a_round_trip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "producer.json"
+            original = config(
+                monitor_poll_seconds=12,
+                board_page_limit=25,
+                board_max_items=500,
+                recovery={
+                    "max_retries": 3,
+                    "initial_backoff_seconds": 1.5,
+                    "backoff_multiplier": 1.5,
+                    "max_backoff_seconds": 8,
+                },
+            )
+            original.write(path)
+            self.assertEqual(Config.load(path), original)
+
+    def test_invalid_operational_settings_are_reported_together(self):
+        with self.assertRaises(ConfigError) as caught:
+            config(
+                monitor_poll_seconds=0,
+                board_page_limit=0,
+                board_max_items=10,
+                recovery={
+                    "max_retries": -1,
+                    "initial_backoff_seconds": -2,
+                    "backoff_multiplier": 0.5,
+                    "max_backoff_seconds": -3,
+                },
+            )
+        message = str(caught.exception)
+        for expected in (
+            "monitor_poll_seconds",
+            "board_page_limit",
+            "max_retries",
+            "initial_backoff_seconds",
+            "backoff_multiplier",
+            "max_backoff_seconds",
+        ):
+            self.assertIn(expected, message)
+
+    def test_board_ceiling_must_not_be_below_page_limit(self):
+        with self.assertRaisesRegex(ConfigError, "board_max_items"):
+            config(board_page_limit=200, board_max_items=100)
+
 
 class ConsumerConfigTests(unittest.TestCase):
     """The five Consumer keys, and the one that may only grow."""
@@ -80,6 +191,8 @@ class ConsumerConfigTests(unittest.TestCase):
     def test_defaults_are_conservative(self):
         current = config()
         self.assertEqual(current.workspace, "../.worktrees")
+        self.assertEqual(current.merge_mode, "automatic")
+        self.assertEqual(current.spec_merge_mode, "direct")
         self.assertEqual(current.merge_method, "squash")
         self.assertEqual(current.required_checks, ())
         self.assertEqual(current.claim_ttl_hours, 72)
@@ -121,6 +234,14 @@ class ConsumerConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "merge_method"):
             config(merge_method="cherry-pick")
 
+    def test_unknown_merge_mode_is_rejected(self):
+        with self.assertRaisesRegex(ConfigError, "merge_mode"):
+            config(merge_mode="sometimes")
+
+    def test_unknown_spec_merge_mode_is_rejected(self):
+        with self.assertRaisesRegex(ConfigError, "spec_merge_mode"):
+            config(spec_merge_mode="sometimes")
+
     def test_workspace_must_resolve_outside_the_repository(self):
         # A repo-internal worktree gets scanned by editors and confuses which
         # checkout is canonical.
@@ -138,7 +259,9 @@ class ConsumerConfigTests(unittest.TestCase):
             path = Path(directory) / "producer.json"
             original = config(
                 required_checks=["build"], merge_method="rebase",
+                merge_mode="manual",
                 protected_paths={"billing": ["src/billing/**"]},
+                spec_merge_mode="manual",
             )
             original.write(path)
             self.assertEqual(Config.load(path), original)
@@ -202,6 +325,14 @@ class PaginationTests(unittest.TestCase):
         # The failure must be loud. A short list would make dispatch skip real
         # work while reporting success.
         self.assertIn("partial board", str(caught.exception))
+
+    def test_uses_the_configured_page_and_ceiling_values(self):
+        gh = SaturatingGh(total=60)
+        board = producer_board.Board(
+            config(board_page_limit=25, board_max_items=100), gh
+        )
+        self.assertEqual(len(board.cards()), 60)
+        self.assertEqual(gh.limits_requested, [25, 50, 100])
 
 
 class HandoffTests(unittest.TestCase):
@@ -364,7 +495,13 @@ class CliTests(unittest.TestCase):
         payload = json.loads(out.getvalue())
         self.assertTrue(payload["ok"])
         self.assertNotIn("spec_completion", payload)
+        self.assertEqual(payload["monitor_poll_seconds"], 30)
+        self.assertEqual(payload["board_page_limit"], 100)
+        self.assertEqual(payload["board_max_items"], 2000)
+        self.assertEqual(payload["recovery"]["max_retries"], 1)
+        self.assertEqual(payload["merge_mode"], "automatic")
         self.assertEqual(Config.load(target).project_number, 3)
+        self.assertEqual(payload["spec_merge_mode"], "direct")
 
     def test_init_accepts_required_checks_for_automatic_merge(self):
         args = producer_board._build_parser().parse_args([
@@ -382,11 +519,51 @@ class CliTests(unittest.TestCase):
         self.assertEqual(
             parser.parse_args(["resume", "20", "--acting-role", "dev"]).issue, 20
         )
+        self.assertEqual(
+            parser.parse_args(["finalize-spec-merge", "20"]).issue, 20
+        )
 
     def test_next_actions_may_plan_one_card(self):
         args = producer_board._build_parser().parse_args(["next-actions", "20"])
         self.assertEqual(args.command, "next-actions")
         self.assertEqual(args.issue, 20)
+
+    def test_running_session_reloads_dashboard_config_on_next_command(self):
+        acceptance = (
+            ACCEPTANCE_MARKER
+            + "\n\n```json\n"
+            + json.dumps({
+                "acceptance": "eligible",
+                "head_sha": "a" * 40,
+                "policy_version": "test",
+                "reasons": ["green"],
+            })
+            + "\n```"
+        )
+        gh = FakeGh(
+            items=board_with((21, "Delivery", "In Review", "qa")),
+            comments=[acceptance],
+            pr_state={"state": "OPEN", "mergedAt": None},
+        )
+
+        code, output, _ = self._run("next-actions", gh=gh)
+        self.assertEqual(code, 0)
+        before = json.loads(output)
+        self.assertEqual(before["actions"][0]["argv"], ["accept", "21"])
+
+        config(
+            merge_mode="manual",
+            monitor_poll_seconds=7,
+            recovery={"max_retries": 0},
+        ).write(self.config_path)
+
+        code, output, _ = self._run("next-actions", gh=gh)
+        self.assertEqual(code, 0)
+        after = json.loads(output)
+        self.assertNotEqual(before["config_revision"], after["config_revision"])
+        self.assertEqual(after["actions"], [])
+        self.assertEqual(after["human_gates"][0]["gate"], "manual_merge")
+        self.assertEqual(after["recovery_policy"]["max_retries"], 0)
 
     def test_promote_uses_the_recorded_spec_without_a_path_argument(self):
         args = producer_board._build_parser().parse_args(["promote", "20"])

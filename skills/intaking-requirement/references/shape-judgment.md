@@ -2,7 +2,7 @@
      references/scope-shape-judgment.md (MIT, (c) 2026 PanQiWei,
      github.com/PanQiWei/board-superpowers). Outcomes are adapted to the
      agent-teams flow: every shape produces at most ONE intake Card, and
-     decomposition happens only after a direct specification is published. -->
+     decomposition happens only after a durable specification is published. -->
 
 # Shape judgment — intaking-requirement reference
 
@@ -32,7 +32,7 @@ Rows are evaluated top-down; the first row whose triggers fire wins.
 | Shape | Horizon | Triggers — fire any one | Outcome in agent-teams |
 |-------|---------|------------------------|------------------------|
 | **Cross-release roadmap** | portfolio | (a) Requirement crosses two or more release boundaries; (b) names a release-gate or cross-version umbrella; (c) bundles features that will not all ship in one cycle. | Stop. Surface: "This is roadmap-level — a positioning decision belongs before any Card." Do NOT create a Card yet. |
-| **Milestone-grouped** | release | (a) Requirement names a coherent shipped-together unit; (b) the eventual Cards together deliver Denne-MMF-shaped value (shipping any subset alone delivers strictly less); (c) the work spans two or more distinct areas of the system. | Create ONE umbrella intake Card carrying the milestone intent and the expected member slices. The architect decomposes after publishing the direct specification. |
+| **Milestone-grouped** | release | (a) Requirement names a coherent shipped-together unit; (b) the eventual Cards together deliver Denne-MMF-shaped value (shipping any subset alone delivers strictly less); (c) the work spans two or more distinct areas of the system. | Create ONE umbrella intake Card carrying the milestone intent and the expected member slices. The architect decomposes after publishing the durable specification. |
 | **Multi-card** | release sub-batch | (a) Requirement adds 2–N independent capabilities; (b) INVEST Independence holds across the candidate slices; (c) expected internal chunk count > 5 (empirical signal that single-Card scope will reactively chunk). | Create ONE intake Card stating the expected split for the architect. |
 | **Single card** | iteration | (a) Single user-visible or developer-visible capability; (b) estimable as XS/S/M/L; (c) no cross-Card design A/B requiring shared rationale; (d) belongs in one area of the system. | Direct Card creation via the SKILL.md workflow. |
 

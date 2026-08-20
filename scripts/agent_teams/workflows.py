@@ -40,8 +40,6 @@ STANDING_CONTEXT = (
     "docs/IMPLEMENTATION_PLAN.md",
 )
 
-STALE_DAYS = 7
-
 
 class WorkflowError(AgentTeamsError):
     """A Producer transaction refused before mutating anything."""
@@ -86,6 +84,7 @@ class Producer:
             "seat_name": seat.full_name,
             "execution_shape": "producer",
             "repo": self.config.repo,
+            "config_revision": self.config.revision,
             "project": f"{self.config.project_owner}/{self.config.project_number}",
             "standing_context": standing,
             "context_pointers_missing": [
@@ -452,8 +451,8 @@ class Producer:
                 else:
                     waiting.append({
                         **base, "reason": "Card is in the human lane without a "
-                        "structured direct-to-Git specification record; it is "
-                        "not ready for approval",
+                        "structured durable specification record; it is not "
+                        "ready for approval",
                     })
                 continue
             if card.status is Status.READY and card.role is Role.HUMAN:
@@ -472,7 +471,7 @@ class Producer:
                 else:
                     waiting.append({
                         **base, "reason": "Card was moved to Ready without a "
-                        "current direct-to-Git specification record",
+                        "current durable specification record",
                     })
                 continue
             if card.status is Status.IN_REVIEW and card.role is Role.HUMAN:
@@ -501,7 +500,57 @@ class Producer:
                     })
                 continue
             if card.status is Status.BACKLOG and card.role is Role.ARCHITECT:
-                if (self.board.latest_specification(card.number) and
+                specification = self.board.latest_specification(card.number)
+                if (
+                    specification
+                    and specification.get("mode") == "manual"
+                    and specification.get("state") != "MERGED"
+                ):
+                    try:
+                        spec_pr = self.board.specification_pull_request(
+                            str(specification.get("pull_request") or "")
+                        )
+                    except AgentTeamsError as exc:
+                        waiting.append({
+                            **base,
+                            "reason": "cannot inspect the recorded specification "
+                            f"Pull Request: {exc}",
+                        })
+                        continue
+                    if spec_pr["head_sha"] != specification.get("commit"):
+                        waiting.append({
+                            **base,
+                            "reason": "specification Pull Request head no longer "
+                            "matches the exact commit recorded on the Card; the "
+                            "architect must publish a fresh record",
+                        })
+                    elif spec_pr["merged"]:
+                        actions.append({
+                            **base,
+                            "kind": "controller",
+                            "role": Role.LEAD.value,
+                            "routine": "finalize-spec-merge",
+                            "argv": ["finalize-spec-merge", str(card.number)],
+                            "reason": "the user merged the exact recorded "
+                            "specification head; sync the base and record its "
+                            "durable base-branch commit",
+                        })
+                    elif spec_pr["state"] == "OPEN":
+                        human_gates.append({
+                            **base,
+                            "gate": "spec_merge",
+                            "specification": specification,
+                            "pull_request": spec_pr["url"],
+                            "instruction": "Merge the specification Pull Request.",
+                        })
+                    else:
+                        waiting.append({
+                            **base,
+                            "reason": "specification Pull Request is closed "
+                            "without a confirmed merge",
+                        })
+                    continue
+                if (specification and
                         self.board.decomposition_complete(card.number)):
                     waiting.append({
                         **base,
@@ -512,16 +561,28 @@ class Producer:
                     continue
                 if architect_authoring_started:
                     waiting.append({
-                        **base, "reason": "direct specification authoring is "
-                        "serialized because all spec workers share the current "
+                        **base, "reason": "specification authoring is serialized "
+                        "because all spec workers share the current "
                         "checkout",
                     })
                 else:
+                    if self.config.spec_merge_mode == "manual":
+                        prompt = (
+                            "Write the specification under docs/ and publish it "
+                            "with publish-spec. The configured manual mode creates "
+                            "a specification Pull Request; stop after publishing "
+                            "and wait for the user to merge it."
+                        )
+                    else:
+                        prompt = (
+                            "Write the specification directly under docs/, publish "
+                            "it with publish-spec, then decompose or hand the Card "
+                            "to the human readiness gate. Create no spec branch or "
+                            "Pull Request."
+                        )
                     actions.append(_spawn_action(
                         card, Role.ARCHITECT, "authoring-spec",
-                        "Write the specification directly under docs/, publish it "
-                        "with publish-spec, then decompose or hand the Card to the "
-                        "human readiness gate. Create no spec branch or Pull Request.",
+                        prompt,
                     ))
                     architect_authoring_started = True
                 continue
@@ -602,11 +663,22 @@ class Producer:
                                 "routine": "reconcile-done",
                                 "argv": ["reconcile-done", str(card.number)],
                             })
+                        elif self.config.merge_mode == "manual":
+                            human_gates.append({
+                                **base,
+                                "gate": "manual_merge",
+                                "acceptance": accepted.to_dict(),
+                                "pull_request": pr["url"],
+                                "instruction": "Merge the eligible Pull Request.",
+                                "reason": "merge_mode is manual; the controller "
+                                "will not issue a merge command",
+                            })
                         elif pr["auto_merge_enabled"]:
                             actions.append({
                                 **base, "kind": "monitor", "role": Role.LEAD.value,
                                 "routine": "observe-auto-merge",
-                                "poll_after_seconds": 30,
+                                "poll_after_seconds":
+                                    self.config.monitor_poll_seconds,
                                 "reason": "exact reviewed head is queued for "
                                 "GitHub auto-merge",
                             })
@@ -635,7 +707,8 @@ class Producer:
                                 **base, "kind": "monitor",
                                 "role": Role.LEAD.value,
                                 "routine": "observe-pr-readiness",
-                                "poll_after_seconds": 30,
+                                "poll_after_seconds":
+                                    self.config.monitor_poll_seconds,
                                 "reason": "; ".join(transient),
                             })
                         else:
@@ -663,6 +736,8 @@ class Producer:
         ))
         return {
             "ok": True,
+            "config_revision": self.config.revision,
+            "recovery_policy": self.config.recovery.runtime_dict(),
             "actions": actions,
             "human_gates": human_gates,
             "waiting": waiting,
@@ -974,7 +1049,7 @@ class Producer:
         recorded = self.board.latest_specification(number)
         if recorded is None:
             raise WorkflowError(
-                f"Issue #{number} has no published direct-to-Git specification. "
+                f"Issue #{number} has no published durable specification. "
                 f"The architect must run publish-spec before the Ready decision."
             )
         reference = str(spec_reference or recorded["path"]).strip()
@@ -1049,7 +1124,7 @@ class Producer:
         recorded = self.board.latest_specification(number)
         if recorded is None:
             raise WorkflowError(
-                f"#{number} has no direct-to-Git specification record"
+                f"#{number} has no durable specification record"
             )
         gate = self.check_spec_gate(recorded["path"])
         if not gate["satisfied"] or gate.get("commit") != recorded.get("commit"):
@@ -1075,10 +1150,9 @@ class Producer:
     def check_spec_gate(self, spec_reference: str) -> dict[str, Any]:
         """Decide whether a specification is durable enough to build against.
 
-        Under the ``merged`` policy the specification must be on the target
-        branch first, so development never implements against a document that
-        review may still change. Under ``opened`` a linked Pull Request is
-        enough and the path never blocks on a human.
+        Both publication modes must first place the document on the recorded
+        base branch, so development never implements against a review head that
+        may still change.
         """
         reference = str(spec_reference or "").strip()
         if not reference:
@@ -1088,7 +1162,7 @@ class Producer:
                 "reference": "",
                 "explanation": (
                     "promote requires a specification reference "
-                    "(--spec <pr-url|#number|path>); a Card cannot become Ready "
+                    "(--spec docs/...md); a Card cannot become Ready "
                     "without a durable specification to build against"
                 ),
             }
@@ -1097,9 +1171,10 @@ class Producer:
             return {
                 "satisfied": False, "state": "PULL_REQUEST",
                 "reference": reference,
-                "explanation": "specification Pull Requests are no longer part of "
-                               "the workflow; publish a docs/*.md specification "
-                               "directly on the current branch",
+                "explanation": "a specification Pull Request is not a readiness "
+                               "artifact; wait for its configured publication "
+                               "route to place the docs/*.md path on the base "
+                               "branch and record that durable commit",
             }
         try:
             artifact = self.git.specification(reference)
@@ -1118,30 +1193,168 @@ class Producer:
         self, number: int, reference: str,
         acting_role: Role = Role.ARCHITECT,
     ) -> dict[str, Any]:
-        """Publish one specification directly on the current Git branch."""
+        """Publish one specification through the configured durable route."""
         policy.check_action("publish_specification", acting_role)
         card = self.board.card(number)
         if card.status is not Status.BACKLOG or card.role is not acting_role:
             raise WorkflowError(
-                f"#{number} is {card.routing_state}; direct specification "
+                f"#{number} is {card.routing_state}; specification "
                 f"publication requires (Backlog, {acting_role})"
             )
-        artifact = self.git.publish_specification(number, card.title, reference)
-        record = {
-            "card": number, "path": artifact["path"],
-            "commit": artifact["commit"], "branch": artifact["branch"],
-        }
+
+        if self.config.spec_merge_mode == "manual":
+            artifact = self.git.publish_specification_for_review(
+                number, card.title, reference
+            )
+            pr_title = f"spec: #{number} {card.title}"
+            pr_body = (
+                f"Specification for #{number}.\n\n"
+                f"- Path: `{artifact['path']}`\n"
+                f"- Exact review head: `{artifact['commit']}`\n"
+                f"- Base: `{artifact['base_branch']}`\n\n"
+                "Merge this Pull Request to make the specification durable; "
+                "the coordinator will verify and record the base-branch commit."
+            )
+            try:
+                pull_request = self.board.create_or_update_specification_pull_request(
+                    artifact["branch"], artifact["base_branch"], pr_title, pr_body
+                )
+            except AgentTeamsError as exc:
+                return {
+                    "ok": False,
+                    "partial": True,
+                    "issue": number,
+                    "completed": ["specification_branch_pushed"],
+                    "failed": "specification_pull_request",
+                    "error": str(exc),
+                    "specification": artifact,
+                    "recovery": [
+                        f"Create one Pull Request from `{artifact['branch']}` "
+                        f"to `{artifact['base_branch']}`, then record its URL "
+                        f"and this exact commit on Card #{number}.",
+                        "Do not rerun publish-spec blindly; the review branch "
+                        "already owns the specification content.",
+                    ],
+                }
+            record = {
+                "card": number,
+                "path": artifact["path"],
+                "commit": artifact["commit"],
+                "branch": artifact["branch"],
+                "base_branch": artifact["base_branch"],
+                "mode": "manual",
+                "state": "OPEN",
+                "pull_request": pull_request,
+            }
+            completed = [
+                "specification_branch_pushed", "specification_pull_request"
+            ]
+        else:
+            artifact = self.git.publish_specification(number, card.title, reference)
+            record = {
+                "card": number, "path": artifact["path"],
+                "commit": artifact["commit"], "branch": artifact["branch"],
+                "mode": "direct", "state": "TRACKED",
+            }
+            completed = ["specification_committed", "specification_pushed"]
+
         try:
             self.board.record_specification(number, record)
         except AgentTeamsError as exc:
             return {
                 "ok": False, "partial": True, "issue": number,
-                "completed": ["specification_committed", "specification_pushed"],
+                "completed": completed,
                 "failed": "card_record", "error": str(exc),
                 "specification": record,
-                "recovery": [f"producer_board.py publish-spec {number} --path {reference}"],
+                "recovery": [
+                    f"Record the exact `specification` object from this result "
+                    f"on Card #{number}.",
+                    "Do not replay completed branch, Pull Request, or push mutations.",
+                ],
             }
-        return {"ok": True, "issue": number, "specification": record}
+        return {
+            "ok": True,
+            "issue": number,
+            "specification": record,
+            "next": (
+                ["Wait for the user to merge the specification Pull Request."]
+                if record["mode"] == "manual"
+                else ["Decompose the work or hand the Card to readiness."]
+            ),
+        }
+
+    def finalize_specification_merge(self, number: int) -> dict[str, Any]:
+        """Sync and record a user-merged specification exact head."""
+        card = self.board.card(number)
+        if card.status is not Status.BACKLOG or card.role is not Role.ARCHITECT:
+            raise WorkflowError(
+                f"#{number} is {card.routing_state}; specification merge "
+                "finalization requires (Backlog, architect)"
+            )
+        recorded = self.board.latest_specification(number)
+        if not recorded or recorded.get("mode") != "manual":
+            raise WorkflowError(
+                f"#{number} has no manual specification Pull Request record"
+            )
+        pull_request = str(recorded.get("pull_request") or "").strip()
+        base_branch = str(recorded.get("base_branch") or "").strip()
+        if not pull_request or not base_branch:
+            raise WorkflowError(
+                f"#{number} manual specification record lacks Pull Request or base"
+            )
+
+        pr = self.board.specification_pull_request(pull_request)
+        if pr["head_sha"] != recorded.get("commit"):
+            raise WorkflowError(
+                "the specification Pull Request head differs from the exact "
+                "commit recorded on the Card"
+            )
+        if pr["base_branch"] and pr["base_branch"] != base_branch:
+            raise WorkflowError(
+                f"specification Pull Request targets `{pr['base_branch']}`, "
+                f"not recorded base `{base_branch}`"
+            )
+        if not pr["merged"]:
+            raise WorkflowError(
+                f"specification Pull Request is {pr['state'] or 'not merged'}; "
+                "the user must merge it before finalization"
+            )
+
+        artifact = self.git.sync_merged_specification(
+            str(recorded["path"]), base_branch
+        )
+        finalized = {
+            **recorded,
+            "source_commit": recorded["commit"],
+            "commit": artifact["commit"],
+            "branch": base_branch,
+            "state": "MERGED",
+            "merged_at": pr.get("merged_at"),
+            "merge_commit": pr.get("merge_commit"),
+        }
+        try:
+            self.board.record_specification(number, finalized)
+        except AgentTeamsError as exc:
+            return {
+                "ok": False,
+                "partial": True,
+                "issue": number,
+                "completed": ["base_branch_synced"],
+                "failed": "card_record",
+                "error": str(exc),
+                "specification": finalized,
+                "recovery": [
+                    f"producer_board.py finalize-spec-merge {number}",
+                ],
+            }
+        return {
+            "ok": True,
+            "issue": number,
+            "specification": finalized,
+            "next": [
+                "Resume architect shaping: decompose or hand the Card to readiness."
+            ],
+        }
 
     def decompose(
         self,
@@ -1168,7 +1381,7 @@ class Producer:
         recorded = self.board.latest_specification(parent)
         if recorded is None:
             raise WorkflowError(
-                f"Issue #{parent} has no published direct-to-Git specification"
+                f"Issue #{parent} has no published durable specification"
             )
         reference = str(spec_reference or recorded["path"]).strip()
         if reference != recorded["path"]:
@@ -1558,6 +1771,12 @@ class Consumer:
         return card
 
     def _worktree_for(self, card: Card) -> Path:
+        branch = claim_branch(card.number, card.title)
+        finder = getattr(self.git, "worktree_for_branch", None)
+        if callable(finder):
+            existing = finder(branch)
+            if existing is not None:
+                return Path(existing)
         return worktree_path(Path(self.config.workspace), card.number, card.title)
 
     # -------------------------------------------------------------- claim
@@ -1829,18 +2048,31 @@ class Consumer:
         }
 
         if result.acceptance == "eligible":
-            self.board.arm_auto_merge(pr["number"], self.config.merge_method)
+            if self.config.merge_mode == "automatic":
+                self.board.arm_auto_merge(pr["number"], self.config.merge_method)
 
-            # Eligibility already required every configured check to be
-            # SUCCESS, so `--auto` normally merges at once. Re-read rather
-            # than assume: armed is not merged, and Done must never be
-            # reached on an assumption.
+            # Re-read rather than assume. In automatic mode, armed is not
+            # merged. In manual mode, an already-merged Pull Request may be
+            # reconciled, but this controller never issues its merge command.
             state = self.board.merge_state(pr["number"])
             if str(state.get("state", "")).upper() == "MERGED":
                 return {
                     **base,
                     "merge": "merged",
                     **self._reconcile_to_done(number, card, pr, state, Role.LEAD),
+                }
+
+            if self.config.merge_mode == "manual":
+                return {
+                    **base,
+                    "status": Status.IN_REVIEW.value,
+                    "role": Role.QA.value,
+                    "merge": "awaiting_human",
+                    "next": [
+                        "Merge the eligible Pull Request in GitHub.",
+                        "The current-session coordinator will detect MERGED and "
+                        "reconcile the Card to Done automatically.",
+                    ],
                 }
 
             return {

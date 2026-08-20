@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
 
 from agent_teams.git import (  # noqa: E402
     CLAIM_MARKER, ClaimRaceLost, Git, GitError, WorktreeNotClean, claim_branch,
-    slugify, worktree_path,
+    slugify, specification_branch, worktree_path,
 )
 
 
@@ -56,6 +56,12 @@ class NamingTests(unittest.TestCase):
     def test_claim_branch_is_derived_from_card_identity(self):
         self.assertEqual(
             claim_branch(42, "Implement parser"), "claim/42-implement-parser"
+        )
+
+    def test_specification_branch_is_derived_from_card_identity(self):
+        self.assertEqual(
+            specification_branch(42, "Implement parser"),
+            "spec/42-implement-parser",
         )
 
 
@@ -189,6 +195,19 @@ class WorktreeTests(_OriginFixture, unittest.TestCase):
         again = git.add_worktree(target, "claim/42-implement-parser", "unused")
         self.assertTrue(again["ok"])
         self.assertTrue(again["resumed"])
+
+    def test_workspace_change_resumes_the_worktree_for_the_claim_branch(self):
+        git, target = self._claimed()
+        new_target = self.tmp / "new-workspace" / "claim-42"
+        again = git.add_worktree(
+            new_target, "claim/42-implement-parser", "unused"
+        )
+        self.assertTrue(again["resumed"])
+        self.assertEqual(Path(again["worktree"]).resolve(), target.resolve())
+        self.assertEqual(
+            git.worktree_for_branch("claim/42-implement-parser"), target.resolve()
+        )
+        self.assertFalse(new_target.exists())
 
     def test_remove_refuses_a_worktree_with_uncommitted_changes(self):
         git, target = self._claimed()
@@ -331,6 +350,55 @@ class PublishSpecificationTests(_OriginFixture, unittest.TestCase):
             "main:docs/specs/card-42.md",
         )
         self.assertEqual(published, "# Card 42")
+
+    def test_manual_review_branch_leaves_base_untouched_and_checkout_clean(self):
+        git = self._clone("manual-spec")
+        path = git.root / "docs" / "specs" / "card-42.md"
+        path.parent.mkdir(parents=True)
+        path.write_text("# Card 42\n", encoding="utf-8")
+        base_before = git.head_sha()
+
+        result = git.publish_specification_for_review(
+            42, "Implement parser", "docs/specs/card-42.md"
+        )
+
+        self.assertEqual(git.head_sha(), base_before)
+        self.assertEqual(_git(git.root, "branch", "--show-current"), "main")
+        self.assertEqual(_git(git.root, "status", "--porcelain"), "")
+        self.assertFalse(path.exists())
+        self.assertEqual(
+            _git(
+                self.tmp, "--git-dir", str(self.origin), "show",
+                f"{result['branch']}:docs/specs/card-42.md",
+            ),
+            "# Card 42",
+        )
+        base_paths = _git(
+            self.tmp, "--git-dir", str(self.origin),
+            "ls-tree", "-r", "--name-only", "main",
+        ).splitlines()
+        self.assertNotIn("docs/specs/card-42.md", base_paths)
+
+    def test_confirmed_manual_merge_syncs_the_spec_to_local_base(self):
+        git = self._clone("manual-sync")
+        path = git.root / "docs" / "specs" / "card-42.md"
+        path.parent.mkdir(parents=True)
+        path.write_text("# Card 42\n", encoding="utf-8")
+        review = git.publish_specification_for_review(
+            42, "Implement parser", "docs/specs/card-42.md"
+        )
+        _git(
+            self.tmp, "--git-dir", str(self.origin), "update-ref",
+            "refs/heads/main", review["commit"],
+        )
+
+        result = git.sync_merged_specification(
+            "docs/specs/card-42.md", "main"
+        )
+
+        self.assertTrue(result["synced"])
+        self.assertEqual(result["commit"], review["commit"])
+        self.assertEqual(path.read_text(encoding="utf-8"), "# Card 42\n")
 
     def test_unrelated_dirty_file_refuses_before_commit(self):
         git = self._clone("dirty-spec")

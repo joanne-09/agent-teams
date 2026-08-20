@@ -17,6 +17,21 @@ durable result.
 python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" next-actions
 ```
 
+Every successful result includes `config_revision` and `recovery_policy`.
+`next-actions` reloads the dashboard-managed config on every invocation.
+Replace the cached policy with the newest result before continuing.
+`max_retries` counts retries after the initial attempt, and
+`retry_delays_seconds` is the exact bounded wait before retry 1, retry 2, and
+so on. Do not substitute a hard-coded retry count or delay.
+
+If `config_revision` changes, discard every unstarted action from the older
+plan and use the new result. Do not interrupt an already running CLI command or
+child; it owns one consistent snapshot. Re-read `next-actions` when it
+finishes. A config change alone does not erase retry attempts already consumed
+for an unchanged Card/routine/state signature; apply the new maximum and delays
+to the remaining attempts. If the user reports that the dashboard saved new
+settings, re-run `next-actions` before starting another returned action.
+
 2. Handle every returned `action`:
 
 - `kind: spawn`: invoke the foreground `agent-teams:agent-teams-worker`
@@ -49,25 +64,40 @@ Each child owns exactly one Card and one stage.
 
 ```text
 architect -> human readiness gate -> dev -> qa
+architect -> manual spec mode: human spec merge -> architect resumes
 qa defect -> dev -> qa
-qa eligible -> auto-merge -> reconcile -> Done
+qa eligible -> automatic mode: auto-merge -> reconcile -> Done
+qa eligible -> manual mode: human merge gate -> reconcile -> Done
 ```
 
 4. Prevent a spin loop. Track `(Card, routing_state, routine)` during this run.
-If a child returns without changing durable state, retry that identical action
-at most once with the unchanged-state evidence. If it still does not move,
-report a durable blocker; do not keep spawning copies.
+If a child returns without changing durable state, or a retry-safe controller
+fails for the same Card, routine, and head, use `recovery_policy`:
 
-Apply the same one-retry ceiling to a failing `controller` action for the same
-Card, routine, and head. A new acceptance comment alone does not count as
-progress if auto-merge remains unarmed. Surface the controller error as a
-durable blocker instead of retrying forever.
+- retry no more than `max_retries` times after the initial attempt;
+- before retry *n*, wait entry *n* from `retry_delays_seconds`;
+- include the unchanged-state or controller-error evidence in the retry;
+- reset that signature's retry count only after durable state changes; and
+- after the schedule is exhausted, stop retrying and report the last error,
+  attempt count, Card, routine, and durable state so the user can see why the
+  workflow stopped.
+
+A new acceptance comment alone does not count as progress if auto-merge remains
+unarmed. Policy refusals, claim-race losses, and partial-mutation envelopes are
+not transient failures: follow their named route or recovery list instead of
+replaying them. The GitHub adapter independently applies this policy only to
+safe read commands; it never blindly retries Issue creation, field writes,
+comments, Pull Request creation, or merge commands.
 
 ## Human gates
 
 `human_gates` contains the only work the coordinator may not perform:
 
-- `readiness`: the specification is already committed directly to Git and
+- `spec_merge`: `spec_merge_mode: manual` published the exact specification
+  head in a Pull Request. Ask the human to merge that Pull Request in GitHub.
+  Never merge it or move the Card. On the next loop, a confirmed merge becomes
+  an automatic `finalize-spec-merge` action and architect shaping resumes.
+- `readiness`: the specification is already durable on the base branch and
   recorded on the Card. Ask the human only to move the Card Status to `Ready`.
   On the next loop the `finalize-readiness` controller validates the unchanged
   specification and hands ownership to `dev` automatically. `promote N`
@@ -76,6 +106,11 @@ durable blocker instead of retrying forever.
   Present the evidence and recommendation. If the human approves, their one
   command is `approve-exception N`, which validates the exact reviewed head,
   merges it, and reconciles the Card to `Done`.
+- `manual_merge`: deterministic acceptance found the exact head eligible, but
+  `merge_mode` assigns routine merge execution to the user. Present the
+  returned Pull Request and ask the human to merge it in GitHub. Never issue a
+  merge command for this gate. On the next loop, a confirmed merge becomes an
+  automatic `reconcile-done` action.
 
 Keep other independent actions moving even while one Card waits at a human
 gate. Stop the overall loop only when there are no actions or monitors, leaving
@@ -84,13 +119,13 @@ only human gates or durable blockers.
 ## Rules
 
 - Never invoke a worker as `human` and never run a human-gate command yourself.
-- Never create a specification branch or Pull Request. Specifications publish
-  directly on the current Git branch via `publish-spec`.
+- Never create a specification branch or Pull Request yourself.
+  `publish-spec` owns the configured direct or manual publication route.
 - Never treat a child response as durable state. Re-read the board.
 - Never spawn two authoring workers for the same Card. The remote claim remains
   the final mutual-exclusion check.
 - Dispatch a Blocked Card to one bounded `triaging-board` worker. If that
-  worker cannot change durable state after the bounded retry, report the exact
+  worker cannot change durable state after configured recovery, report the exact
   external blocker; never turn mechanical recovery into a human gate.
 - Never let a child choose another Card or spawn grandchildren.
 - Never report a mutation as successful without an `"ok": true` envelope.

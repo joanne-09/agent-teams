@@ -12,36 +12,48 @@ Done. A person never has to copy a kickoff prompt into another session.
 
 ## Human attention
 
-There is one mandatory human boundary and one conditional exception
-boundary:
+There is one mandatory human boundary, one optional specification-merge
+boundary, and one conditional QA exception boundary. The optional boundary
+exists only when `spec_merge_mode` is `manual`:
 
-1. **Readiness:** after reviewing the committed specification, move the Card
+1. **Specification merge (optional):** merge the generated specification Pull
+   Request. The coordinator verifies it and resumes architect shaping.
+2. **Readiness:** after reviewing the committed specification, move the Card
    Status from `Backlog` to `Ready`. The coordinator validates the exact
    spec commit and hands the Card to dev automatically.
-2. **QA exception:** only when QA or deterministic policy identifies a protected
+3. **QA exception:** only when QA or deterministic policy identifies a protected
    or genuinely ambiguous change, review it and optionally run
    `approve-exception N`.
 
-Routine passing deliveries use deterministic acceptance, GitHub auto-merge,
-and automatic Done reconciliation. Defects loop from QA back to development on
-the same Card, branch, worktree, and Pull Request.
+By default, specifications publish directly, routine passing deliveries use
+deterministic acceptance and GitHub auto-merge, and Done reconciliation is
+automatic, so readiness is the only routine Card edit a person makes. Set
+`merge_mode` to `manual` when the user should merge eligible implementation
+Pull Requests themselves; the coordinator then
+waits for the confirmed merge and still reconciles Done automatically. Defects
+loop from QA back to development on the same Card, branch, worktree, and Pull
+Request.
 
-## Direct specifications
+## Specification publication
 
-Specifications are Markdown files below `docs/` committed and pushed directly
-on the consuming repository's current branch:
+Specifications are Markdown files below `docs/`. The default
+`spec_merge_mode: direct` commits and pushes the requested file directly on
+the consuming repository's current branch:
 
 ```text
 producer_board.py publish-spec 12 --path docs/specs/card-12-export.md
 ```
 
-The command creates no branch, worktree, or Pull Request. It refuses unrelated
-checkout changes, stages only the requested specification, and records its exact
-path and commit on the Card. After the architect hands the Card to the human,
-the human changes only the Project Status from `Backlog` to `Ready`. The
-coordinator retrieves and verifies the recorded Git artifact and hands the Card
-to dev; the human does not run a command, merge, or paste a specification
-reference.
+The command refuses unrelated checkout changes, publishes only the requested
+specification, and records its exact path and commit on the Card. With
+`spec_merge_mode: manual`, the same command creates a deterministic
+specification branch and Pull Request instead. The user merges that Pull
+Request; the coordinator verifies the exact head, synchronizes the base branch,
+records the durable base commit, and resumes architect shaping.
+
+After shaping, the architect hands the Card to the human. The human changes
+only the Project Status from `Backlog` to `Ready`; the coordinator verifies
+the recorded Git artifact and hands the Card to dev automatically.
 
 ## Skills and worker
 
@@ -50,7 +62,7 @@ reference.
 | `using-agent-teams` | Bootstrap, orientation, and plain-language routing |
 | `intaking-requirement` | Clarify one requirement and hand it to architecture |
 | `clarifying-card` | Resolve one question on an existing returned Card |
-| `authoring-spec` | Write a direct Git spec and shape implementation Cards |
+| `authoring-spec` | Publish a spec by the configured route and shape Cards |
 | `briefing-board` | Whole-team state and human gates |
 | `triaging-board` | Diagnose blocked and stale work |
 | `dispatching-work` | Run the current-session subagent orchestration loop |
@@ -95,10 +107,11 @@ Status: Backlog, Ready, In Progress, Blocked, In Review, Done
 Role:   analyst, architect, dev, qa, lead, human
 ```
 
-For routine auto-merge, also configure repository auto-merge, branch protection,
-at least one required CI check, and matching `required_checks` in
-`.agent-teams/config.json`. Empty checks fail closed into the human exception
-lane.
+Configure at least one required CI check and matching `required_checks` in
+`.agent-teams/config.json`; empty checks fail closed into the protected-change
+exception lane. Automatic mode also requires repository auto-merge and branch
+protection. Manual mode does not require GitHub auto-merge because the user
+merges eligible Pull Requests.
 
 ## Setup
 
@@ -129,18 +142,57 @@ workers. It does not print a prompt for you to carry elsewhere.
 
 ## Configuration
 
+See [docs/CONFIGURATION.md](./docs/CONFIGURATION.md) for every supported key,
+validation rule, live-dashboard update contract, interaction, and a complete
+JSON example.
+
 | Key | Default | Meaning |
 |---|---|---|
 | `wip_limit` | `5` | Warning threshold for In Progress + In Review |
+| `handoff_cap` | `6` | Maximum handoffs before lead recovery |
 | `workspace` | `../.worktrees` | Claim worktrees, outside the repository |
-| `required_checks` | `[]` | Checks required for eligible auto-merge; empty fails closed |
-| `merge_method` | `squash` | Eligible and human-exception merge method |
+| `required_checks` | `[]` | Checks required for eligible acceptance; empty fails closed |
+| `merge_mode` | `automatic` | `automatic` arms eligible merges; `manual` waits for the user to merge |
+| `merge_method` | `squash` | Automatic eligible and human-exception command merge method |
+| `spec_merge_mode` | `direct` | `direct` publishes to the current branch; `manual` waits for the user to merge a spec PR |
 | `protected_paths` | seven categories | Changes requiring human QA review; defaults may only grow |
 | `claim_ttl_hours` | `72` | Stale-claim observation threshold |
-| `handoff_cap` | `6` | Maximum handoffs before lead recovery |
+| `monitor_poll_seconds` | `30` | Delay between pending-check and auto-merge observations |
+| `board_page_limit` | `100` | Initial Project item read size |
+| `board_max_items` | `2000` | Refuse rather than silently truncate beyond this ceiling |
+| `recovery.max_retries` | `1` | Retries after the initial attempt; `0` disables retries |
+| `recovery.initial_backoff_seconds` | `5` | Wait before the first retry |
+| `recovery.backoff_multiplier` | `2` | Multiplier that lowers retry frequency after each failure |
+| `recovery.max_backoff_seconds` | `60` | Upper bound for one retry delay |
+
+Operational excerpt from the generated config:
+
+```json
+{
+  "merge_mode": "automatic",
+  "merge_method": "squash",
+  "spec_merge_mode": "direct",
+  "monitor_poll_seconds": 30,
+  "board_page_limit": 100,
+  "board_max_items": 2000,
+  "recovery": {
+    "max_retries": 1,
+    "initial_backoff_seconds": 5,
+    "backoff_multiplier": 2,
+    "max_backoff_seconds": 60
+  }
+}
+```
+
+The recovery schedule is used by the coordinator and by transient GitHub
+reads. Authentication, permission, protocol, and policy errors stop
+immediately. GitHub mutations are never blindly replayed because a command can
+succeed remotely even when its response is lost; partial mutations continue
+through their structured recovery instructions instead.
 
 Older configs may contain `spec_completion`; it is accepted for compatibility
-but ignored. Specifications now always use the direct tracked-Git contract.
+but ignored. Use `spec_merge_mode` to choose the supported publication
+contract.
 
 ## CLI
 
@@ -154,6 +206,7 @@ producer_board.py clarify ISSUE (--note NOTE | --note-file FILE)
 producer_board.py publish-spec ISSUE --path docs/...md
 producer_board.py decompose PARENT --children FILE.json
 producer_board.py promote ISSUE
+producer_board.py finalize-spec-merge ISSUE
 producer_board.py claim ISSUE --acting-role dev|architect
 producer_board.py submit-pr ISSUE --title TITLE --body-file FILE
 producer_board.py verdict ISSUE --evidence-file FILE
