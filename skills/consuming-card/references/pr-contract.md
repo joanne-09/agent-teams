@@ -27,7 +27,7 @@ What you intended to check, and how.
 Empty headers were the case the spec did not name; the parser now rejects them
 explicitly rather than producing an empty row.
 
-Closes #23.
+Card: #23.
 
 <!-- agent-teams:pr -->
 ```
@@ -40,8 +40,13 @@ Closes #23.
 their output, and any specialist review that actually ran. This is the section
 QA reads first, and an empty one means the delivery has no evidence.
 
-**`Closes #<issue>` is required.** Without it GitHub does not close the Issue
-on merge, and the Card and the delivery drift apart.
+**`Card: #<issue>` is required, and closing keywords are refused.** The line
+ties the delivery to its Card. `Closes`/`Fixes`/`Resolves #N` are refused in
+every spelling: GitHub would close the Issue the moment the Pull Request
+merges, and a Project's default "item closed -> Done" workflow would then move
+the Card before `reconcile` does -- two completion authorities racing.
+`reconcile` owns completion: it sets Done, hands the Card to `lead`, and closes
+the Issue itself.
 
 **The `<!-- agent-teams:pr -->` marker is required.** It is how queue
 inspection distinguishes a governed delivery from any other Pull Request.

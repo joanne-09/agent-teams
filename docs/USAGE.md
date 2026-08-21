@@ -134,9 +134,11 @@ The current session invokes `dispatching-work`. It repeatedly runs:
 producer_board.py next-actions
 ```
 
-For each `kind: spawn`, it starts a foreground bounded
-`agent-teams:agent-teams-worker` subagent and supplies the returned one-Card
-prompt directly. You do not open another session or paste anything.
+For each `kind: spawn`, it starts the foreground bounded seat subagent named
+in the action's `agent` field (`agent-teams:dev-worker`,
+`agent-teams:qa-worker`, `agent-teams:architect-worker`,
+`agent-teams:analyst-worker`, or `agent-teams:lead-worker`) and supplies the
+returned one-Card prompt directly. You do not open another session or paste anything.
 
 The worker has the Skill tool but no `skills:` preload list. Every spawn
 action carries exactly one `skill: agent-teams:<routine>` value and matching
@@ -252,6 +254,17 @@ producer_board.py worktree-status [ISSUE]
 `approve-exception` take only an Issue number; none accepts a caller-chosen PR
 or route. Every mutation must return `"ok": true` before it is reported as
 successful.
+
+`--acting-role` is a claim, not an authority. The seat a command actually acts
+as is resolved per process: `AGENT_TEAMS_ACTING_ROLE` (set for spawned
+workers) wins over the flag, and inside any Claude Code session a command that
+claims or defaults to `human` is refused. Run `promote`, `approve-exception`,
+and `release-claim` from your own terminal; from the lead's session they are
+refused by design.
+
+Completion has one owner. A delivery Pull Request names its Card as
+`Card: #<issue>` and must not use `Closes`/`Fixes`/`Resolves`; `reconcile`
+sets Done, hands the Card to `lead`, and then closes the Issue itself.
 
 ## Deliberate exclusions
 

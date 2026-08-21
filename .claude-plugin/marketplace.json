@@ -1,15 +1,19 @@
 {
-  "name": "agent-teams-local",
-  "description": "Local development marketplace for the agent-teams Producer plugin.",
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "agent-teams",
+  "description": "Automated Claude Code engineering teams over GitHub Projects boards.",
   "owner": {
     "name": "agent-teams contributors"
   },
   "plugins": [
     {
       "name": "agent-teams",
+      "description": "Automated Claude Code engineering teams over GitHub Projects: direct Git specifications, one human readiness gate, bounded per-seat dev/QA subagents, deterministic acceptance, and exceptional human QA review.",
       "source": "./",
-      "description": "Automated GitHub-Project workflow with lazy-loaded subagents, one Ready gate, and exceptional human QA.",
-      "version": "0.2.0"
+      "author": {
+        "name": "agent-teams contributors"
+      },
+      "license": "MIT"
     }
   ]
 }

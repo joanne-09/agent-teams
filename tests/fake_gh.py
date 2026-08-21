@@ -124,6 +124,9 @@ class FakeGh:
         self.auto_merge_allowed = auto_merge_allowed
         self.calls: list[list[str]] = []
         self._seen: dict[str, int] = {}
+        #: Mirrors ``Gh.mutations``: Board keys its read cache on it.
+        self.mutations = 0
+        self.closed_issues: list[int] = []
 
     # ------------------------------------------------------------- plumbing
 
@@ -150,6 +153,30 @@ class FakeGh:
         self._maybe_fail(args)
         return args
 
+    def _items_page(self, args):
+        """Answer Board.ITEMS_QUERY over ``self.items`` with real cursors."""
+        fields = dict(
+            args[i + 1].split("=", 1) for i, a in enumerate(args) if a in ("-f", "-F")
+        )
+        first = int(fields.get("first", 100))
+        start = int(fields.get("after", 0) or 0)
+        raw = self.items
+        items = list(raw.get("items", [])) if isinstance(raw, dict) else list(raw)
+        page = items[start:start + first]
+        nodes = []
+        for item in page:
+            node = {"id": item.get("id"), "content": item.get("content")}
+            status = item.get(fields.get("status", "Status"), item.get("status"))
+            role = item.get(fields.get("role", "Role"), item.get("role"))
+            node["status"] = {"name": status} if isinstance(status, str) else status
+            node["role"] = {"name": role} if isinstance(role, str) else role
+            nodes.append(node)
+        end = start + len(page)
+        return {"data": {"repositoryOwner": {"projectV2": {"items": {
+            "pageInfo": {"hasNextPage": end < len(items), "endCursor": str(end)},
+            "nodes": nodes,
+        }}}}}
+
     def calls_matching(self, *prefix):
         want = list(prefix)
         return [call for call in self.calls if call[: len(want)] == want]
@@ -161,10 +188,15 @@ class FakeGh:
         head = args[:2]
         if head == ["auth", "status"]:
             return "authenticated"
+        if head != ["api", f"repos/{REPO}"]:
+            self.mutations += 1
         if head == ["issue", "create"]:
             if "--body" in args:
                 self.issue_bodies[42] = str(args[args.index("--body") + 1])
             return f"https://github.com/{REPO}/issues/42"
+        if head == ["issue", "close"]:
+            self.closed_issues.append(int(args[2]))
+            return ""
         if head == ["issue", "comment"]:
             if "--body" in args:
                 self.comments.append(str(args[args.index("--body") + 1]))
@@ -192,8 +224,8 @@ class FakeGh:
             return {"id": "PROJECT_ID"}
         if head == ["project", "field-list"]:
             return FIELDS
-        if head == ["project", "item-list"]:
-            return self.items
+        if head == ["api", "graphql"]:
+            return self._items_page(args)
         if head == ["project", "item-add"]:
             return {"id": "ITEM_42"}
         if head == ["issue", "view"]:
@@ -307,28 +339,26 @@ class FakeGit:
 
 
 class SaturatingGh(FakeGh):
-    """Returns exactly as many items as the caller asked for, up to ``total``.
+    """A Project of ``total`` items served through real cursor pages.
 
-    Models the only truncation signal ``gh project item-list`` gives: a
-    response that comes back exactly at the requested limit.
+    Records every page size asked for, so tests can assert the read followed
+    cursors at the configured page size rather than re-reading from the top.
     """
 
     def __init__(self, total: int, **kwargs):
         super().__init__(**kwargs)
         self.total = total
         self.limits_requested: list[int] = []
+        self.items = {"items": [
+            _item(f"ITEM_{n}", n, f"Card {n}", "Ready", "dev")
+            for n in range(1, total + 1)
+        ]}
 
     def json(self, args):
         args = list(args)
-        if args[:2] == ["project", "item-list"]:
-            self.calls.append(args)
-            limit = int(args[args.index("--limit") + 1])
-            self.limits_requested.append(limit)
-            count = min(limit, self.total)
-            return {
-                "items": [
-                    _item(f"ITEM_{n}", n, f"Card {n}", "Ready", "dev")
-                    for n in range(1, count + 1)
-                ]
-            }
+        if args[:2] == ["api", "graphql"]:
+            fields = dict(
+                args[i + 1].split("=", 1) for i, a in enumerate(args) if a in ("-f", "-F")
+            )
+            self.limits_requested.append(int(fields["first"]))
         return super().json(args)

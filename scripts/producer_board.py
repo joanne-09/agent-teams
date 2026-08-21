@@ -15,9 +15,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -39,6 +40,34 @@ __all__ = [
     "GitHubError", "PartialHandoff", "Producer", "ProducerError", "ROLES",
     "STATUSES", "Role", "Status", "Verdict", "WorkflowError", "main", "policy",
 ]
+
+
+def _acting_role_option(
+    parser: argparse.ArgumentParser,
+    fallback: str | None,
+    choices: list[str] | None = None,
+) -> None:
+    """Register ``--acting-role`` without baking the seat into argparse.
+
+    The seat a command acts as is resolved at run time by
+    :func:`policy.resolve_acting_role`: a process binding
+    (``AGENT_TEAMS_ACTING_ROLE``) wins over the flag, the flag over
+    ``fallback``, and ``human`` is refused inside an agent session. Keeping
+    the default out of argparse is what lets the resolver tell "the caller
+    said human" from "the caller said nothing".
+    """
+    parser.add_argument(
+        "--acting-role", default=None, choices=choices or ROLES,
+        help=f"seat this command acts as (default: {fallback or 'required'})",
+    )
+    parser.set_defaults(acting_role_fallback=fallback)
+
+
+def _acting_role(args: argparse.Namespace, env: Mapping[str, str]) -> Role:
+    return policy.resolve_acting_role(
+        Role.parse_optional(args.acting_role), env,
+        Role.parse_optional(getattr(args, "acting_role_fallback", None)),
+    )
 
 
 def _print(payload: Any) -> None:
@@ -159,7 +188,7 @@ def _build_parser() -> argparse.ArgumentParser:
     clarification = clarify.add_mutually_exclusive_group(required=True)
     clarification.add_argument("--note")
     clarification.add_argument("--note-file")
-    clarify.add_argument("--acting-role", default="analyst", choices=["analyst"])
+    _acting_role_option(clarify, "analyst", ["analyst"])
 
     create = sub.add_parser("create-card", help="create one Card in an explicit state")
     create.add_argument("--title", required=True)
@@ -168,7 +197,7 @@ def _build_parser() -> argparse.ArgumentParser:
     create_body.add_argument("--body-file")
     create.add_argument("--status", default="Backlog", choices=STATUSES)
     create.add_argument("--role", default="human", choices=ROLES)
-    create.add_argument("--acting-role", default="architect", choices=ROLES)
+    _acting_role_option(create, "architect")
 
     promote = sub.add_parser(
         "promote",
@@ -180,7 +209,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--spec",
         help="optional override; defaults to the direct spec recorded on the Card",
     )
-    promote.add_argument("--acting-role", default="human", choices=ROLES)
+    _acting_role_option(promote, "human")
     promote.add_argument("--note", default="")
 
     decompose = sub.add_parser(
@@ -195,7 +224,7 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help='JSON file: [{"title": "...", "body": "..."}, ...]',
     )
-    decompose.add_argument("--acting-role", default="architect", choices=ROLES)
+    _acting_role_option(decompose, "architect")
 
     publish_spec = sub.add_parser(
         "publish-spec",
@@ -203,7 +232,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     publish_spec.add_argument("issue", type=int)
     publish_spec.add_argument("--path", required=True)
-    publish_spec.add_argument("--acting-role", default="architect", choices=ROLES)
+    _acting_role_option(publish_spec, "architect")
 
     finalize_spec = sub.add_parser(
         "finalize-spec-merge",
@@ -226,13 +255,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--branch", required=True,
         help="the remote claim branch to delete (as named in the Card's handoffs)",
     )
-    release.add_argument("--acting-role", default="human", choices=ROLES)
+    _acting_role_option(release, "human")
     release.add_argument("--note", default="")
 
     transition = sub.add_parser("transition", help="move a Card's Status")
     transition.add_argument("issue", type=int)
     transition.add_argument("--to", required=True, choices=STATUSES, dest="to_status")
-    transition.add_argument("--acting-role", required=True, choices=ROLES)
+    _acting_role_option(transition, None)
 
     handoff = sub.add_parser("handoff", help="change durable Card ownership")
     handoff.add_argument("issue", type=int)
@@ -248,18 +277,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "claim", help="reserve one Ready Card and open its isolated worktree"
     )
     claim.add_argument("issue", type=int)
-    claim.add_argument(
-        "--acting-role", required=True, choices=["dev", "architect"],
-        help="the two seats that author a delivery",
-    )
+    _acting_role_option(claim, None, ["dev", "architect"])
 
     resume = sub.add_parser(
         "resume", help="materialise an In Progress Card's durable claim worktree"
     )
     resume.add_argument("issue", type=int)
-    resume.add_argument(
-        "--acting-role", required=True, choices=["dev", "architect"]
-    )
+    _acting_role_option(resume, None, ["dev", "architect"])
 
     submit = sub.add_parser(
         "submit-pr", help="open or update one Pull Request and hand off to qa"
@@ -267,7 +291,7 @@ def _build_parser() -> argparse.ArgumentParser:
     submit.add_argument("issue", type=int)
     submit.add_argument("--title", required=True)
     submit.add_argument("--body-file", required=True)
-    submit.add_argument("--acting-role", default="dev", choices=["dev", "architect"])
+    _acting_role_option(submit, "dev", ["dev", "architect"])
 
     verdict = sub.add_parser(
         "verdict",
@@ -298,14 +322,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "reconcile-done", help="record a confirmed merge and clean the claim"
     )
     reconcile.add_argument("issue", type=int)
-    reconcile.add_argument("--acting-role", default="lead", choices=ROLES)
+    _acting_role_option(reconcile, "lead")
 
     exception = sub.add_parser(
         "approve-exception",
         help="human final gate: merge the exact protected head and reconcile Done",
     )
     exception.add_argument("issue", type=int)
-    exception.add_argument("--acting-role", default="human", choices=ROLES)
+    _acting_role_option(exception, "human")
 
     worktrees = sub.add_parser(
         "worktree-status", help="claims, worktrees, and presence (read-only)"
@@ -362,11 +386,15 @@ def _brief_text(report: dict[str, Any]) -> None:
 
 
 def main(
-    argv: list[str] | None = None, gh: Gh | None = None, git: Any = None
+    argv: list[str] | None = None,
+    gh: Gh | None = None,
+    git: Any = None,
+    env: Mapping[str, str] | None = None,
 ) -> int:
-    """Run one command. ``gh`` and ``git`` are injection points for tests."""
+    """Run one command. ``gh``, ``git`` and ``env`` are injection points for tests."""
     parser = _build_parser()
     args = parser.parse_args(argv)
+    env = os.environ if env is None else env
     try:
         if args.command == "init":
             config = Config.from_dict(
@@ -438,7 +466,7 @@ def main(
                 if args.note_file else args.note
             )
             result = producer.clarify(
-                args.issue, note, Role.parse(args.acting_role)
+                args.issue, note, _acting_role(args, env)
             )
             _print(result)
             return 0 if result.get("ok") else 1
@@ -449,7 +477,7 @@ def main(
                 _read_body(args),
                 Status.parse(args.status),
                 Role.parse(args.role),
-                Role.parse(args.acting_role),
+                _acting_role(args, env),
             )
             _print(result)
             return 0 if result.get("ok") else 1
@@ -458,7 +486,7 @@ def main(
             result = producer.promote(
                 args.issue,
                 args.spec or "",
-                Role.parse(args.acting_role),
+                _acting_role(args, env),
                 reason=args.note,
             )
             _print(result)
@@ -469,14 +497,14 @@ def main(
                 args.parent,
                 _read_children(args.children),
                 args.spec or "",
-                Role.parse(args.acting_role),
+                _acting_role(args, env),
             )
             _print(result)
             return 0 if result.get("ok") else 1
 
         elif args.command == "publish-spec":
             result = producer.publish_specification(
-                args.issue, args.path, Role.parse(args.acting_role)
+                args.issue, args.path, _acting_role(args, env)
             )
             _print(result)
             return 0 if result.get("ok") else 1
@@ -495,7 +523,7 @@ def main(
             result = producer.release_claim(
                 args.issue,
                 args.branch,
-                Role.parse(args.acting_role),
+                _acting_role(args, env),
                 reason=args.note,
             )
             _print(result)
@@ -506,14 +534,14 @@ def main(
                 producer.transition(
                     args.issue,
                     Status.parse(args.to_status),
-                    Role.parse(args.acting_role),
+                    _acting_role(args, env),
                 )
             )
 
         elif args.command == "handoff":
             result = producer.handoff(
                 args.issue,
-                Role.parse(args.from_role),
+                policy.resolve_acting_role(Role.parse(args.from_role), env),
                 Role.parse(args.to_role),
                 args.note,
                 needs=args.needs,
@@ -523,19 +551,19 @@ def main(
             return 0 if result.get("ok") else 1
 
         elif args.command == "claim":
-            result = consumer.claim(args.issue, Role.parse(args.acting_role))
+            result = consumer.claim(args.issue, _acting_role(args, env))
             _print(result)
             return 0 if result.get("ok") else 1
 
         elif args.command == "resume":
-            result = consumer.resume(args.issue, Role.parse(args.acting_role))
+            result = consumer.resume(args.issue, _acting_role(args, env))
             _print(result)
             return 0 if result.get("ok") else 1
 
         elif args.command == "submit-pr":
             result = consumer.submit(
                 args.issue,
-                Role.parse(args.acting_role),
+                _acting_role(args, env),
                 args.title,
                 _read_body(args),
             )
@@ -558,13 +586,13 @@ def main(
             return 0 if result.get("ok") else 1
 
         elif args.command == "reconcile-done":
-            result = consumer.reconcile(args.issue, Role.parse(args.acting_role))
+            result = consumer.reconcile(args.issue, _acting_role(args, env))
             _print(result)
             return 0 if result.get("ok") else 1
 
         elif args.command == "approve-exception":
             result = consumer.approve_exception(
-                args.issue, Role.parse(args.acting_role)
+                args.issue, _acting_role(args, env)
             )
             _print(result)
             return 0 if result.get("ok") else 1

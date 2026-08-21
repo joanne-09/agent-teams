@@ -271,8 +271,8 @@ below.
 | Setting | Type | Default | Meaning |
 |---|---|---|---|
 | `monitor_poll_seconds` | positive integer | `30` | Coordinator wait before re-reading pending checks or merge state. |
-| `board_page_limit` | positive integer | `100` | Initial GitHub Project item read limit. |
-| `board_max_items` | positive integer | `2000` | Maximum Project item read limit; must be at least `board_page_limit`. |
+| `board_page_limit` | positive integer | `100` | Project items requested per GraphQL page (GitHub caps a page at 100). |
+| `board_max_items` | positive integer | `2000` | Ceiling on Project items read in one command; must be at least `board_page_limit`. |
 | `recovery.max_retries` | non-negative integer | `1` | Retries after the initial attempt. `0` disables retries. |
 | `recovery.initial_backoff_seconds` | finite non-negative number | `5.0` | Wait before retry 1. |
 | `recovery.backoff_multiplier` | finite number at least `1.0` | `2.0` | Exponential multiplier for later retry delays. |
@@ -290,9 +290,45 @@ safe GitHub reads. Authentication, permission, protocol, and policy errors stop
 immediately. GitHub mutations such as Issue creation, field edits, comments,
 Pull Request creation, and merge commands are never blindly replayed.
 
-Project reads start at `board_page_limit` and double until GitHub returns fewer
-items than requested. If a response still saturates `board_max_items`, the
-command refuses to return a possibly truncated board.
+Project reads follow GraphQL cursors `board_page_limit` items at a time using
+a query that asks only for the Status and Role single-selects. That costs one
+GitHub rate-limit point per page regardless of board size (`gh project
+item-list` requests every field of every item and costs about one point per
+item: 101 points for a 4-card board, measured 2026-08-21; two 5000-point hourly
+budgets were exhausted in one live run). If the board still has a next page at
+`board_max_items`, the command refuses to return a possibly truncated board.
+Within one command the board is read once and reused until that command
+itself mutates GitHub.
+
+## Process environment
+
+These are read from the environment of the process running `producer_board.py`,
+not from the config file.
+
+| Variable | Meaning |
+|---|---|
+| `AGENT_TEAMS_ACTING_ROLE` | Binds the process to one seat. Every command acts as that seat; a `--acting-role` that disagrees is refused (`SeatMismatch`). Dispatch actions carry it in their `env` field and the worker prompt tells the worker to set it. |
+| `CLAUDECODE`, `CLAUDE_CODE_SESSION_ID` | Stamped by Claude Code on every shell it runs. When either is present, a command that claims or defaults to `human` is refused: human authority is exercised from the human's own terminal, never from a model session. This closed the live bypass where the lead ran `promote` without `--acting-role` and inherited the human default. It is a process-level floor, not a cryptographic one; the merge floor remains GitHub branch protection. |
+
+### Host settings for unrecognised models
+
+Claude Code budgets the skill listing it shows the model as a fraction of the
+assumed context window. A model it does not recognise (for example any model
+served through Ollama) is assumed to have a 200k window, and the default 1 %
+budget drops most plugin skill descriptions, so intent routing ("brief me",
+"what's ready to work on?") silently fails. In the host's `settings.json`
+(the `CLAUDE_CONFIG_DIR` you launch with) set:
+
+```json
+{
+  "skillListingBudgetFraction": 0.05,
+  "skillListingMaxDescChars": 2048
+}
+```
+
+or use a model name with an explicit context suffix such as
+`glm-5.2:cloud[1m]`. Verified 2026-08-21: with the defaults 8 of the 10
+`agent-teams` skill descriptions were omitted from the listing.
 
 ## Legacy setting
 

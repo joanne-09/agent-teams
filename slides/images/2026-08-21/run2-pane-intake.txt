@@ -1,0 +1,58 @@
+
+❯ Desktop-only for v1. Mobile responsiveness is out of scope for now.
+
+  Thought for 22s
+
+⏺ That's enough to write the Card — the acceptance criteria I'm about to write are checkable by a
+  third party, and nothing in the requirement is open to two readings (scope pinned to the prior
+  v1, viewport decided, data already in repo). Stopping the clarification loop here.
+
+  Let me write the Card body and file it.
+
+⏺ Write(tmp/intake-oil-map-body.md)
+  ⎿  Wrote 94 lines to tmp/intake-oil-map-body.md
+      1 # 毒油地圖 — Taiwan Cooking-Oil Food-Safety Violation Map
+      2
+      3 ## Outcome
+      4
+      5 Give the public a single place to see which Taiwan counties/cities have
+      6 recorded cooking-oil (油品) food-safety violations, drill into the records
+      7 for a county, and search for businesses/oil brands directly — so people can
+      8 find out whether problem oil products touched their area and look up the
+      9 businesses involved.
+     … +84 lines
+
+  Thought for 1s
+
+⏺ Announcing the mutation: creating a Backlog Issue, adding it to the Project, setting Role
+  architect, and recording the handoff.
+
+  Thought for 2s, ran 1 shell command
+
+⏺ Intake complete. Filed as one Card carrying the whole requirement.
+
+  - Issue: #25 — 毒油地圖 — Taiwan cooking-oil food-safety violation map
+  - Status: Backlog
+  - Role: architect
+  - Handoff: analyst → architect — "Requirement intake is complete and the Card is shaped. Needs
+    from you: shape the durable specification and decide whether this is one implementation Card
+    or needs decomposition."
+
+  What I captured: same v1 scope as the retired #18 (county choropleth browse, county drill-down,
+  keyword search by business/brand), desktop-only, per-record detail showing the full record
+  (business name, date, description, penalty, legal basis, oil product), drawing on the existing
+  data/oil-violations.json and county GeoJSON. I noted the expected 3-way split (walking skeleton
+  → full record fields → keyword search) as a hint, and left four design questions open for the
+  architect (search semantics, GeoJSON reuse, graceful degradation, relationship to the retired
+  PRs #22–#24). I did not pre-decide any of those — they're the architect's call.
+
+  Recommend: promote #25 through the readiness gate — hand it to the architect to write the spec.
+  Say the word and I'll route it to authoring-spec, or if you want to make any of the open
+  decisions yourself first, tell me which.
+
+✻ Baked for 57s
+
+─────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+─────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent

@@ -21,7 +21,7 @@ from typing import Any
 from . import policy
 from .config import Config
 from .git import claim_branch
-from .github import Gh, GitHubError, fetch_all_items
+from .github import BoardTruncated, Gh, GitHubError
 from .model import (
     ACCEPTANCE_MARKER, Acceptance, Card, DECOMPOSED_CHILD_MARKER,
     DECOMPOSITION_MARKER, DomainError, HANDOFF_MARKER, Handoff, Role,
@@ -55,6 +55,7 @@ class Board:
         self.gh = gh or Gh(recovery=config.recovery)
         self._project_id: str | None = None
         self._fields: list[dict[str, Any]] | None = None
+        self._cards_cache: tuple[Any, list[Card]] | None = None
 
     # ------------------------------------------------------------- metadata
 
@@ -182,31 +183,120 @@ class Board:
             ),
         )
 
-    def _raw_items(self, limit: int) -> list[dict[str, Any]]:
+    #: One Project page, asking GitHub for exactly what a Card needs.
+    #:
+    #: ``gh project item-list`` requests every field value of every item
+    #: (``fieldValues(first: 100)`` per item), which GitHub prices at about
+    #: one GraphQL point per item -- 101 points for a 4-card board, measured
+    #: 2026-08-21. Two hourly 5000-point budgets were burned in one live run
+    #: that way. This query names the two single-selects the protocol uses
+    #: and costs one point per page regardless of board size.
+    ITEMS_QUERY = """
+query($owner: String!, $number: Int!, $first: Int!, $after: String,
+      $status: String!, $role: String!) {
+  repositoryOwner(login: $owner) {
+    ... on ProjectV2Owner {
+      projectV2(number: $number) {
+        items(first: $first, after: $after) {
+          pageInfo { hasNextPage endCursor }
+          nodes {
+            id
+            content {
+              __typename
+              ... on Issue { number title url repository { nameWithOwner } }
+              ... on PullRequest { number title url repository { nameWithOwner } }
+              ... on DraftIssue { title }
+            }
+            status: fieldValueByName(name: $status) {
+              ... on ProjectV2ItemFieldSingleSelectValue { name }
+            }
+            role: fieldValueByName(name: $role) {
+              ... on ProjectV2ItemFieldSingleSelectValue { name }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+""".strip()
+
+    def _items_page(self, first: int, after: str | None) -> dict[str, Any]:
+        variables = [
+            "-F", f"owner={self.config.project_owner}",
+            "-F", f"number={self.config.project_number}",
+            "-F", f"first={first}",
+            "-f", f"status={self.config.status_field}",
+            "-f", f"role={self.config.role_field}",
+        ]
+        if after:
+            variables += ["-f", f"after={after}"]
         payload = self.gh.json(
-            [
-                "project", "item-list", str(self.config.project_number),
-                "--owner", self.config.project_owner, "--format", "json",
-                "--limit", str(limit),
-            ]
+            ["api", "graphql", *variables, "-f", f"query={self.ITEMS_QUERY}"]
         )
-        items = payload.get("items", []) if isinstance(payload, dict) else []
-        if not isinstance(items, list):
-            raise BoardError("gh project item-list returned an invalid shape")
+        data = payload.get("data") if isinstance(payload, dict) else None
+        owner = (data or {}).get("repositoryOwner") or {}
+        project = owner.get("projectV2") if isinstance(owner, dict) else None
+        if not isinstance(project, dict):
+            raise BoardError(
+                f"Project #{self.config.project_number} owned by "
+                f"{self.config.project_owner} was not returned by GitHub: "
+                + (json.dumps(payload.get("errors")) if isinstance(payload, dict)
+                   and payload.get("errors") else "invalid response shape")
+            )
+        items = project.get("items")
+        if not isinstance(items, dict) or not isinstance(items.get("nodes"), list):
+            raise BoardError("Project items query returned an invalid shape")
         return items
 
+    def _raw_items(self) -> list[dict[str, Any]]:
+        """Every Project item, following cursors; loud past the ceiling."""
+        collected: list[dict[str, Any]] = []
+        after: str | None = None
+        page = max(1, min(self.config.board_page_limit, 100))
+        while True:
+            items = self._items_page(page, after)
+            collected.extend(n for n in items["nodes"] if isinstance(n, dict))
+            info = items.get("pageInfo") or {}
+            if not info.get("hasNextPage"):
+                return collected
+            if len(collected) >= self.config.board_max_items:
+                raise BoardTruncated(
+                    f"the Project has more than {self.config.board_max_items} "
+                    f"Project items (the board_max_items ceiling), so the board "
+                    f"may extend past what was read. Refusing to report a "
+                    f"possibly partial board. Raise board_max_items or narrow "
+                    f"the Project.",
+                    kind="truncated",
+                )
+            after = str(info.get("endCursor") or "")
+            if not after:
+                raise BoardError("Project items page claims a next page but no cursor")
+
+    def _normalise_node(self, node: dict[str, Any]) -> dict[str, Any]:
+        """Re-key the lean query's aliases under the configured field names."""
+        item = {"id": node.get("id"), "content": node.get("content")}
+        item[self.config.status_field] = node.get("status")
+        item[self.config.role_field] = node.get("role")
+        return item
+
     def cards(self) -> list[Card]:
-        """Every Card on the Project belonging to the configured repository."""
-        items = fetch_all_items(
-            self._raw_items,
-            page_limit=self.config.board_page_limit,
-            max_items=self.config.board_max_items,
-            what="Project items",
-        )
+        """Every Card on the Project belonging to the configured repository.
+
+        Cached for the life of this process until this process mutates
+        GitHub (``gh.mutations``): one command used to list the board once
+        per Card it looked at.
+        """
+        generation = getattr(self.gh, "mutations", None)
+        if self._cards_cache is not None and self._cards_cache[0] == generation:
+            return list(self._cards_cache[1])
         normalised = (
-            self._normalise_item(item) for item in items if isinstance(item, dict)
+            self._normalise_item(self._normalise_node(node))
+            for node in self._raw_items()
         )
-        return [card for card in normalised if card is not None]
+        cards = [card for card in normalised if card is not None]
+        self._cards_cache = (generation, cards)
+        return list(cards)
 
     def card(self, number: int) -> Card:
         for card in self.cards():
@@ -272,6 +362,13 @@ class Board:
 
     def set_role(self, item_id: str, role: Role) -> None:
         self._set_single_select(item_id, self.config.role_field, role.value)
+
+    def close_issue(self, number: int, comment: str) -> None:
+        """Close the Card's Issue as completed. Only ``reconcile`` calls this."""
+        self.gh.run(
+            ["issue", "close", str(number), "--repo", self.config.repo,
+             "--reason", "completed", "--comment", comment]
+        )
 
     def comment_on_card(self, number: int, body: str) -> None:
         self.gh.run(
@@ -453,6 +550,9 @@ class Board:
             "url": raw.get("url", ""),
             "head_sha": str(raw.get("headRefOid", "")),
             "state": str(raw.get("state", "")),
+            # A merged Pull Request reports ``mergeable: UNKNOWN`` forever;
+            # its ``state`` is the fact that settles the question.
+            "merged": str(raw.get("state", "")).upper() == "MERGED",
             "mergeable": str(raw.get("mergeable", "")).upper() == "MERGEABLE",
             "mergeable_state": str(raw.get("mergeable", "")).upper(),
             "draft": bool(raw.get("isDraft", False)),

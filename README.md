@@ -70,12 +70,15 @@ the recorded Git artifact and hands the Card to dev automatically.
 | `consuming-card` | Claim and deliver one Card through one Pull Request |
 | `verifying-delivery` | Independently review one exact PR head and accept it |
 
-`agents/agent-teams-worker.md` is the flat, bounded child used by the
-coordinator. It preloads no workflow skill. Each `next-actions` spawn names
-one qualified skill, the worker invokes only that skill through Claude Code's
-Skill tool, and any deeper reference loads only when its condition applies.
-The worker handles exactly one Card and one stage and cannot spawn a child of
-its own.
+`agents/<seat>-worker.md` (architect, analyst, dev, qa, lead) are the flat,
+bounded children used by the coordinator. They share one contract and one
+tool set; the seat-specific names exist so the Claude Code agent list and any
+external monitor show which role each spawned worker holds. Each
+`next-actions` spawn names the seat's agent and one qualified skill; the
+worker preloads no workflow skill, invokes only that skill through Claude
+Code's Skill tool, and any deeper reference loads only when its condition
+applies. A worker handles exactly one Card and one stage and cannot spawn a
+child of its own.
 
 ## Reuse plus agent-teams architecture
 

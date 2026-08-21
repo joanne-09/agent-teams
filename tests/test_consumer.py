@@ -216,7 +216,7 @@ Unit tests for the header cases, including an empty header.
 ## Retro Notes
 Empty headers were the case the spec did not name.
 
-Closes #23.
+Card: #23.
 
 <!-- agent-teams:pr -->
 """
@@ -242,20 +242,31 @@ class PullRequestContractTests(unittest.TestCase):
         )
         self.assertTrue(any("empty" in p for p in self._problems(body)))
 
-    def test_a_missing_closing_trailer_is_refused(self):
-        body = GOOD_PR_BODY.replace("Closes #23.", "")
-        self.assertTrue(any("Closes" in p for p in self._problems(body)))
+    def test_a_missing_card_reference_is_refused(self):
+        body = GOOD_PR_BODY.replace("Card: #23.", "")
+        self.assertTrue(any("Card: #<issue>" in p for p in self._problems(body)))
 
-    def test_every_github_auto_close_keyword_is_accepted(self):
-        # GitHub closes the Issue on Closes/Fixes/Resolves, case-insensitively.
-        # Accepting only "Closes" would refuse a body GitHub handles correctly.
-        for keyword in ("Closes", "Fixes", "Resolves", "closes", "FIXES"):
-            body = GOOD_PR_BODY.replace("Closes #23.", f"{keyword} #23.")
-            self.assertEqual(self._problems(body), [], keyword)
+    def test_the_card_reference_tolerates_case_and_trailing_period(self):
+        for line in ("Card: #23", "card: #23.", "CARD:#23"):
+            body = GOOD_PR_BODY.replace("Card: #23.", line)
+            self.assertEqual(self._problems(body), [], line)
 
-    def test_a_keyword_without_an_issue_number_is_not_a_trailer(self):
-        body = GOOD_PR_BODY.replace("Closes #23.", "Closes the parser gap.")
-        self.assertTrue(any("Closes" in p for p in self._problems(body)))
+    def test_every_github_closing_keyword_is_refused(self):
+        # Session-8 finding: `Closes #N` lets GitHub close the Issue on merge
+        # and (with the default Project workflow) flip Status to Done before
+        # reconcile runs. Completion has one owner, so the keyword is refused
+        # in every spelling GitHub honours.
+        for keyword in ("Closes", "Fixes", "Resolves", "closes", "FIXED", "close:"):
+            body = GOOD_PR_BODY + f"\n{keyword} #23.\n"
+            self.assertTrue(
+                any("closing keyword" in p for p in self._problems(body)), keyword
+            )
+
+    def test_a_keyword_without_an_issue_number_is_prose_not_a_trailer(self):
+        body = GOOD_PR_BODY.replace(
+            "Empty headers were", "This closes the parser gap; empty headers were"
+        )
+        self.assertEqual(self._problems(body), [])
 
     def test_a_missing_marker_is_refused(self):
         body = GOOD_PR_BODY.replace("<!-- agent-teams:pr -->", "")
@@ -645,6 +656,31 @@ class AcceptTests(unittest.TestCase):
         self.assertEqual(result["status"], "Done")
         self.assertEqual(result["role"], "lead")
         self.assertEqual(result["merge_commit"], "d" * 40)
+        # Completion has one owner: reconcile closes the Issue, not GitHub.
+        self.assertEqual(gh.closed_issues, [21])
+        self.assertTrue(result["issue_closed"]["ok"])
+
+    def test_a_failed_issue_close_is_reported_not_fatal(self):
+        consumer, gh = self._consumer(
+            [verdict_comment()], pr_state=self.MERGED,
+            fail_on={"issue close": "boom"},
+        )
+        result = consumer.accept(21)
+        self.assertEqual(result["status"], "Done")
+        self.assertFalse(result["issue_closed"]["ok"])
+        self.assertIn("gh issue close 21", result["issue_closed"]["recovery"][0])
+
+    def test_a_post_merge_re_verify_reconciles_instead_of_waiting_forever(self):
+        # The realistic post-merge shape: ``pr view`` on the claim branch says
+        # MERGED with mergeable UNKNOWN. Card #26 sat at (In Review, qa) on this.
+        consumer, gh = self._consumer([verdict_comment()], pr_state=self.MERGED)
+        gh.pr_view = {**gh.pr_view, "state": "MERGED", "mergeable": "UNKNOWN"}
+        result = consumer.accept(21)
+        self.assertEqual(result["acceptance"], "eligible")
+        self.assertEqual(result["merge"], "merged")
+        self.assertEqual(result["status"], "Done")
+        # Never re-arm auto-merge on a merged Pull Request.
+        self.assertEqual(gh.calls_matching("pr", "merge"), [])
 
     def test_an_eligible_pass_waits_when_the_merge_has_not_landed_yet(self):
         # Checks may be green at accept time and the platform still merges

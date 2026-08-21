@@ -1665,6 +1665,12 @@ _FILLER = (
 )
 
 
+#: GitHub honours these case-insensitively, with or without "d"/"s" endings.
+CLOSING_KEYWORD = re.compile(
+    r"\b(?:clos(?:e|es|ed)|fix(?:es|ed)?|resolv(?:e|es|ed))\s*:?\s+#\d+", re.I
+)
+
+
 def validate_pr_body(body: str) -> list[str]:
     """Every way this Pull Request body breaks the section 9.5 contract.
 
@@ -1687,12 +1693,23 @@ def validate_pr_body(body: str) -> list[str]:
                 "commands, outputs, and specialist reviews that actually ran"
             )
 
-    # GitHub honours Closes/Fixes/Resolves, case-insensitively. Accepting only
-    # the canonical spelling would refuse a body GitHub handles correctly.
-    if not re.search(r"\b(?:closes|fixes|resolves)\s+#\d+", text, re.I):
+    # The delivery names its Card with a plain reference, never a closing
+    # keyword. `Closes #N` makes GitHub close the Issue the moment the Pull
+    # Request merges, and on a Project with the default "item closed -> Done"
+    # workflow that flips Status before `reconcile` runs: two completion
+    # authorities racing, observed live in session 8. Completion has exactly
+    # one owner -- `reconcile`, which sets Done, hands to lead, and then
+    # closes the Issue itself.
+    if not re.search(r"(?im)^\s*card:\s*#\d+\s*\.?\s*$", text):
         problems.append(
-            "missing the `Closes #<issue>` trailer (or `Fixes`/`Resolves`); "
-            "without it GitHub will not close the Issue on merge"
+            "missing the `Card: #<issue>` reference line; it is how the "
+            "delivery names the Card without closing it"
+        )
+    if CLOSING_KEYWORD.search(text):
+        problems.append(
+            "contains a GitHub closing keyword (Closes/Fixes/Resolves #N); "
+            "GitHub would close the Card on merge and race `reconcile`. "
+            "Reference the Card as `Card: #<issue>` instead"
         )
 
     if PR_MARKER not in text:
@@ -2048,7 +2065,10 @@ class Consumer:
         }
 
         if result.acceptance == "eligible":
-            if self.config.merge_mode == "automatic":
+            # A post-merge re-verify reaches here with the Pull Request already
+            # merged (``gh pr merge --auto`` on a merged PR is an error, and
+            # its mergeability stays UNKNOWN forever). Nothing to arm.
+            if self.config.merge_mode == "automatic" and not pr.get("merged"):
                 self.board.arm_auto_merge(pr["number"], self.config.merge_method)
 
             # Re-read rather than assume. In automatic mode, armed is not
@@ -2170,6 +2190,24 @@ class Consumer:
                 ],
             )
 
+        # Completion has one owner. The delivery body must not carry a
+        # closing keyword (validate_pr_body), so the Issue is still open here;
+        # close it now that the board says Done. Non-fatal: Done on the board
+        # is the durable outcome, an open Issue is a visible inconsistency.
+        try:
+            self.board.close_issue(
+                number,
+                f"Delivered: {pr['url']} merged as "
+                f"{state.get('merge_commit') or 'a confirmed merge'}; "
+                f"Card reconciled to Done.",
+            )
+            issue_closed: dict[str, Any] = {"ok": True}
+        except AgentTeamsError as exc:
+            issue_closed = {
+                "ok": False, "error": str(exc),
+                "recovery": [f"gh issue close {number} --repo {self.config.repo}"],
+            }
+
         # Cleanup last, and never fatal. The Card reaching Done is the durable
         # outcome; a worktree holding unsaved work is reported for a human to
         # resolve rather than forced.
@@ -2191,6 +2229,7 @@ class Consumer:
             "status": Status.DONE.value,
             "role": Role.LEAD.value,
             "merge_commit": state.get("merge_commit"),
+            "issue_closed": issue_closed,
             "cleanup": cleanup,
         }
 
@@ -2368,7 +2407,10 @@ def _spawn_action(
         f"only on Card #{card.number}: {objective} "
         f"Bootstrap first, reread live board state, mutate only this Card and "
         f"its governed artifacts, persist the result to GitHub, and stop at the "
-        f"stage boundary. Never act as human and never select another Card."
+        f"stage boundary. Never act as human and never select another Card. "
+        f"Run every producer_board.py command with "
+        f"{policy.ACTING_ROLE_ENV}={seat.value} in its environment so the "
+        f"seat is bound to the process rather than claimed per call."
     )
     return {
         **card.to_dict(),
@@ -2377,5 +2419,13 @@ def _spawn_action(
         "role": seat.value,
         "routine": routine,
         "skill": f"agent-teams:{routine}",
+        # One plugin agent per seat (agents/<seat>-worker.md). The bodies are
+        # identical; the distinct names let the Claude Code agent list and any
+        # external monitor show which role each spawned worker holds.
+        "agent": f"agent-teams:{seat.value}-worker",
+        # Process binding for the worker's shell: policy refuses any
+        # ``--acting-role`` that disagrees with it, and refuses ``human``
+        # outright inside an agent session.
+        "env": {policy.ACTING_ROLE_ENV: seat.value},
         "prompt": prompt,
     }

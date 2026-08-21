@@ -394,6 +394,70 @@ def check_action(action: str, seat: Role) -> Decision:
     return decision
 
 
+# ------------------------------------------------------------ seat binding
+
+#: Environment variable that binds a process to one seat. Set it when a worker
+#: is spawned (``AGENT_TEAMS_ACTING_ROLE=dev``) and every command in that
+#: process acts as that seat; a ``--acting-role`` that disagrees is refused.
+ACTING_ROLE_ENV = "AGENT_TEAMS_ACTING_ROLE"
+
+#: Environment markers that an agent harness stamps on every subprocess it
+#: runs. Their presence means "this command was issued by a model session",
+#: and a model session never holds human authority.
+AGENT_SESSION_MARKERS: tuple[str, ...] = ("CLAUDECODE", "CLAUDE_CODE_SESSION_ID")
+
+
+class SeatMismatch(ActionForbidden):
+    """The seat a command claims is not the seat its process is bound to."""
+
+
+def agent_session(env: Mapping[str, str]) -> bool:
+    """True when the process runs inside an agent harness."""
+    return any(env.get(marker) for marker in AGENT_SESSION_MARKERS)
+
+
+def resolve_acting_role(
+    claimed: Role | None, env: Mapping[str, str], fallback: Role | None = None
+) -> Role:
+    """Decide which seat a command really acts as.
+
+    Precedence: the process binding (``ACTING_ROLE_ENV``) over the command
+    line, and the command line over the command's own default (``fallback``).
+    Two refusals guard the human gates:
+
+    * a bound process may not claim a different seat -- the flag is a
+      convenience, the binding is the authority;
+    * a process inside an agent harness may not act as ``human``, explicitly
+      or by default. Human authority is exercised from the human's own shell.
+
+    This is a process-level floor, not a cryptographic one: an agent that
+    deliberately scrubs its environment can still lie. The gate it closes is
+    the one that actually fired live -- a lead running ``promote`` with no
+    ``--acting-role`` and inheriting the human default.
+    """
+    bound_raw = (env.get(ACTING_ROLE_ENV) or "").strip()
+    bound = Role.parse(bound_raw) if bound_raw else None
+    if bound is not None and claimed is not None and claimed is not bound:
+        raise SeatMismatch(
+            f"this process is bound to seat `{bound}` ({ACTING_ROLE_ENV}); "
+            f"it may not act as `{claimed}`"
+        )
+    seat = bound or claimed or fallback
+    if seat is None:
+        raise ActionForbidden(
+            f"no acting seat: pass --acting-role or set {ACTING_ROLE_ENV}"
+        )
+    if seat is Role.HUMAN and agent_session(env):
+        origin = "defaulted to" if claimed is None and bound is None else "claims"
+        raise ActionForbidden(
+            f"this command {origin} `human`, but it is running inside an agent "
+            f"session. Human authority is never exercised from a model's shell: "
+            f"run it from your own terminal, or pass the seat you actually are "
+            f"with --acting-role <seat> and let policy decide."
+        )
+    return seat
+
+
 # ----------------------------------------------------------- protected paths
 
 
@@ -551,10 +615,19 @@ def acceptance_wait_reasons(
     if pending:
         reasons.append("required checks still pending: " + ", ".join(pending))
 
+    # Mergeability is a question about an open Pull Request. Once merged,
+    # GitHub reports ``UNKNOWN`` indefinitely; waiting on it would park the
+    # Card in In Review forever (observed live on a post-merge re-verify).
     mergeable_state = str(pr_facts.get("mergeable_state", "")).strip().upper()
-    if mergeable_state in {"", "UNKNOWN"}:
+    if not _is_merged(pr_facts) and mergeable_state in {"", "UNKNOWN"}:
         reasons.append("GitHub is still calculating mergeability")
     return tuple(reasons)
+
+
+def _is_merged(pr_facts: Mapping[str, object]) -> bool:
+    return bool(pr_facts.get("merged")) or (
+        str(pr_facts.get("state", "")).strip().upper() == "MERGED"
+    )
 
 
 #: The minimum a falsification note must say to be checkable: what was broken
@@ -707,7 +780,7 @@ def evaluate_acceptance(
 
     if pr_facts.get("draft"):
         return result("defect", "Pull Request is still a draft")
-    if not pr_facts.get("mergeable", False):
+    if not _is_merged(pr_facts) and not pr_facts.get("mergeable", False):
         return result(
             "defect", "Pull Request is not mergeable; rebase onto the base branch"
         )

@@ -1,0 +1,58 @@
+
+⏺ Write(tmp/build_children_json.py)
+  ⎿  Wrote 21 lines to tmp/build_children_json.py
+       1 import json
+       2
+       3 children = [
+       5         "title": "毒油地圖 walking skeleton: county choropleth + click-to-drill-d
+         own",
+       6         "body": open("tmp/child1-skeleton.md", encoding="utf-8").read(),
+       7     },
+       9         "title": "毒油地圖: full record fields + load-time validation + county-na
+         me normalization",
+      10         "body": open("tmp/child2-fields-validation.md", encoding="utf-8").read(),
+     … +13 lines
+
+  Thought for 2s, ran 1 shell command
+
+⏺ Running the decomposition — creating the three child Cards from tmp/children-25.json.
+
+  Thought for 8s, ran 1 shell command
+
+⏺ Architect stage complete. Spec published and #25 decomposed into three child Cards, all parked
+  at the human readiness gate.
+
+  What landed:
+  - Spec: docs/specs/2026-08-21-card-25-oil-violation-map.md @ commit 24c6436 (direct mode, on
+    main). Problem, scope/non-goals, observable behavior, 9 acceptance criteria, dependencies, 9
+    design decisions with rationale, risks, and verification strategy.
+  - Parent #25 remains the spec-holder.
+  - Three children, all at (Backlog, human):
+    - #26 — walking skeleton: county choropleth + click-to-drill-down — the smallest end-to-end
+      slice (map + drill-down + graceful data-load failure + CI tests). No deps.
+    - #27 — full record fields + load-time validation + county-name normalization — depends on
+      #26. This is the one that corrects the prior defect: the retired exact-match validation
+      would have silently dropped all 7 桃園市 records; #27 adds 桃園市 ↔ 桃園縣 normalization so
+      they render.
+    - #28 — keyword search by business name / oil brand — depends on #26 (soft on #27).
+
+  The one decision the research forced: the dataset's 7 桃園市 records vs the GeoJSON's
+  2010-vintage 桃園縣 polygon. The retired code would have dropped them silently. The spec
+  mandates an explicit alias map at the join layer (DD4) and makes the results-panel heading show
+  the current name 桃園市. Alternatives (mutate the CC0 boundary file, or downgrade the dataset
+  to 桃園縣) were rejected with rationale in the spec.
+
+  Where this stops — and why: the architect seat does not promote Cards. Per the workflow, the
+  next move is yours: move a child's Project Status from Backlog to Ready. The coordinator then
+  finalizes readiness and hands the Ready Card to dev to implement in a worktree and open a PR.
+
+  Recommend: promote #26 (the walking skeleton) to Ready first — it has no dependencies and
+  unblocks both #27 and #28. Say the word and I'll run the dispatch routine to pick it up as soon
+  as it's Ready. If you'd rather review or amend the spec first, tell me what to change.
+
+✻ Baked for 5m 9s
+
+─────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+─────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent

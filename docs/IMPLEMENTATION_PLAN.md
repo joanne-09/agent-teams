@@ -38,7 +38,7 @@ specification Pull Requests, or routine reconciliation as defaults.
 | Work item | Status | Enforcement |
 |---|---|---|
 | Default direct product spec plus optional user-merged spec PR | Implemented, uncommitted | `spec_merge_mode`, `publish-spec`, `spec_merge`, exact Card record |
-| Same-session bounded worker launch; no prompt copy | Implemented, uncommitted | `next-actions`, `dispatching-work`, `agents/agent-teams-worker.md` |
+| Same-session bounded worker launch; no prompt copy | Implemented, uncommitted | `next-actions`, `dispatching-work`, `agents/<seat>-worker.md` |
 | Default automatic merge plus optional user merge | Implemented, uncommitted | `merge_mode`, `manual_merge` gate, confirmed-merge reconciliation |
 | WIP-aware ordering and serialized spec authors | Implemented, uncommitted | `Producer.next_actions` |
 | Delayed merge monitoring and automatic reconciliation | Implemented, uncommitted | typed `monitor` / `reconcile` controller actions |

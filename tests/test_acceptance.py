@@ -488,6 +488,22 @@ class AcceptanceTableTests(unittest.TestCase):
         result = policy.evaluate_acceptance(a_pass(), facts(mergeable=False), a_config())
         self.assertEqual(result.acceptance, "defect")
 
+    def test_a_merged_pull_request_is_not_asked_whether_it_is_mergeable(self):
+        # Session-8 live finding: after a merge GitHub reports
+        # ``mergeable: UNKNOWN`` indefinitely. A post-merge re-verify must
+        # route to eligible (and then reconcile), not to defect or to waiting.
+        merged = facts(state="MERGED", merged=True, mergeable=False,
+                       mergeable_state="UNKNOWN")
+        result = policy.evaluate_acceptance(a_pass(), merged, a_config())
+        self.assertEqual(result.acceptance, "eligible")
+        self.assertEqual(policy.acceptance_wait_reasons(a_pass(), merged, a_config()), ())
+
+    def test_an_open_pull_request_with_unknown_mergeability_still_waits(self):
+        pending = facts(state="OPEN", merged=False, mergeable=False,
+                        mergeable_state="UNKNOWN")
+        reasons = policy.acceptance_wait_reasons(a_pass(), pending, a_config())
+        self.assertTrue(any("mergeability" in reason for reason in reasons))
+
     def test_row_9_a_clean_current_complete_pass_is_eligible(self):
         result = policy.evaluate_acceptance(a_pass(), facts(), a_config())
         self.assertEqual(result.acceptance, "eligible")

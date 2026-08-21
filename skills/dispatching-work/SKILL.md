@@ -34,14 +34,19 @@ settings, re-run `next-actions` before starting another returned action.
 
 2. Handle every returned `action`:
 
-- `kind: spawn`: invoke the foreground `agent-teams:agent-teams-worker`
-  subagent with the returned `prompt` verbatim. The action's `skill` field
-  is the one qualified workflow skill the worker must invoke on demand through
-  its Skill tool; no other workflow bodies are preloaded. If that plugin agent
-  is not exposed by the carrier, invoke the carrier's general-purpose child
-  agent with the same prompt and explicitly load only that `skill`. This
+- `kind: spawn`: invoke the foreground plugin subagent named in the action's
+  `agent` field (one per seat: `agent-teams:architect-worker`,
+  `agent-teams:analyst-worker`, `agent-teams:dev-worker`,
+  `agent-teams:qa-worker`, `agent-teams:lead-worker`) with the returned
+  `prompt` verbatim. Never substitute a different seat's worker. The action's
+  `skill` field is the one qualified workflow skill the worker must invoke on
+  demand through its Skill tool; no other workflow bodies are preloaded. If
+  that plugin agent is not exposed by the carrier, invoke the carrier's
+  general-purpose child agent with the same prompt and explicitly load only
+  that `skill`. This
   fallback still happens inside the current session; it is never handed to the
-  human.
+  human. The action's `env` field (`AGENT_TEAMS_ACTING_ROLE=<seat>`) is the
+  worker's process binding; the prompt already tells the worker to set it.
 - `kind: controller` or `kind: reconcile`: invoke the plugin CLI with the
   returned `argv`, prefixed by
   `python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py"`. These are
@@ -119,6 +124,11 @@ only human gates or durable blockers.
 ## Rules
 
 - Never invoke a worker as `human` and never run a human-gate command yourself.
+  The CLI enforces this: inside any agent session (the harness stamps
+  `CLAUDECODE` on every shell) a command that claims or defaults to `human`
+  is refused. Run your own CLI calls with `--acting-role lead` (or
+  `AGENT_TEAMS_ACTING_ROLE=lead`) and let policy answer; when it refuses
+  `promote`, that is the human gate, not an obstacle to route around.
 - Never create a specification branch or Pull Request yourself.
   `publish-spec` owns the configured direct or manual publication route.
 - Never treat a child response as durable state. Re-read the board.

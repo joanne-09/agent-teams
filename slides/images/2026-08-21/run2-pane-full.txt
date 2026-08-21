@@ -1,0 +1,58 @@
+
+  Eason, here's where we are:
+
+  - #28 (keyword search) — (In Review, qa), PR #31. QA verification in progress.
+  - #27 — Done, merged (6bb5fd9).
+  - #26 — In Review (left per your call).
+  - #25 — parent, decomposed.
+
+  No polling — I'll act when QA reports back.
+
+✻ Waiting for 1 background agent to finish
+
+⏺ Agent "QA: verify Card #28 PR #31" finished · 6m 43s
+
+  Thought for 4s
+
+⏺ QA verdict for #28: PASS → eligible → auto-merged. PR #31 merged (fee2708), #28 at (Done,
+  lead), worktree cleaned. 43/43 tests, mutation falsification on searchViolations, and the dev's
+  county-click-during-search judgment call evaluated as consistent with DD2/AC2 (a defensible
+  literal reading, not a defect). Re-reading next-actions to confirm the merge and overall board
+  state.
+
+  Thought for 7s, ran 1 shell command
+
+⏺ All three implementation cards are merged to main. The 毒油地圖 is feature-complete. (The board
+  API is rate-limited again, but the merges are confirmed in git log origin/main — I don't need
+  the board to confirm delivery.)
+
+  main now contains:
+  - 35f73dd — #26 walking skeleton (choropleth + county drill-down + graceful file:// error path)
+  - 6bb5fd9 — #27 full record fields + load-time validation + 桃園市 ↔ 桃園縣 normalization
+  - fee2708 — #28 keyword search by business name / oil brand
+
+  What the 毒油地圖 does now: renders all 22 Taiwan counties colored by violation count (7
+  counties with records, including the 7 桃園市 records now correctly shown under the 桃園縣
+  polygon); click a county to see its full violation records (business name, date, description,
+  penalty, legal basis, oil product); type a business name or oil brand to search all records
+  regardless of county, with the county view restored when the query clears. 43 unit tests,
+  static no-backend site, desktop viewport.
+
+  Final card state:
+  - #25 — (Backlog, architect) — parent/spec-holder; spec durable on main @ 2f1cfdb. All three
+    children delivered, so this could be closed, but it's not a delivery item.
+  - #26 — In Review (left per your call) — merged (35f73dd), board reconcile deferred until the
+    accept-before-MERGED-check plugin defect is fixed.
+  - #27 — Done (6bb5fd9).
+  - #28 — Done (fee2708).
+
+  Two loose ends, both bookkeeping, both yours to decide on: (1) the #26 board reconcile once the
+  plugin defect is patched; (2) whether to close the parent #25. The actual product is built,
+  verified, and live on main.
+
+✻ Worked for 15m 35s
+                                                         ✔ Update installed · Restart to update
+─────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+─────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent

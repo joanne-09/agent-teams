@@ -1,0 +1,58 @@
+  PR #29 (head 16e1b54) passes AC1, AC2, AC5, and the test strength checks:
+  - 22 polygons render over HTTP (the "0 polygons" fear from the interrupted first pass does not
+    hold — QA's wiring check against the real data confirmed the fetch paths and COUNTYNAME
+    usage).
+  - Fill scale correct: zero-violation neutral #d9d9d9, 新北市 (19) saturates at #a50f15, 桃園縣
+    neutral (pre-#27, as intended).
+  - node --check clean; node --test 10/10; a mutation test (removed the Math.min saturation
+    clamp) correctly failed a named test.
+
+  What blocked acceptance — AC4 (graceful degradation on file://) is only partially met.
+  oil-map.html:36 loads the app as <script type="module" src="oil-map.js" defer>. Module scripts
+  fetch in CORS mode; over file:// (origin null, no CORS headers) Chrome and Safari block the
+  script, so init() never runs and showLoadError() never fires — the page is blank with no
+  visible error, exactly the state AC4 forbids. It works in Firefox (permits module scripts over
+  file://) and over HTTP when data files are missing.
+
+  Why it's a spec conflict, not a dev defect
+
+  The dev followed DD7 literally (<script type="module">). But oil-map.js has no ES module syntax
+  — no import/export. The dual-load mechanism (CommonJS module.exports + the typeof module
+  browser guard) works identically with a plain classic script. So type="module" is cargo-culted
+  from the retired implementation and is the sole cause of the AC4 failure. Dropping it is a
+  one-line change with no downside.
+
+  My recommendation: option (a)
+
+  Fix it properly — drop type="module". Classic scripts aren't CORS-restricted over file://, so
+  init() runs, fetch() fails, showLoadError() fires, and AC4 holds in all browsers. DD7's
+  dual-load still works via the typeof module guard. This costs one short dev+QA cycle (amend
+  DD7, change the one line on PR #29, re-verify). Option (b) — ship as-is and scope AC4's file://
+  graceful degradation to Firefox only — leaves a known blank-page gap in the two most common
+  browsers for a self-inflicted reason. The file:// case is an edge (real deployment is HTTP,
+  where AC4 already works fully), which makes (b) survivable but not justified given how cheap
+  (a) is.
+
+  The mechanical difference: option (a) does not use approve-exception (that merges the exact
+  reviewed head as-is); it routes back through architect (amend DD7) → dev (drop type="module" on
+  PR #29) → QA re-verify. Option (b) is approve-exception 26 (merge now, accept the Firefox-only
+  scope).
+─────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ QA exception
+
+│ Card #26 / PR #29 is blocked at the QA exception gate: the module-script tag breaks AC4
+│ (graceful file:// error) in Chrome/Safari. How do you want to resolve it?
+
+❯ 1. Fix it: drop type="module" (Recommended)
+     Amend DD7 to permit a classic <script defer>; dev changes the one line on PR #29; QA
+     re-verifies. AC4 then holds in all browsers. Costs one short dev+QA cycle. Does NOT merge
+     now — routes back through architect -> dev -> qa.
+  2. Accept as-is: approve-exception
+     Run approve-exception 26 to merge PR #29 now, and scope AC4's file:// graceful degradation
+     to Firefox only (Chrome/Safari show a blank page on file://). Ships the gap in the two most
+     common browsers.
+  3. Type something.
+─────────────────────────────────────────────────────────────────────────────────────────────────
+  4. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel

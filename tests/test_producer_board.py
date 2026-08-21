@@ -301,21 +301,26 @@ class BoardReadTests(unittest.TestCase):
 
 
 class PaginationTests(unittest.TestCase):
-    """Plan M1.5: a Card past the first response page must never vanish."""
+    """Plan M1.5: a Card past the first response page must never vanish.
 
-    def test_escalates_until_a_response_comes_back_short(self):
+    Reads follow GraphQL cursors at ``board_page_limit`` per page (the lean
+    query costs one rate-limit point per page, whatever the page holds) and
+    refuse loudly past ``board_max_items``.
+    """
+
+    def test_follows_cursors_until_the_last_page(self):
         gh = SaturatingGh(total=250)
         board = producer_board.Board(config(), gh)
         cards = board.cards()
         self.assertEqual(len(cards), 250)
-        # 100 saturated -> 200 saturated -> 400 returns 250 and proves complete.
-        self.assertEqual(gh.limits_requested, [100, 200, 400])
+        self.assertEqual([card.number for card in cards][:3], [1, 2, 3])
+        self.assertEqual(gh.limits_requested, [100, 100, 100])
 
-    def test_a_board_exactly_on_a_boundary_still_reads_completely(self):
+    def test_a_board_exactly_on_a_boundary_reads_in_one_page(self):
         gh = SaturatingGh(total=100)
         board = producer_board.Board(config(), gh)
         self.assertEqual(len(board.cards()), 100)
-        self.assertEqual(gh.limits_requested, [100, 200])
+        self.assertEqual(gh.limits_requested, [100])
 
     def test_refuses_to_report_a_possibly_truncated_board(self):
         gh = SaturatingGh(total=10_000)
@@ -332,7 +337,47 @@ class PaginationTests(unittest.TestCase):
             config(board_page_limit=25, board_max_items=100), gh
         )
         self.assertEqual(len(board.cards()), 60)
-        self.assertEqual(gh.limits_requested, [25, 50, 100])
+        self.assertEqual(gh.limits_requested, [25, 25, 25])
+
+    def test_page_size_never_exceeds_the_api_maximum(self):
+        gh = SaturatingGh(total=5)
+        producer_board.Board(config(board_page_limit=500, board_max_items=1000), gh).cards()
+        self.assertEqual(gh.limits_requested, [100])
+
+
+class BoardReadCacheTests(unittest.TestCase):
+    """Session-8 finding: one command listed the whole board once per Card it
+    touched, and the coordinator polled that every 30 s. Reads are memoised
+    per process and invalidated by this process's own mutations only."""
+
+    def _reads(self, gh):
+        return len(gh.calls_matching("api", "graphql"))
+
+    def test_repeated_reads_in_one_process_hit_github_once(self):
+        gh = FakeGh()
+        board = producer_board.Board(config(), gh)
+        board.cards(); board.card(12); board.card(8); board.cards()
+        self.assertEqual(self._reads(gh), 1)
+
+    def test_a_mutation_invalidates_the_cache(self):
+        gh = FakeGh()
+        board = producer_board.Board(config(), gh)
+        board.card(12)
+        board.transition_card(12, Status.IN_PROGRESS, Role.DEV)
+        board.card(12)
+        self.assertEqual(self._reads(gh), 2)
+
+    def test_callers_cannot_poison_the_cache_through_the_returned_list(self):
+        gh = FakeGh()
+        board = producer_board.Board(config(), gh)
+        board.cards().clear()
+        self.assertTrue(board.cards())
+
+    def test_brief_reads_the_board_once(self):
+        gh = FakeGh()
+        board = producer_board.Board(config(), gh)
+        producer_board.Producer(config(), board).brief()
+        self.assertEqual(self._reads(gh), 1)
 
 
 class HandoffTests(unittest.TestCase):
@@ -479,7 +524,8 @@ class CliTests(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with redirect_stdout(out), redirect_stderr(err):
             code = producer_board.main(
-                ["--config", str(self.config_path), *argv], gh=gh or FakeGh()
+                ["--config", str(self.config_path), *argv], gh=gh or FakeGh(),
+                env={},
             )
         return code, out.getvalue(), err.getvalue()
 
@@ -620,6 +666,52 @@ class CliTests(unittest.TestCase):
         self.assertFalse(payload["ok"])
         self.assertEqual(payload["refusal"], "ActionForbidden")
 
+    def test_promote_inside_an_agent_session_is_refused_without_a_flag(self):
+        # Session-8 finding: the lead ran `promote 27` with no --acting-role and
+        # inherited the human default. The process environment now decides.
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = producer_board.main(
+                ["--config", str(self.config_path), "promote", "8"],
+                gh=FakeGh(), env={"CLAUDECODE": "1"},
+            )
+        self.assertEqual(code, 1)
+        payload = json.loads(err.getvalue())
+        self.assertEqual(payload["refusal"], "ActionForbidden")
+        self.assertIn("inside an agent session", payload["error"])
+
+    def test_bound_process_cannot_promote_as_human(self):
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = producer_board.main(
+                ["--config", str(self.config_path), "promote", "8",
+                 "--acting-role", "human"],
+                gh=FakeGh(), env={policy.ACTING_ROLE_ENV: "lead"},
+            )
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(err.getvalue())["refusal"], "SeatMismatch")
+
+    def test_bound_process_supplies_the_seat_for_required_flags(self):
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = producer_board.main(
+                ["--config", str(self.config_path), "transition", "12",
+                 "--to", "In Progress"],
+                gh=FakeGh(), env={policy.ACTING_ROLE_ENV: "dev"},
+            )
+        self.assertEqual(code, 0, err.getvalue())
+
+    def test_handoff_from_human_inside_an_agent_session_is_refused(self):
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = producer_board.main(
+                ["--config", str(self.config_path), "handoff", "8",
+                 "--from-role", "human", "--to-role", "dev", "--note", "go"],
+                gh=FakeGh(), env={"CLAUDECODE": "1"},
+            )
+        self.assertEqual(code, 1)
+        self.assertIn("agent session", json.loads(err.getvalue())["error"])
+
     def test_refusal_exits_non_zero_with_a_json_error(self):
         code, _, err = self._run(
             "handoff", "12", "--from-role", "dev", "--to-role", "human",
@@ -686,7 +778,7 @@ class ConsumerCommandTests(CliTests):
         with redirect_stdout(out), redirect_stderr(err):
             code = producer_board.main(
                 ["--config", str(self.config_path), *argv],
-                gh=gh or FakeGh(), git=git,
+                gh=gh or FakeGh(), git=git, env={},
             )
         return code, out.getvalue(), err.getvalue()
 

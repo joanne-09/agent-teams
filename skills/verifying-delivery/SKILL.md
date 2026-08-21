@@ -39,9 +39,32 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" bootstrap --role qa
 ```
 
 Claiming here means binding to one Pull Request at one commit — not taking a
-git claim branch. QA authors no commits, so it needs no worktree; what it
-reserves is the review, and the Card's `(In Review, qa)` pair is that
-reservation.
+git claim branch. QA authors no commits; what it reserves is the review, and
+the Card's `(In Review, qa)` pair is that reservation.
+
+**Never switch the shared checkout.** `git checkout <branch>`, `git switch`,
+and `gh pr checkout` in the repository root are forbidden for this seat: the
+coordinator and every other worker run from that checkout, and a root left on
+the Pull Request branch sends their next commit to the wrong branch (this
+happened live; the lead's spec re-publish landed on the PR branch). Reading
+the diff needs no checkout at all (`gh pr diff`, `gh pr view --json files`).
+When you must execute the code under review — run its tests, open the page —
+do it in a detached review worktree at the exact head, outside the
+repository, and remove it when the verdict is published:
+
+```bash
+# <workspace> is the config's `workspace` (default ../.worktrees); <n> the Card
+git fetch origin "<head_sha>"
+git worktree add --detach "<workspace>/review-<n>" "<head_sha>"
+# ... run tests / open the page from <workspace>/review-<n> ...
+git worktree remove --force "<workspace>/review-<n>"
+```
+
+Detached on purpose: a worktree on the claim branch would let an accidental
+commit move the head you are reviewing, which would invalidate your own
+verdict. If `git status` in the repository root is not on its default branch
+when you start, stop and report it as a blocker rather than "fixing" it — that
+is someone else's state.
 
 Requires `(In Review, qa)` and a linked Pull Request. Record the current head
 SHA now — **everything below is evidence about that exact commit.** A new push

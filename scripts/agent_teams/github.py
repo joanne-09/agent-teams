@@ -106,9 +106,29 @@ def classify(stderr: str) -> tuple[str, str]:
     return "unknown", ""
 
 
+def _graphql_is_query(args: Sequence[str]) -> bool:
+    """``gh api graphql`` is a read iff every document it sends is a query."""
+    documents = []
+    for index, argument in enumerate(args):
+        if argument in {"-f", "--raw-field"} and index + 1 < len(args):
+            key, _, value = args[index + 1].partition("=")
+            if key == "query":
+                documents.append(value)
+        elif argument.startswith("--raw-field=query=") or argument.startswith("-fquery="):
+            documents.append(argument.split("query=", 1)[1])
+    return bool(documents) and all(
+        document.lstrip().startswith(("query", "{")) for document in documents
+    )
+
+
 def _is_safe_read(args: Sequence[str]) -> bool:
     if not args:
         return False
+    if list(args[:2]) == ["api", "graphql"]:
+        return (
+            not any(a in {"-X", "--method"} for a in args[2:])
+            and _graphql_is_query(args)
+        )
     if args[0] == "api":
         write_flags = {
             "-X", "--method", "-f", "-F", "--field", "--raw-field", "--input"
@@ -130,6 +150,10 @@ class Gh:
     ):
         self.recovery = recovery or RecoveryConfig()
         self._sleep = sleep
+        #: Count of commands issued that may have changed GitHub state. Board
+        #: keys its per-process read cache on it: a read is reused until
+        #: something this process did could have invalidated it.
+        self.mutations = 0
 
     def available(self) -> bool:
         return shutil.which(self.executable) is not None
@@ -138,6 +162,8 @@ class Gh:
         arguments = list(args)
         command = [self.executable, *arguments]
         safe_read = _is_safe_read(arguments)
+        if not safe_read:
+            self.mutations += 1
         attempt = 0
         while True:
             attempt += 1

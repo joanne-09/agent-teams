@@ -4,7 +4,7 @@
 
 **Stack**: Claude Code plugin / Python 3.12 standard library / GitHub CLI / GitHub Projects v2 / Git / Slidev
 
-**Last updated**: 2026-08-13 — session 9 first live automation run (Lee's side)
+**Last updated**: 2026-08-21 — sessions 10–11 (Lee's side): per-seat workers, installable plugin, CCAM dashboard, full unattended Ollama run, and fixes for everything that run exposed
 
 ---
 
@@ -180,7 +180,10 @@ auto-merge and protected QA work end to end.
 - **The demo package is behind the code** (slides/) — team-lead feedback asks for clear GitHub-versus-agent-teams annotations, generated-versus-handwritten Card labels, skill provenance per prompt, a dedicated merge-logic slide, screenshots of every end-to-end node, and a Word document containing the analyst questions.
 - **falsified_by remains attested evidence** (scripts/agent_teams/policy.py) — the schema requires a specific mutation and named failing test but cannot prove the mutation was executed.
 - **Handoff remains partially non-atomic** (scripts/agent_teams/board.py) — Role changes before the comment posts; PartialHandoff preserves fix-forward material.
-- **Pagination remains heuristic** (scripts/agent_teams/github.py) — fetch_all_items increases the limit until a response is short.
+- ~~Pagination remains heuristic~~ — replaced 08-21: `Board.ITEMS_QUERY` pages by GraphQL cursor (1 rate-limit point per page vs ~1 point per item for `gh project item-list`); `fetch_all_items` is left in github.py unused and can be deleted.
+- **Seat binding is a process-level floor, not a cryptographic one** (scripts/agent_teams/policy.py, resolve_acting_role) — an agent that deliberately scrubs `CLAUDECODE` from its environment can still claim `human`. The merge floor remains GitHub branch protection. See CONFIGURATION.md "Process environment".
+- **Plugin snapshot layout** — `claude plugin install` from the local marketplace copies the whole working tree (546 MB with slides/node_modules; .gitignore not honoured). Move the deck out of the plugin repo or point `source` at a `plugin/` subdirectory.
+- **Installed snapshot drifts from source** — `claude plugin update` is a no-op while the version string is unchanged; uninstall + install after pulls.
 - **No automatic field provisioning or audit database** — intentionally deferred; doctor validates and GitHub artifacts remain the trail.
 
 ---
@@ -228,25 +231,22 @@ No local implementation blocker.
 
 ## Current State
 
-The direct checkout is on mvp/producer-from-scratch at 6dd0289 (the live-shape
-auto-merge fix, Lee's side) on top of 61a9b35 (Joanne's 08-13 weekly deck +
-handoff) and bbf1335. Uncommitted: this HANDOFF update, the rewritten Part 2 of
-slides/2026-08-13-weekly.md, and slides/images/2026-08-13/ placeholders.
-Nothing pushed without the user's instruction.
+mvp/producer-from-scratch at the 08-21 commit (Lee's side) on top of 980a93c
+(Joanne's config externalization + recovery) and 3f82792 (08-21 slides).
+Full suite 462/462; `claude plugin validate .` passes.
 
-The shipped workflow has ten focused skills. The current session uses
-dispatching-work and next-actions; each bounded worker receives one routine and
-qualified skill, preloads no workflow body, invokes that skill on demand,
-mutates one Card stage, and stops. The mandatory human action is only changing
-a specified architect-finished Card Status to Ready. Human QA is conditional
-for protected or genuinely ambiguous changes.
+**For Joanne — things that changed under you since 980a93c (please review, all
+touch your files):**
 
-Focused validation is green and the full suite passed 397/397 on this merged
-tree (Lee's side, 08-12). The lazy worker and the Consumer/merge path both now
-have live proof from the 08-12 run; the protected-change route remains the one
-acceptance lane without a live firing.
-
----
+1. **Five seat workers replace `agents/agent-teams-worker.md`** (`analyst-/architect-/dev-/qa-/lead-worker.md`, identical contract; `_spawn_action` emits `"agent": "agent-teams:<seat>-worker"` and `"env": {"AGENT_TEAMS_ACTING_ROLE": "<seat>"}`). Reason: external monitors learn the role from the agent type, not the prompt.
+2. **`.claude-plugin/marketplace.json` rewritten** — marketplace name `agent-teams` (was your `agent-teams-local`), installed into the demo config as `agent-teams@agent-teams`. Lee decided to keep this one; say if you object.
+3. **`--acting-role` is no longer trusted** (`policy.resolve_acting_role`, `producer_board.py`): `AGENT_TEAMS_ACTING_ROLE` binds a process to a seat, and inside any Claude Code shell a command that claims or defaults to `human` is refused. Live cause: the lead ran `promote 27` with no flag and inherited the human default. `main()` takes `env=` for tests; tests pass `env={}`.
+4. **PR body contract changed** (`validate_pr_body`, ARCHITECTURE 9.5, pr-contract.md): `Card: #<issue>` is required and `Closes/Fixes/Resolves #N` is **refused**; `_reconcile_to_done` closes the Issue itself (`Board.close_issue`). Reason: GitHub closing the Issue on merge races `reconcile` on any Project with the default "item closed → Done" workflow.
+5. **accept-after-merge fixed**: a merged PR reports `mergeable: UNKNOWN` forever; policy no longer waits on it (`pr_facts["merged"]`), and `accept` skips `arm_auto_merge` on a merged PR.
+6. **Board reads**: lean GraphQL query + per-process memo keyed on `Gh.mutations`; `_is_safe_read` treats `api graphql` query documents as reads. Measured: `item-list --limit 100` = 101 points on a 4-card board; the new query = 1.
+7. **`verifying-delivery`** forbids checking out the PR branch in the repo root (detached review worktree instead) — a QA worker left the main checkout on `pr-29` live.
+8. **The CCAM dashboard** (`reference/ccam` in Lee's tree, fork of hoangsonww/Claude-Code-Agent-Monitor) edits `.agent-teams/config.json` through a Python bridge that imports your `Config` and depends on exactly `Config.from_dict / to_dict / revision / write`; its form descriptor mirrors the CONFIGURATION.md tables — keep them in sync if you add keys.
+9. **Host setting for Ollama-served models**: `skillListingBudgetFraction: 0.05` (documented in CONFIGURATION.md) — without it 8 of 10 skill descriptions are dropped and intent routing fails silently.
 
 ## Next Steps
 
@@ -271,6 +271,10 @@ decision accepts sibling plugins as runtime dependencies.
 ## Session Log
 
 <!-- newest entry at top -->
+
+### 2026-08-20 → 08-21 — Sessions 10–11 (Lee's side — dashboard, full unattended run, fixes)
+
+Per-seat worker split and installable marketplace (08-20). Adopted CCAM as the management dashboard, fixed its plugin-scope listing, added an Agent Teams page whose Config tab writes `.agent-teams/config.json` through `config_bridge.py` (imports `Config`; same `config_revision` as `doctor`). Full 毒油地圖 rerun on glm-5.2 via Ollama, unattended, watched from the dashboard: intake → architect (found the 桃園市/桃園縣 join defect) → #26 dev/QA with a real QA-found defect and a fix-forward → #27/#28 routine. Four plugin findings came out of it and were fixed 08-21 (see Current State items 3–7), plus two dashboard fixes (nested-helper `SubagentStop` completing the wrong worker; graph labels truncating to `agent-teams:…`). Deck `slides/2026-08-21-weekly.md` (30 pages, your Part 1 kept). Tests 434 → 462.
 
 ### 2026-08-12 → 08-13 — Session 9 (Lee's side — first live automation run)
 

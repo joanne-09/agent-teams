@@ -1143,7 +1143,7 @@ trailer, and the `<!-- agent-teams:pr -->` marker:
 ## Human Verification TODO
 ## Retro Notes
 
-Closes #<issue-number>.
+Card: #<issue-number>.
 
 <!-- agent-teams:pr -->
 ```
@@ -1157,8 +1157,11 @@ Contract rules:
   human judgment and cannot be filler.
 - Retro Notes are required where reusable lessons exist, and capture knowledge
   rather than velocity metrics.
-- The closing trailer is required and must survive every body update, so GitHub
-  links and closes the Issue on merge.
+- The `Card: #<issue>` reference is required and must survive every body
+  update. GitHub closing keywords (`Closes`/`Fixes`/`Resolves #N`) are refused:
+  they would close the Issue on merge and, on a Project with the default "item
+  closed -> Done" workflow, flip Status before `reconcile` runs. Completion has
+  one owner -- `reconcile` sets Done, hands to `lead`, then closes the Issue.
 - The marker lets queue inspection distinguish governed deliveries.
 
 ### 9.6 Verdict contract
@@ -1268,7 +1271,7 @@ identifiers and no ad hoc GitHub commands.
 | Blocker resolution skill (`resolving-issues`) | **designed** | §11.7; plan M6.5. Classifies a blocker, verifies recovery preconditions deterministically, emits fix-forward commands. Proposes only. |
 | Git claim and worktree service | built | `scripts/agent_teams/git.py` |
 | Pull Request contract service | built | `workflows.validate_pr_body`, `board.create_or_update_pull_request` |
-| Current-session bounded subagent carrier | built | `agents/agent-teams-worker.md`, `skills/dispatching-work/`, `Producer.next_actions` |
+| Current-session bounded subagent carrier | built | `agents/<seat>-worker.md` (5 seats), `skills/dispatching-work/`, `Producer.next_actions` |
 | Audit and recovery log | **excluded** | Deliberately not built. The partial-failure envelope (§11.2) is not a substitute; revisit under plan M7 with evidence from a real run. |
 | Automatic Project field provisioning | **excluded** | `doctor` validates and explains; it never creates. |
 | Multiple board backends | **excluded** | §9.8. |
@@ -1298,7 +1301,7 @@ using-agent-teams / dispatching-work       small entry and coordinator
 Producer.next_actions                     durable-state planner
                   |
                   v
-agent-teams-worker                        no workflow bodies preloaded
+<seat>-worker (architect/analyst/dev/qa/lead)  no workflow bodies preloaded
                   |
                   v
 exactly one molecular skill               intake | clarify | spec | dev | triage | QA

@@ -838,16 +838,40 @@ class NextActionsTests(unittest.TestCase):
         self.assertIn("[expected:(Blocked, architect)]", action["prompt"])
 
 
+WORKER_SEATS = ("architect", "analyst", "dev", "qa", "lead")
+
+
 class WorkerSkillLoadingTests(unittest.TestCase):
-    def test_worker_loads_one_selected_skill_instead_of_preloading_all(self):
-        worker = (
-            Path(__file__).parents[1] / "agents" / "agent-teams-worker.md"
-        ).read_text(encoding="utf-8")
-        frontmatter = worker.split("---", 2)[1]
-        self.assertIn("Skill", frontmatter)
-        self.assertNotIn("\nskills:", frontmatter)
-        self.assertIn("invoke exactly", worker)
-        self.assertIn("[skill:agent-teams:<name>]", worker)
+    def test_every_seat_worker_loads_one_selected_skill_instead_of_preloading_all(self):
+        agents_dir = Path(__file__).parents[1] / "agents"
+        for seat in WORKER_SEATS:
+            with self.subTest(seat=seat):
+                worker = (agents_dir / f"{seat}-worker.md").read_text(
+                    encoding="utf-8"
+                )
+                frontmatter = worker.split("---", 2)[1]
+                self.assertIn(f"name: {seat}-worker", frontmatter)
+                self.assertIn("Skill", frontmatter)
+                self.assertNotIn("\nskills:", frontmatter)
+                self.assertIn("invoke exactly", worker)
+                self.assertIn("[skill:agent-teams:<name>]", worker)
+
+    def test_no_generic_worker_remains(self):
+        agents_dir = Path(__file__).parents[1] / "agents"
+        self.assertFalse((agents_dir / "agent-teams-worker.md").exists())
+        self.assertEqual(
+            sorted(p.stem for p in agents_dir.glob("*.md")),
+            sorted(f"{seat}-worker" for seat in WORKER_SEATS),
+        )
+
+    def test_spawn_actions_name_the_seat_specific_worker_agent(self):
+        team, _ = producer(FakeGh(items=board_with(
+            (9, "Blocked delivery", "Blocked", "architect"),
+        )))
+        action = team.next_actions()["actions"][0]
+        self.assertEqual(action["kind"], "spawn")
+        self.assertEqual(action["role"], "lead")
+        self.assertEqual(action["agent"], "agent-teams:lead-worker")
 
     def test_dispatch_skill_obeys_the_external_recovery_policy(self):
         skill = (

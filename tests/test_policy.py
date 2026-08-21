@@ -337,5 +337,52 @@ class CardTests(unittest.TestCase):
         self.assertEqual(Card(number=1, repo="r").routing_state, "(-, -)")
 
 
+class SeatBindingTests(unittest.TestCase):
+    """The acting seat is a property of the process, not a flag it chooses."""
+
+    AGENT = {"CLAUDECODE": "1", "CLAUDE_CODE_SESSION_ID": "abc"}
+
+    def test_bare_shell_falls_back_to_the_command_default(self):
+        self.assertIs(policy.resolve_acting_role(None, {}, Role.HUMAN), Role.HUMAN)
+
+    def test_flag_beats_the_command_default(self):
+        self.assertIs(policy.resolve_acting_role(Role.LEAD, {}, Role.HUMAN), Role.LEAD)
+
+    def test_binding_beats_the_command_default(self):
+        env = {policy.ACTING_ROLE_ENV: "dev"}
+        self.assertIs(policy.resolve_acting_role(None, env, Role.HUMAN), Role.DEV)
+
+    def test_bound_process_may_restate_its_own_seat(self):
+        env = {policy.ACTING_ROLE_ENV: "qa"}
+        self.assertIs(policy.resolve_acting_role(Role.QA, env), Role.QA)
+
+    def test_bound_process_may_not_claim_another_seat(self):
+        env = {policy.ACTING_ROLE_ENV: "lead"}
+        with self.assertRaisesRegex(policy.SeatMismatch, "bound to seat `lead`"):
+            policy.resolve_acting_role(Role.HUMAN, env)
+
+    def test_agent_session_may_not_default_to_human(self):
+        # The live bypass: `promote 27` with no flag from inside the lead's session.
+        with self.assertRaisesRegex(policy.ActionForbidden, "defaulted to `human`"):
+            policy.resolve_acting_role(None, self.AGENT, Role.HUMAN)
+
+    def test_agent_session_may_not_claim_human_explicitly(self):
+        with self.assertRaisesRegex(policy.ActionForbidden, "claims `human`"):
+            policy.resolve_acting_role(Role.HUMAN, self.AGENT)
+
+    def test_agent_session_acts_as_any_agent_seat(self):
+        for seat in (Role.ANALYST, Role.ARCHITECT, Role.DEV, Role.QA, Role.LEAD):
+            self.assertIs(policy.resolve_acting_role(seat, self.AGENT), seat)
+
+    def test_missing_seat_everywhere_is_a_refusal(self):
+        with self.assertRaisesRegex(policy.ActionForbidden, "no acting seat"):
+            policy.resolve_acting_role(None, {})
+
+    def test_a_single_marker_is_enough(self):
+        with self.assertRaises(policy.ActionForbidden):
+            policy.resolve_acting_role(None, {"CLAUDECODE": "1"}, Role.HUMAN)
+        self.assertFalse(policy.agent_session({"CLAUDECODE": ""}))
+
+
 if __name__ == "__main__":
     unittest.main()

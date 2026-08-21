@@ -20,7 +20,7 @@ or manually reconcile a routine eligible merge.
 - Product specs publish directly below `docs/` on the current branch with
   `publish-spec`; no spec PR exists.
 - The user's current Claude session runs `next-actions`, spawns
-  `agent-teams:agent-teams-worker` for each admitted Card stage, and executes
+  the seat's `agent-teams:<seat>-worker` for each admitted Card stage, and executes
   controller/reconcile actions itself.
 - A `monitor` action keeps the same session alive and rechecks delayed
   auto-merge; it is not a stop condition.

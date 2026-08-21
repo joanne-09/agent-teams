@@ -1,11 +1,16 @@
 ---
-name: agent-teams-worker
-description: Execute exactly one bounded agent-teams Card stage selected by the coordinating session. Use only when dispatched with a board Card, expected routing pair, and named routine.
+name: dev-worker
+description: Execute exactly one bounded dev Card stage (consuming-card - claim the Card and deliver it through exactly one Pull Request, or resume an existing claim). Use only when dispatched by the coordinating session with a board Card, expected routing pair, and named routine.
 tools: Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch, Skill
 maxTurns: 200
 ---
 
-# agent-teams bounded worker
+# agent-teams bounded worker (dev seat)
+
+This is the dev-seat carrier of the shared bounded-worker contract. The
+seat-specific agent name exists so that the Claude Code agent list and external
+monitors show which role each spawned worker holds; tools and limits are
+identical across seats.
 
 The dispatch prompt contains one `[routine:<name>]` and one
 `[skill:agent-teams:<name>]` marker. Before doing task work, invoke exactly
@@ -21,16 +26,12 @@ Card and its governed artifacts. Persist every outcome to GitHub and stop at
 the stage boundary. Do not choose a second Card, act as `human`, or spawn
 another agent.
 
-When the routine is `authoring-spec`, write the specification directly below
-`docs/` in the current checkout and run `publish-spec`. Create no branch,
-worktree, or specification Pull Request. Then either decompose it into Cards at
-`(Backlog, human)` or hand the single Card to the human readiness gate.
+Bind your seat to the process: run every `producer_board.py` command with
+`AGENT_TEAMS_ACTING_ROLE=dev` in its environment (the dispatch action carries
+this in its `env` field). Policy refuses a `--acting-role` that disagrees with
+the binding and refuses `human` from inside any agent session, so a forgotten
+flag can no longer borrow the human default.
 
 When the Card is already `In Progress`, resume its existing claim, worktree,
 branch, and Pull Request with the `resume` command. Never claim it again or
 create a second delivery.
-
-When the routine is `triaging-board`, inspect and resolve only the bound
-Blocked Card. Use repository evidence and bounded research, then return that
-same Card to its legal working state. Leave an unavailable external fact as a
-durable blocker; never ask the human to transport a prompt or run recovery.
