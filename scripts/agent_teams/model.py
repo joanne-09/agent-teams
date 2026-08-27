@@ -231,6 +231,12 @@ class Verdict:
     challenges: tuple[str, ...] = ()
     blind_spots: tuple[str, ...] = ()
     limitations: str = ""
+    #: What was actually done in a browser: named flows, the invalid input fed
+    #: to each field, and the console state after. Required of a pass whose
+    #: diff touches user-facing files; see policy.validate_verdict. Structured
+    #: rather than prose for the same reason as test_strength -- a sentence
+    #: saying "clicked around, looked fine" cannot be checked.
+    browser_evidence: Mapping[str, Any] | None = None
     next_role: Role | None = None
 
     VALUES = ("pass", "fail", "blocked")
@@ -275,6 +281,7 @@ class Verdict:
         for name in self._SEQUENCES:
             payload[name] = list(getattr(self, name))
         payload["limitations"] = self.limitations
+        payload["browser_evidence"] = self.browser_evidence
         payload["next_role"] = self.next_role.value if self.next_role else None
         return payload
 
@@ -286,6 +293,9 @@ class Verdict:
             pull_request=str(raw.get("pull_request", "")),
             head_sha=str(raw.get("head_sha", "")),
             limitations=str(raw.get("limitations", "")),
+            # Kept exactly as written. Validation is policy's job, and coercing
+            # a malformed block here would hide the defect it must report.
+            browser_evidence=raw.get("browser_evidence"),
             next_role=Role.parse_optional(raw.get("next_role")),
             **{name: tuple(raw.get(name, ()) or ()) for name in cls._SEQUENCES},
         )

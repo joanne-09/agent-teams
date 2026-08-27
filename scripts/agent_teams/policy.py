@@ -547,7 +547,10 @@ TRANSIENT_CHECK_STATES: frozenset[str] = frozenset({
 
 
 def validate_verdict(
-    verdict: Verdict, live_head_sha: str, live_changed_files: Iterable[str]
+    verdict: Verdict,
+    live_head_sha: str,
+    live_changed_files: Iterable[str],
+    config=None,
 ) -> list[str]:
     """Every reason this verdict cannot be acted on. Empty means usable.
 
@@ -557,6 +560,12 @@ def validate_verdict(
     A refusal here is not a route. Stale or incomplete evidence is not a code
     defect and must not push the Card into the Developer lane; the correct
     recovery is re-reviewing the current head.
+
+    ``config`` is optional and duck-typed, matching ``evaluate_acceptance``:
+    this module sits below config in the dependency order and must not import
+    it. When supplied, it decides which changed paths are user-facing and
+    therefore whether browser evidence is required. When absent, every other
+    check still runs.
     """
     problems: list[str] = []
     if verdict.head_sha != live_head_sha:
@@ -586,6 +595,97 @@ def validate_verdict(
             + ", ".join(unreviewed)
         )
     problems.extend(_test_strength_problems(verdict.test_strength))
+    problems.extend(_browser_evidence_problems(verdict, config))
+    return problems
+
+
+#: Enough of a flow to count as driving the interface. One step is a page load
+#: and a screenshot, which is the incidental check this rule replaces.
+MINIMUM_FLOW_STEPS = 2
+
+
+def _browser_evidence_problems(verdict: Verdict, config) -> list[str]:
+    """Why this user-facing pass has not actually been exercised as a user.
+
+    Silent when the delivery touches no user-facing file, or when no config was
+    supplied to say which files those are. A rule that fired on every pass
+    would put an empty browser section on parser changes, and a section written
+    to satisfy a validator teaches nothing.
+    """
+    if config is None:
+        return []
+    touched = config.ui_paths_touched(verdict.changed_files)
+    if not touched:
+        return []
+
+    where = ", ".join(touched)
+    evidence = verdict.browser_evidence
+    if evidence is None:
+        return [
+            f"this delivery changes user-facing files ({where}) so a pass "
+            f"requires browser_evidence: the flows you drove, the invalid "
+            f"input you fed each field, and the console state after. Re-running "
+            f"the Developer's unit tests is not independent verification"
+        ]
+    if not isinstance(evidence, Mapping):
+        return ["browser_evidence must be a JSON object, not free prose"]
+
+    problems: list[str] = []
+
+    flows = evidence.get("flows")
+    if not isinstance(flows, (list, tuple)) or not flows:
+        problems.append(
+            "browser_evidence.flows must list at least one flow you drove "
+            f"through the interface at {where}"
+        )
+    else:
+        for index, flow in enumerate(flows):
+            label = f"browser_evidence.flows[{index}]"
+            if not isinstance(flow, Mapping):
+                problems.append(f"{label} must be an object")
+                continue
+            if not str(flow.get("name", "")).strip():
+                problems.append(f"{label} must carry a name saying what it did")
+            steps = flow.get("steps")
+            count = len(steps) if isinstance(steps, (list, tuple)) else 0
+            if count < MINIMUM_FLOW_STEPS:
+                problems.append(
+                    f"{label} records {count} step(s); a flow needs at least "
+                    f"{MINIMUM_FLOW_STEPS}. Opening the page and screenshotting "
+                    f"it is the incidental check this rule replaces"
+                )
+
+    cases = evidence.get("input_validation")
+    if not isinstance(cases, (list, tuple)) or not cases:
+        problems.append(
+            "browser_evidence.input_validation must record at least one field "
+            "fed invalid or garbage input, with what you expected and what "
+            "actually happened"
+        )
+    else:
+        for index, case in enumerate(cases):
+            label = f"browser_evidence.input_validation[{index}]"
+            if not isinstance(case, Mapping):
+                problems.append(f"{label} must be an object")
+                continue
+            missing = [
+                key for key in ("field", "input", "expected", "actual")
+                if not str(case.get(key, "")).strip()
+            ]
+            if missing:
+                problems.append(f"{label} is missing: " + ", ".join(missing))
+
+    console = evidence.get("console")
+    if not isinstance(console, Mapping) or "errors" not in console:
+        # An absent console block and a clean one are different claims. Empty
+        # means "I looked and it was quiet"; absent means "I did not look",
+        # and the live ES-module blank page was a console error sitting behind
+        # a fully green test suite.
+        problems.append(
+            "browser_evidence.console must record the console state, including "
+            "an `errors` list. An empty list is a finding; an absent one is a "
+            "gap"
+        )
     return problems
 
 

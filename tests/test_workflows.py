@@ -625,16 +625,59 @@ class NextActionsTests(unittest.TestCase):
         )
         result = team.next_actions()
         self.assertEqual(result["config_revision"], team.config.revision)
+        # Reshaped 2026-08-21 from a single schedule to {default, roles}. A
+        # coordinator carrying one global budget cannot honour "the architect
+        # gets two attempts, QA gets three", which is what the team lead asked
+        # for; every seat is listed even when it only inherits, so the reader
+        # never has to guess whether an absent seat means "same" or "n/a".
+        expected = {
+            "max_retries": 3,
+            "initial_backoff_seconds": 2.0,
+            "backoff_multiplier": 3.0,
+            "max_backoff_seconds": 10.0,
+            "retry_delays_seconds": [2.0, 6.0, 10.0],
+        }
+        self.assertEqual(result["recovery_policy"]["default"], expected)
         self.assertEqual(
-            result["recovery_policy"],
-            {
-                "max_retries": 3,
-                "initial_backoff_seconds": 2.0,
-                "backoff_multiplier": 3.0,
-                "max_backoff_seconds": 10.0,
-                "retry_delays_seconds": [2.0, 6.0, 10.0],
-            },
+            sorted(result["recovery_policy"]["roles"]),
+            ["analyst", "architect", "dev", "lead", "merge_master", "qa"],
         )
+        for seat, schedule in result["recovery_policy"]["roles"].items():
+            self.assertEqual(schedule, expected, seat)
+
+    def test_a_role_override_reaches_only_that_seat_in_the_plan(self):
+        team, _ = producer(
+            FakeGh(items=[]),
+            recovery={"max_retries": 1, "initial_backoff_seconds": 5},
+            roles={"qa": {"recovery": {"max_retries": 3}}},
+        )
+        policy_out = team.next_actions()["recovery_policy"]
+        self.assertEqual(policy_out["roles"]["qa"]["max_retries"], 3)
+        self.assertEqual(policy_out["roles"]["dev"]["max_retries"], 1)
+        # The override inherits the delay it did not restate.
+        self.assertEqual(
+            policy_out["roles"]["qa"]["retry_delays_seconds"], [5.0, 10.0, 20.0]
+        )
+
+    def test_every_action_carries_the_schedule_of_the_seat_that_runs_it(self):
+        """The retry rule must travel with the work, not just the plan header.
+
+        A coordinator that reads only ``recovery_policy`` has to remember which
+        seat each action belongs to while it retries. Stamping the action means
+        the budget cannot be applied to the wrong worker.
+        """
+        team, _ = producer(
+            FakeGh(items=board_with((11, "Shape it", "Backlog", "architect"))),
+            recovery={"max_retries": 1},
+            roles={"architect": {"recovery": {"max_retries": 4}}},
+        )
+        actions = team.next_actions()["actions"]
+        self.assertTrue(actions)
+        for action in actions:
+            self.assertIn("recovery", action, action["routine"])
+        architect = [a for a in actions if a["role"] == "architect"]
+        self.assertTrue(architect)
+        self.assertEqual(architect[0]["recovery"]["max_retries"], 4)
 
     def test_unarmed_eligible_acceptance_retries_the_controller(self):
         acceptance = ACCEPTANCE_MARKER + "\n\n```json\n" + json.dumps({
@@ -857,12 +900,40 @@ class WorkerSkillLoadingTests(unittest.TestCase):
                 self.assertIn("[skill:agent-teams:<name>]", worker)
 
     def test_no_generic_worker_remains(self):
+        """Superseded 2026-08-27: the exact-set assertion became an
+        allow-list.
+
+        It previously required agents/ to contain precisely the five seat
+        workers. Its purpose was to keep the generic catch-all worker from
+        coming back, not to freeze the directory: `qa-browser-worker` is a
+        helper the qa seat dispatches beneath itself, never a seat the
+        coordinator plans. The generic-worker ban is asserted directly, and
+        the guard that actually matters -- no planned action may name a
+        non-seat agent -- is asserted below.
+        """
         agents_dir = Path(__file__).parents[1] / "agents"
         self.assertFalse((agents_dir / "agent-teams-worker.md").exists())
-        self.assertEqual(
-            sorted(p.stem for p in agents_dir.glob("*.md")),
-            sorted(f"{seat}-worker" for seat in WORKER_SEATS),
-        )
+        allowed = set(f"{seat}-worker" for seat in WORKER_SEATS) | {
+            "qa-browser-worker",
+        }
+        self.assertEqual(set(p.stem for p in agents_dir.glob("*.md")), allowed)
+
+    def test_no_planned_action_dispatches_a_helper_agent(self):
+        """Helpers are spawned by a worker, never planned by the coordinator.
+
+        If `next_actions` ever named `qa-browser-worker`, the coordinator would
+        be dispatching a stage that publishes nothing and moves no Card, and
+        the loop would wait forever for durable state that cannot arrive.
+        """
+        team, _ = producer(FakeGh(items=board_with(
+            (9, "Blocked delivery", "Blocked", "architect"),
+            (21, "Delivery", "In Review", "qa"),
+            (30, "Build it", "Ready", "dev"),
+        )))
+        seat_agents = {f"agent-teams:{seat}-worker" for seat in WORKER_SEATS}
+        for action in team.next_actions()["actions"]:
+            if action["kind"] == "spawn":
+                self.assertIn(action["agent"], seat_agents)
 
     def test_spawn_actions_name_the_seat_specific_worker_agent(self):
         team, _ = producer(FakeGh(items=board_with(

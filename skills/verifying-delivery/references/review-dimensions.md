@@ -40,11 +40,37 @@ dimension a file-by-file read structurally cannot see.
 **`test-strength`** — Not "are there tests". Would any of them fail if the
 implementation were wrong? See the test-strength section of the SKILL body.
 
+## The three bundles
+
+Where the session supports independent passes, dispatch **three**, not eight.
+
+One agent per dimension sounds like the finest granularity, but each pass needs
+the whole diff, so eight passes copy it eight times — and several dimensions
+answer nearly the same question, so much of what comes back is the same finding
+in different words. `design` and `architecture` both ask whether this belongs
+here; `compatibility` and `cross-file` both follow the callers.
+
+Group them so the members of a bundle genuinely inform each other and the
+bundles are genuinely independent:
+
+| Pass | Dimensions | The question it answers |
+|---|---|---|
+| `structure` | `design` · `architecture` · `cross-file` | Does it belong in this system, in this shape? |
+| `behaviour` | `correctness` · `edge-cases` · `compatibility` | Does it do the right thing, including at the edges? |
+| `risk` | `security` · `test-strength` | Can it be broken, and would we find out? |
+
+`cross-file` sits with `structure` rather than `behaviour` on purpose: compound
+risk is a shape problem, and the pass already holding the architecture in mind
+is the one that will see it.
+
+All eight dimensions still appear in the verdict. The bundles decide who looks,
+not what counts as looked at.
+
 ## Running them as bounded passes
 
-Where the session supports independent passes, give each one a distinct lens
-rather than running the same review several times. Redundancy finds the same
-things twice; diversity finds different things.
+Give each pass a distinct lens rather than running the same review several
+times. Redundancy finds the same things twice; diversity finds different
+things.
 
 Rules that keep this honest:
 

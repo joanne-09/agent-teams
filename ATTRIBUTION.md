@@ -10,7 +10,31 @@ satisfy their license conditions.
 |---|---|---|
 | [board-superpowers](https://github.com/PanQiWei/board-superpowers) — MIT, (c) 2026 PanQiWei | MIT | `skills/intaking-requirement/` (shape judgment, spec awareness, decline policy), `skills/briefing-board/` (report template, recommendation ladder, stale-claim check), `skills/triaging-board/` (stale-claim sweep, blocker classes, evidence rules), `skills/using-agent-teams/` (state table, non-signals, router anti-pattern), `skills/inspecting-queue/` (observation guards), `skills/authoring-spec/` (decomposition gates: INVEST, vertical slicing, SPIDR, sizing); each including any `references/` files. Details: `docs/skill_migration.md` + `docs/skill_migration_audit.md` |
 | [superpowers](https://github.com/obra/superpowers) — MIT, (c) 2025 Jesse Vincent | MIT | `skills/consuming-card/` (test-driven-development Iron Law and Red-Green-Refactor cycle, the rationalizations table, the evidence-before-claims gate and its claim/requires table, worktree isolation discipline) incl. `references/tdd-discipline.md` + `references/claim-and-worktree.md`; `skills/verifying-delivery/` (evidence-before-claims from `verification-before-completion`); `skills/intaking-requirement/` (clarification loop, from `brainstorming`'s elicitation phase; incl. `references/clarifying-requirements.md`). Details: `docs/skill_migration.md` sections 8 + 10 |
-| [gstack](https://github.com/garrytan/gstack) — MIT, (c) 2026 Garry Tan | MIT | `skills/verifying-delivery/` (from `/review`: pre-emit verification gate, confidence calibration 1-10, specialist dispatch with dedup and multi-pass confirmation, conditional adversarial pass, scope-drift detection, DONE/PARTIAL/NOT DONE/CHANGED/UNVERIFIABLE audit vocabulary; from `/qa`: screenshot evidence, repro-is-everything, console checks, credential redaction) incl. `references/review-dimensions.md`, `references/evidence-and-challenge.md`, `references/verdict-schema.md`. Details: `docs/skill_migration.md` section 9 |
+| [gstack](https://github.com/garrytan/gstack) — MIT, (c) 2026 Garry Tan | MIT | `skills/verifying-delivery/` (from `/review`: pre-emit verification gate, confidence calibration 1-10, specialist dispatch with dedup and multi-pass confirmation, conditional adversarial pass, scope-drift detection, DONE/PARTIAL/NOT DONE/CHANGED/UNVERIFIABLE audit vocabulary; from `/qa`: screenshot evidence, repro-is-everything, console checks, credential redaction) incl. `references/review-dimensions.md`, `references/evidence-and-challenge.md`, `references/verdict-schema.md`, `references/browser-pass.md`. Details: `docs/skill_migration.md` section 9 |
+
+## INVENTED by agent-teams (2026-08-27)
+
+The QA decomposition is not derived from any source above. gstack's `/qa`
+supplies browser-evidence discipline -- repro-is-everything, console checks,
+credential redaction -- applied by a reviewer who has read the code. What is
+agent-teams' own:
+
+- **The spec-blind browser seat** (`agents/qa-browser-worker.md`): a reviewer
+  given the Card, the specification, and the running application but *not* the
+  diff. Modelled on the team lead's account of how a real QA team designs
+  scenarios without the development team's input, not on any source plugin.
+- **`browser_evidence` as a validated field** (`policy.validate_verdict`):
+  browser work is refused-if-absent on a user-facing pass rather than requested
+  in prose. The enforcement shape mirrors this repository's own
+  `falsified_by` rule.
+- **The three review bundles** (`structure` / `behaviour` / `risk`): gstack
+  dispatches specialists per concern; the specific grouping of eight
+  dimensions into three, and the reasoning that eight passes duplicate the
+  diff for overlapping findings, is agent-teams'.
+- **Per-role recovery and merge configuration** (`config.roles`): no source.
+
+Rationale and falsification conditions:
+`docs/decisions/2026-08-27-qa-decomposition.md`.
 
 `clarifying-card` is the focused existing-Card route extracted from intake.
 Its preserve-one-Card rule comes from board-superpowers; its bounded

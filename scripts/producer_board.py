@@ -412,7 +412,10 @@ def main(
             return 0
 
         config = Config.load(args.config)
-        board = Board(config, gh=gh)
+        # The process binding, not the flag: the seat is resolved per command
+        # below, but the transport is constructed once and must already know
+        # whose retry budget it is spending.
+        board = Board(config, gh=gh, seat=env.get(policy.ACTING_ROLE_ENV))
         producer = Producer(config, board, git=git)
         consumer = Consumer(config, board, git=git)
 

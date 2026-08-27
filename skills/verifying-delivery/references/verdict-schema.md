@@ -15,6 +15,7 @@ published, and validated again by `accept` against the live Pull Request.
 | `changed_files` | pass | Every changed path. An unenumerated file is an unreviewed file |
 | `review_dimensions` | pass | All eight. A missing one refuses |
 | `test_strength` | pass | Structured entries (see below). At least one dimension beyond `line`, and at least one `falsified_by` |
+| `browser_evidence` | pass, when the diff touches `ui_paths` | What was actually done in a browser (see below). Absent on a user-facing pass is a refusal |
 | `blind_spots` | pass | Must be empty. Unresolved uncertainty is `blocked`, not a qualified pass |
 | `design_baseline` | recommended | Specification, architecture, and decision identifiers reviewed against |
 | `design_conformance` | recommended | requirement -> implementation evidence -> test evidence |
@@ -54,6 +55,55 @@ this rule exists to catch: treating execution as proof.
 Only breaking the implementation and watching a named test fail tells you the
 line's behaviour is actually asserted. If you cannot fill this in for any
 dimension, the suite is coverage and the verdict is not a pass.
+
+## `browser_evidence`, and when it is required
+
+Required of a **pass** whose `changed_files` match the configured `ui_paths`
+(see `docs/CONFIGURATION.md`). Not required otherwise: a mandatory browser
+section on a parser change is theatre, and a `fail` already stops the delivery.
+
+```json
+"browser_evidence": {
+  "tool": "playwright",
+  "base_url": "http://localhost:5173",
+  "flows": [
+    {"name": "search by destination",
+     "steps": ["filled #search with 'Taoyuan'",
+               "clicked button[type=submit]",
+               "read 3 result rows, all containing 'Taoyuan'"],
+     "result": "pass",
+     "screenshot": "evidence/search.png"}
+  ],
+  "input_validation": [
+    {"field": "#search", "input": "'; DROP TABLE stores;--",
+     "expected": "rejected inline, no request sent",
+     "actual": "rejected inline", "result": "pass"},
+    {"field": "#radius", "input": "-1",
+     "expected": "rejected with a range message",
+     "actual": "accepted; returned every store", "result": "fail"}
+  ],
+  "console": {"errors": [], "warnings": ["favicon 404"]}
+}
+```
+
+- `flows` — at least one, each with a `name` and **at least two `steps`**.
+  Opening a page and screenshotting it is the incidental check this field
+  exists to replace, so one step is not a flow.
+- `input_validation` — at least one field fed invalid or garbage input, each
+  case carrying `field`, `input`, `expected`, and `actual`. The second example
+  above is what a real finding looks like: the case is recorded whether it
+  passed or not.
+- `console` — required, including an `errors` list. **An empty list is a
+  finding; an absent one is a gap.** Empty says you looked and it was quiet.
+  The live ES-module blank page was a console error sitting behind a fully
+  green test suite.
+
+Free prose is refused, for the same reason as in `test_strength`: "clicked
+around, looked fine" cannot be checked.
+
+The procedure that produces this block is `references/browser-pass.md`. On a
+user-facing Card it is normally run by a `qa-browser-worker` that never sees
+the diff, and folded in here verbatim.
 
 ## A pass that validates
 

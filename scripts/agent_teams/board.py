@@ -49,10 +49,33 @@ def _value_name(value: Any) -> str | None:
     return str(value)
 
 
+def _seat_recovery(config: Config, seat: str | None):
+    """The bound seat's retry schedule, or the default when unbound.
+
+    An unrecognised seat is not an error here. The process binding is an
+    environment variable a human may have typed, and refusing to read GitHub
+    because of it would turn a typo into an outage; policy already refuses the
+    seat itself at the authority check.
+    """
+    if not seat:
+        return config.recovery
+    try:
+        return config.recovery_for(seat)
+    except ValueError:
+        return config.recovery
+
+
 class Board:
-    def __init__(self, config: Config, gh: Gh | None = None):
+    def __init__(
+        self, config: Config, gh: Gh | None = None, seat: str | None = None
+    ):
         self.config = config
-        self.gh = gh or Gh(recovery=config.recovery)
+        self.seat = seat
+        # The transport retries only safe reads, but *how many times* is now a
+        # per-role decision: a QA process configured for three attempts must
+        # not read GitHub on the architect's budget. An unbound process (no
+        # AGENT_TEAMS_ACTING_ROLE) keeps the top-level default.
+        self.gh = gh or Gh(recovery=_seat_recovery(config, seat))
         self._project_id: str | None = None
         self._fields: list[dict[str, Any]] | None = None
         self._cards_cache: tuple[Any, list[Card]] | None = None
@@ -867,7 +890,7 @@ query($owner: String!, $number: Int!, $first: Int!, $after: String,
                 "for deterministic acceptance; every pass will route to the human "
                 "protected-change lane. Name the checks that must be green."
             )
-        elif self.config.merge_mode == "automatic":
+        elif self.config.effective_code_pr_merge_mode() == "automatic":
             try:
                 if not self.auto_merge_enabled():
                     acceptance_problems.append(
@@ -902,10 +925,12 @@ query($owner: String!, $number: Int!, $first: Int!, $after: String,
             "board_page_limit": self.config.board_page_limit,
             "board_max_items": self.config.board_max_items,
             "recovery": self.config.recovery.to_dict(),
-            "spec_merge_mode": self.config.spec_merge_mode,
-            "merge_mode": self.config.merge_mode,
-            "merge_method": self.config.merge_method,
-            "specification_mode": self.config.spec_merge_mode,
+            "recovery_policy": self.config.recovery_policy_dict(),
+            "spec_pr_merge_mode": self.config.effective_spec_pr_merge_mode(),
+            "code_pr_merge_mode": self.config.effective_code_pr_merge_mode(),
+            "code_pr_merge_method":
+                self.config.effective_code_pr_merge_method(),
+            "specification_mode": self.config.effective_spec_pr_merge_mode(),
         }
 
 

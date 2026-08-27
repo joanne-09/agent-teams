@@ -23,20 +23,69 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Mapping
 
+from . import policy
 from .model import Role, Status
 
 DEFAULT_CONFIG = Path(".agent-teams/config.json")
 
 _REPO_PATTERN = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 
-#: How the deterministic merge controller closes an eligible Pull Request.
+#: How the deterministic merge controller closes an eligible *code* Pull
+#: Request.
 MERGE_METHODS = ("squash", "merge", "rebase")
 
-#: Who closes an eligible Pull Request after deterministic acceptance.
+#: Who closes an eligible *code* Pull Request after deterministic acceptance.
 MERGE_MODES = ("automatic", "manual")
 
-#: How specification changes reach the repository's base branch.
+#: How *specification* changes reach the repository's base branch.
 SPEC_MERGE_MODES = ("direct", "manual")
+
+#: Renamed 2026-08-21. The old pair could not be told apart by name: neither
+#: ``spec_merge_mode`` nor ``merge_mode`` said which Pull Request it governed,
+#: and ``merge_method`` read as if it belonged to whichever one you had just
+#: looked at. Old keys still parse so no consuming repository breaks; they are
+#: dropped when configuration is written.
+LEGACY_KEYS: Mapping[str, str] = {
+    "spec_merge_mode": "spec_pr_merge_mode",
+    "merge_mode": "code_pr_merge_mode",
+    "merge_method": "code_pr_merge_method",
+}
+
+#: Which operational settings each role may override, and by implication which
+#: agent consumes each one. A field under a role that does not consume it is a
+#: validation error rather than a silent no-op: the whole reason this block
+#: exists is that you could not previously tell which agent read which field,
+#: and a key that parses but does nothing is the worst form of that.
+ROLE_CONFIG_KEYS: Mapping[str, tuple[str, ...]] = {
+    "analyst": ("recovery",),
+    "architect": ("recovery", "spec_pr_merge_mode"),
+    "dev": ("recovery",),
+    "qa": ("recovery",),
+    "lead": ("recovery",),
+    # Not a board Role. The merge executor is a function inside `accept` and
+    # `approve-exception`, and the team lead asked for it to be tunable as its
+    # own "person" regardless of which seat's process runs it.
+    "merge_master": ("recovery", "code_pr_merge_mode", "code_pr_merge_method"),
+}
+
+ROLE_CONFIG_SEATS: tuple[str, ...] = tuple(ROLE_CONFIG_KEYS)
+
+#: Reverse of ROLE_CONFIG_KEYS for the non-``recovery`` fields, so a misplaced
+#: key can be refused with the seat that actually owns it.
+_ROLE_KEY_OWNER: Mapping[str, str] = {
+    "spec_pr_merge_mode": "architect",
+    "code_pr_merge_mode": "merge_master",
+    "code_pr_merge_method": "merge_master",
+}
+
+#: Paths whose change makes a delivery user-facing, and therefore makes
+#: browser evidence mandatory for a QA pass. Repository policy may add
+#: patterns; the defaults always apply.
+DEFAULT_UI_PATHS: tuple[str, ...] = (
+    "**/*.html", "**/*.htm", "**/*.css", "**/*.scss", "**/*.sass", "**/*.less",
+    "**/*.jsx", "**/*.tsx", "**/*.vue", "**/*.svelte",
+    "**/components/**", "**/pages/**", "**/views/**",
+)
 
 #: The protected set of ARCHITECTURE.md 4.5, as repository-relative globs.
 #: Repository policy may ADD patterns or whole categories. It may not remove
@@ -95,6 +144,19 @@ class RecoveryConfig:
             for number in range(1, self.max_retries + 1)
         )
 
+    def merged(self, overrides: Mapping[str, Any]) -> "RecoveryConfig":
+        """This schedule with named fields replaced, field by field.
+
+        Deliberately not wholesale replacement. A role that asks for one more
+        retry must keep the rest of the schedule it did not mention; replacing
+        the whole object would reset its backoff to the dataclass default and
+        change the delay invisibly.
+        """
+        return replace(self, **{
+            name: value for name, value in overrides.items()
+            if name in _RECOVERY_FIELDS
+        })
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "max_retries": self.max_retries,
@@ -108,6 +170,39 @@ class RecoveryConfig:
             **self.to_dict(),
             "retry_delays_seconds": list(self.retry_delays_seconds()),
         }
+
+
+_RECOVERY_FIELDS = (
+    "max_retries", "initial_backoff_seconds", "backoff_multiplier",
+    "max_backoff_seconds",
+)
+
+
+@dataclass(frozen=True)
+class RoleSettings:
+    """One role's overrides. Absent fields inherit the top-level default.
+
+    Only what the repository actually overrode is stored, never a resolved
+    copy. Freezing a resolved schedule here would break inheritance the moment
+    the dashboard edited a top-level value: a role that had asked for one
+    different field would silently stop tracking the other three.
+    """
+
+    #: Only the recovery fields this role restated, already validated.
+    recovery: Mapping[str, Any] = field(default_factory=dict)
+    spec_pr_merge_mode: str | None = None
+    code_pr_merge_mode: str | None = None
+    code_pr_merge_method: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
+        if self.recovery:
+            payload["recovery"] = dict(self.recovery)
+        for name in _ROLE_KEY_OWNER:
+            value = getattr(self, name)
+            if value is not None:
+                payload[name] = value
+        return payload
 
 
 @dataclass(frozen=True)
@@ -127,9 +222,13 @@ class Config:
     #: Initial and maximum Project item-list limits.
     board_page_limit: int = 100
     board_max_items: int = 2000
-    #: Shared bounded recovery schedule. GitHub transport applies it only to
-    #: safe reads; the coordinating skill applies it to unchanged actions.
+    #: Default bounded recovery schedule for every role. GitHub transport
+    #: applies it only to safe reads; the coordinating skill applies it to
+    #: unchanged actions. Per-role overrides live in ``roles``.
     recovery: RecoveryConfig = field(default_factory=RecoveryConfig)
+    #: Seat -> the settings that seat overrides. Absent seats inherit every
+    #: top-level default, so this block is optional in full.
+    roles: Mapping[str, RoleSettings] = field(default_factory=dict)
     #: Canonical Status value -> the option name this Project actually uses.
     #: Absent entries fall back to the canonical name.
     status_overrides: Mapping[str, str] = field(default_factory=dict)
@@ -142,13 +241,22 @@ class Config:
     #: Checks that must conclude SUCCESS before a delivery is eligible.
     #: Empty fails closed: nothing is ever eligible (ARCHITECTURE.md 4.5).
     required_checks: tuple[str, ...] = ()
-    #: Direct commits the spec on the current branch; manual publishes a spec
-    #: Pull Request and waits for the user to merge it.
-    spec_merge_mode: str = "direct"
-    #: Automatic keeps the routine path human-free after the Ready gate;
-    #: manual asks the user to merge an eligible Pull Request themselves.
-    merge_mode: str = "automatic"
-    merge_method: str = "squash"
+    #: SPEC Pull Request, consumed by the architect. ``direct`` commits the
+    #: specification on the current branch and opens no Pull Request at all;
+    #: ``manual`` publishes a spec Pull Request and waits for the user to
+    #: merge it. Renamed from ``spec_merge_mode``.
+    spec_pr_merge_mode: str = "direct"
+    #: CODE Pull Request, consumed by the merge executor. ``automatic`` keeps
+    #: the routine path human-free after the Ready gate; ``manual`` asks the
+    #: user to merge an eligible Pull Request themselves. Renamed from
+    #: ``merge_mode``.
+    code_pr_merge_mode: str = "automatic"
+    #: How the CODE Pull Request is closed when agent-teams issues the merge
+    #: itself. Renamed from ``merge_method``.
+    code_pr_merge_method: str = "squash"
+    #: Extra globs marking user-facing files. Merged with DEFAULT_UI_PATHS; a
+    #: delivery touching any of them needs browser evidence to pass QA.
+    ui_paths: tuple[str, ...] = ()
     #: Age past which triage flags a claim as stale.
     claim_ttl_hours: int = 72
 
@@ -169,6 +277,81 @@ class Config:
     def dispatch_role_values(self) -> tuple[Role, ...]:
         return tuple(Role.parse(name) for name in self.dispatch_roles)
 
+    # ------------------------------------------------------ per-role lookup
+
+    def recovery_for(self, seat: str) -> RecoveryConfig:
+        """The bounded retry schedule this seat actually runs under."""
+        seat = str(seat).strip().casefold()
+        if seat not in ROLE_CONFIG_KEYS:
+            raise ValueError(
+                f"unknown configuration seat {seat!r}; expected one of: "
+                + ", ".join(ROLE_CONFIG_SEATS)
+            )
+        overrides = self.roles.get(seat)
+        if overrides is None or not overrides.recovery:
+            return self.recovery
+        return self.recovery.merged(overrides.recovery)
+
+    def recovery_policy_dict(self) -> dict[str, Any]:
+        """The whole retry surface, default plus every seat, for the planner.
+
+        Emitted in full rather than only where a seat differs. The coordinating
+        skill must not have to work out whether an absent seat means "inherits"
+        or "not applicable", and a monitor reading the plan can show each
+        worker the exact schedule it is being held to.
+        """
+        return {
+            "default": self.recovery.runtime_dict(),
+            "roles": {
+                seat: self.recovery_for(seat).runtime_dict()
+                for seat in ROLE_CONFIG_SEATS
+            },
+        }
+
+    def _role_value(self, seat: str, name: str, default: str) -> str:
+        overrides = self.roles.get(seat)
+        value = getattr(overrides, name, None) if overrides else None
+        return value if value is not None else default
+
+    def effective_spec_pr_merge_mode(self) -> str:
+        """How the specification reaches the base branch, architect override
+        applied."""
+        return self._role_value(
+            "architect", "spec_pr_merge_mode", self.spec_pr_merge_mode
+        )
+
+    def effective_code_pr_merge_mode(self) -> str:
+        """Who merges an eligible code Pull Request, merge-master override
+        applied."""
+        return self._role_value(
+            "merge_master", "code_pr_merge_mode", self.code_pr_merge_mode
+        )
+
+    def effective_code_pr_merge_method(self) -> str:
+        """How agent-teams closes a code Pull Request, merge-master override
+        applied."""
+        return self._role_value(
+            "merge_master", "code_pr_merge_method", self.code_pr_merge_method
+        )
+
+    # --------------------------------------------------------- user surface
+
+    def ui_path_patterns(self) -> tuple[str, ...]:
+        """Built-in user-facing globs plus whatever the repository added."""
+        return tuple(dict.fromkeys(DEFAULT_UI_PATHS + tuple(self.ui_paths)))
+
+    def is_ui_path(self, path: str) -> bool:
+        return any(
+            policy.path_matches(path, pattern)
+            for pattern in self.ui_path_patterns()
+        )
+
+    def ui_paths_touched(self, paths: Any) -> tuple[str, ...]:
+        """The changed paths that make this delivery user-facing."""
+        return tuple(sorted(
+            {str(path) for path in paths if self.is_ui_path(str(path))}
+        ))
+
     # -------------------------------------------------------- serialisation
 
     def to_dict(self) -> dict[str, Any]:
@@ -188,6 +371,16 @@ class Config:
             "board_max_items": self.board_max_items,
             "recovery": self.recovery.to_dict(),
         }
+        roles = {
+            seat: settings
+            for seat, settings in (
+                (seat, self.roles[seat].to_dict())
+                for seat in ROLE_CONFIG_SEATS if seat in self.roles
+            )
+            if settings
+        }
+        if roles:
+            payload["roles"] = roles
         if self.status_overrides:
             payload["status_overrides"] = dict(self.status_overrides)
         payload["workspace"] = self.workspace
@@ -195,9 +388,14 @@ class Config:
             key: list(value) for key, value in self.protected_paths.items()
         }
         payload["required_checks"] = list(self.required_checks)
-        payload["spec_merge_mode"] = self.spec_merge_mode
-        payload["merge_mode"] = self.merge_mode
-        payload["merge_method"] = self.merge_method
+        # The legacy names are deliberately absent: a written file always
+        # carries the current vocabulary, so a repository migrates simply by
+        # letting agent-teams save once.
+        payload["spec_pr_merge_mode"] = self.spec_pr_merge_mode
+        payload["code_pr_merge_mode"] = self.code_pr_merge_mode
+        payload["code_pr_merge_method"] = self.code_pr_merge_method
+        if self.ui_paths:
+            payload["ui_paths"] = list(self.ui_paths)
         payload["claim_ttl_hours"] = self.claim_ttl_hours
         return payload
 
@@ -382,27 +580,27 @@ class Config:
                 "scanned by editors and confuses which checkout is canonical."
             )
 
-        spec_merge_mode = str(
-            raw.get("spec_merge_mode", "direct")
-        ).strip().casefold()
-        if spec_merge_mode not in SPEC_MERGE_MODES:
-            problems.append(
-                "spec_merge_mode must be one of " + ", ".join(SPEC_MERGE_MODES)
-                + f"; got {spec_merge_mode!r}"
-            )
-        merge_mode = str(raw.get("merge_mode", "automatic")).strip().casefold()
-        if merge_mode not in MERGE_MODES:
-            problems.append(
-                "merge_mode must be one of " + ", ".join(MERGE_MODES)
-                + f"; got {merge_mode!r}"
-            )
+        spec_pr_merge_mode = _merge_choice(
+            raw, "spec_pr_merge_mode", "direct", SPEC_MERGE_MODES, problems
+        )
+        code_pr_merge_mode = _merge_choice(
+            raw, "code_pr_merge_mode", "automatic", MERGE_MODES, problems
+        )
+        code_pr_merge_method = _merge_choice(
+            raw, "code_pr_merge_method", "squash", MERGE_METHODS, problems
+        )
 
-        merge_method = str(raw.get("merge_method", "squash")).strip().casefold()
-        if merge_method not in MERGE_METHODS:
-            problems.append(
-                "merge_method must be one of " + ", ".join(MERGE_METHODS)
-                + f"; got {merge_method!r}"
-            )
+        role_settings = _parse_roles(raw.get("roles", {}) or {}, problems)
+
+        ui_raw = raw.get("ui_paths", ()) or ()
+        ui_paths: tuple[str, ...] = ()
+        if isinstance(ui_raw, str) or not isinstance(ui_raw, (list, tuple)):
+            problems.append("ui_paths must be a list of glob patterns")
+        else:
+            ui_paths = tuple(dict.fromkeys(
+                str(pattern).strip() for pattern in ui_raw
+                if str(pattern).strip()
+            ))
 
         checks_raw = raw.get("required_checks", ()) or ()
         required_checks: tuple[str, ...] = ()
@@ -466,14 +664,159 @@ class Config:
             workspace=workspace,
             protected_paths=protected,
             required_checks=required_checks,
-            spec_merge_mode=spec_merge_mode,
-            merge_mode=merge_mode,
-            merge_method=merge_method,
+            spec_pr_merge_mode=spec_pr_merge_mode,
+            code_pr_merge_mode=code_pr_merge_mode,
+            code_pr_merge_method=code_pr_merge_method,
+            ui_paths=ui_paths,
+            roles=role_settings,
             claim_ttl_hours=claim_ttl_hours,
         )
 
     def evolve(self, **changes: Any) -> "Config":
         return replace(self, **changes)
+
+
+def _merge_choice(
+    raw: Mapping[str, Any],
+    key: str,
+    default: str,
+    allowed: tuple[str, ...],
+    problems: list[str],
+) -> str:
+    """One merge setting, accepting its pre-2026-08-21 name.
+
+    The current name wins when both are present, which is what a dashboard
+    mid-migration emits: it has already written the new key and has not yet
+    stopped writing the old one.
+    """
+    legacy = next((old for old, new in LEGACY_KEYS.items() if new == key), None)
+    if key in raw:
+        value = raw[key]
+    elif legacy is not None and legacy in raw:
+        value = raw[legacy]
+    else:
+        return default
+    text = str(value if value is not None else "").strip().casefold()
+    if text not in allowed:
+        problems.append(
+            f"{key} must be one of " + ", ".join(allowed) + f"; got {text!r}"
+        )
+        return default
+    return text
+
+
+def _parse_roles(
+    raw: Any, problems: list[str]
+) -> dict[str, "RoleSettings"]:
+    """The optional per-role override block.
+
+    Every defect is collected rather than raised, matching the rest of this
+    module: a session should learn about all six misplaced keys at once.
+    """
+    if not isinstance(raw, dict):
+        problems.append("roles must be a JSON object keyed by seat")
+        return {}
+
+    parsed: dict[str, RoleSettings] = {}
+    for seat_raw, settings in raw.items():
+        seat = str(seat_raw).strip().casefold()
+        if seat not in ROLE_CONFIG_KEYS:
+            problems.append(
+                f"roles contains unknown seat {seat!r}; expected one of: "
+                + ", ".join(ROLE_CONFIG_SEATS)
+            )
+            continue
+        if not isinstance(settings, dict):
+            problems.append(f"roles[{seat!r}] must be a JSON object")
+            continue
+
+        allowed = ROLE_CONFIG_KEYS[seat]
+        values: dict[str, Any] = {}
+        for key, value in settings.items():
+            name = LEGACY_KEYS.get(str(key), str(key))
+            if name in allowed:
+                values[name] = value
+                continue
+            owner = _ROLE_KEY_OWNER.get(name)
+            if owner is not None:
+                problems.append(
+                    f"roles.{seat} does not consume {name!r}; that field is "
+                    f"read by the {owner} role, so set it under "
+                    f"roles.{owner} or at the top level"
+                )
+            else:
+                problems.append(
+                    f"roles.{seat} has no setting {name!r}; it accepts: "
+                    + ", ".join(allowed)
+                )
+
+        overrides: dict[str, Any] = {}
+        recovery_raw = values.pop("recovery", None)
+        if recovery_raw is not None:
+            if not isinstance(recovery_raw, dict):
+                problems.append(f"roles.{seat}.recovery must be a JSON object")
+            else:
+                overrides["recovery"] = _recovery_overrides(
+                    recovery_raw, f"roles.{seat}.recovery", problems
+                )
+
+        for name, value in values.items():
+            allowed_values = {
+                "spec_pr_merge_mode": SPEC_MERGE_MODES,
+                "code_pr_merge_mode": MERGE_MODES,
+                "code_pr_merge_method": MERGE_METHODS,
+            }[name]
+            text = str(value if value is not None else "").strip().casefold()
+            if text not in allowed_values:
+                problems.append(
+                    f"roles.{seat}.{name} must be one of "
+                    + ", ".join(allowed_values) + f"; got {text!r}"
+                )
+                continue
+            overrides[name] = text
+
+        if overrides:
+            parsed[seat] = RoleSettings(**overrides)
+    return parsed
+
+
+def _recovery_overrides(
+    raw: Mapping[str, Any], prefix: str, problems: list[str]
+) -> dict[str, Any]:
+    """Only the recovery fields this role restated, each validated.
+
+    Stored as the override subset rather than a resolved schedule so that a
+    later edit to the top-level default still reaches the fields this role did
+    not mention.
+    """
+    overrides: dict[str, Any] = {}
+    for key, value in raw.items():
+        name = str(key)
+        if name == "max_retries":
+            overrides[name] = _non_negative_int(
+                value, f"{prefix}.max_retries", problems
+            )
+        elif name in ("initial_backoff_seconds", "max_backoff_seconds"):
+            overrides[name] = _non_negative_float(
+                value, f"{prefix}.{name}", problems
+            )
+        elif name == "backoff_multiplier":
+            overrides[name] = _float_at_least(
+                value, f"{prefix}.backoff_multiplier", 1.0, problems
+            )
+        else:
+            problems.append(
+                f"{prefix} has no setting {name!r}; it accepts: "
+                + ", ".join(_RECOVERY_FIELDS)
+            )
+    initial = overrides.get("initial_backoff_seconds")
+    maximum = overrides.get("max_backoff_seconds")
+    if initial is not None and maximum is not None and maximum < initial:
+        problems.append(
+            f"{prefix}.max_backoff_seconds must be greater than or equal to "
+            f"{prefix}.initial_backoff_seconds"
+        )
+    return overrides
 
 
 def _non_empty(

@@ -566,7 +566,7 @@ class Producer:
                         "checkout",
                     })
                 else:
-                    if self.config.spec_merge_mode == "manual":
+                    if self.config.effective_spec_pr_merge_mode() == "manual":
                         prompt = (
                             "Write the specification under docs/ and publish it "
                             "with publish-spec. The configured manual mode creates "
@@ -663,7 +663,7 @@ class Producer:
                                 "routine": "reconcile-done",
                                 "argv": ["reconcile-done", str(card.number)],
                             })
-                        elif self.config.merge_mode == "manual":
+                        elif self.config.effective_code_pr_merge_mode() == "manual":
                             human_gates.append({
                                 **base,
                                 "gate": "manual_merge",
@@ -694,7 +694,8 @@ class Producer:
                     if verdict:
                         pr = self.board.pull_request(card.number, card.title)
                         problems = policy.validate_verdict(
-                            verdict, pr["head_sha"], pr["changed_files"]
+                            verdict, pr["head_sha"], pr["changed_files"],
+                            config=self.config,
                         )
                     else:
                         pr, problems = None, ["no verdict"]
@@ -734,10 +735,24 @@ class Producer:
             role_rank.get(Role.parse(entry["role"]), len(role_rank)),
             entry["number"], entry["routine"],
         ))
+
+        # Stamp each action with the schedule of the seat that will run it.
+        # Done here rather than at each construction site so no action shape
+        # can be added later that quietly inherits the global budget instead.
+        for entry in actions:
+            try:
+                schedule = self.config.recovery_for(entry["role"])
+            except ValueError:  # a seat with no tunable configuration
+                continue
+            entry["recovery"] = schedule.runtime_dict()
         return {
             "ok": True,
             "config_revision": self.config.revision,
-            "recovery_policy": self.config.recovery.runtime_dict(),
+            # Default plus every seat. A coordinator holding one global budget
+            # could not honour "the architect gets two attempts, QA gets
+            # three"; each spawn action additionally carries its own resolved
+            # schedule so the retry rule travels with the work.
+            "recovery_policy": self.config.recovery_policy_dict(),
             "actions": actions,
             "human_gates": human_gates,
             "waiting": waiting,
@@ -1202,7 +1217,7 @@ class Producer:
                 f"publication requires (Backlog, {acting_role})"
             )
 
-        if self.config.spec_merge_mode == "manual":
+        if self.config.effective_spec_pr_merge_mode() == "manual":
             artifact = self.git.publish_specification_for_review(
                 number, card.title, reference
             )
@@ -1989,7 +2004,7 @@ class Consumer:
 
         pr = self.board.pull_request(number, card.title)
         problems = policy.validate_verdict(
-            verdict, pr["head_sha"], pr["changed_files"]
+            verdict, pr["head_sha"], pr["changed_files"], config=self.config
         )
         if problems:
             raise WorkflowError(
@@ -2028,7 +2043,7 @@ class Consumer:
 
         pr = self.board.pull_request(number, card.title)
         problems = policy.validate_verdict(
-            verdict, pr["head_sha"], pr["changed_files"]
+            verdict, pr["head_sha"], pr["changed_files"], config=self.config
         )
         if problems:
             raise WorkflowError(
@@ -2068,8 +2083,11 @@ class Consumer:
             # A post-merge re-verify reaches here with the Pull Request already
             # merged (``gh pr merge --auto`` on a merged PR is an error, and
             # its mergeability stays UNKNOWN forever). Nothing to arm.
-            if self.config.merge_mode == "automatic" and not pr.get("merged"):
-                self.board.arm_auto_merge(pr["number"], self.config.merge_method)
+            automatic = self.config.effective_code_pr_merge_mode() == "automatic"
+            if automatic and not pr.get("merged"):
+                self.board.arm_auto_merge(
+                    pr["number"], self.config.effective_code_pr_merge_method()
+                )
 
             # Re-read rather than assume. In automatic mode, armed is not
             # merged. In manual mode, an already-merged Pull Request may be
@@ -2082,7 +2100,7 @@ class Consumer:
                     **self._reconcile_to_done(number, card, pr, state, Role.LEAD),
                 }
 
-            if self.config.merge_mode == "manual":
+            if self.config.effective_code_pr_merge_mode() == "manual":
                 return {
                     **base,
                     "status": Status.IN_REVIEW.value,
@@ -2290,7 +2308,9 @@ class Consumer:
                 "hand it back to QA for a current-head verdict"
             )
         self.board.merge_pull_request(
-            pr["number"], self.config.merge_method, acceptance.head_sha
+            pr["number"],
+            self.config.effective_code_pr_merge_method(),
+            acceptance.head_sha,
         )
         state = self.board.merge_state(pr["number"])
         if str(state.get("state", "")).upper() != "MERGED":

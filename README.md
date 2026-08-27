@@ -14,7 +14,7 @@ Done. A person never has to copy a kickoff prompt into another session.
 
 There is one mandatory human boundary, one optional specification-merge
 boundary, and one conditional QA exception boundary. The optional boundary
-exists only when `spec_merge_mode` is `manual`:
+exists only when `spec_pr_merge_mode` is `manual`:
 
 1. **Specification merge (optional):** merge the generated specification Pull
    Request. The coordinator verifies it and resumes architect shaping.
@@ -28,7 +28,7 @@ exists only when `spec_merge_mode` is `manual`:
 By default, specifications publish directly, routine passing deliveries use
 deterministic acceptance and GitHub auto-merge, and Done reconciliation is
 automatic, so readiness is the only routine Card edit a person makes. Set
-`merge_mode` to `manual` when the user should merge eligible implementation
+`code_pr_merge_mode` to `manual` when the user should merge eligible implementation
 Pull Requests themselves; the coordinator then
 waits for the confirmed merge and still reconciles Done automatically. Defects
 loop from QA back to development on the same Card, branch, worktree, and Pull
@@ -37,7 +37,7 @@ Request.
 ## Specification publication
 
 Specifications are Markdown files below `docs/`. The default
-`spec_merge_mode: direct` commits and pushes the requested file directly on
+`spec_pr_merge_mode: direct` commits and pushes the requested file directly on
 the consuming repository's current branch:
 
 ```text
@@ -46,7 +46,7 @@ producer_board.py publish-spec 12 --path docs/specs/card-12-export.md
 
 The command refuses unrelated checkout changes, publishes only the requested
 specification, and records its exact path and commit on the Card. With
-`spec_merge_mode: manual`, the same command creates a deterministic
+`spec_pr_merge_mode: manual`, the same command creates a deterministic
 specification branch and Pull Request instead. The user merges that Pull
 Request; the coordinator verifies the exact head, synchronizes the base branch,
 records the durable base commit, and resumes architect shaping.
@@ -155,14 +155,16 @@ JSON example.
 | `handoff_cap` | `6` | Maximum handoffs before lead recovery |
 | `workspace` | `../.worktrees` | Claim worktrees, outside the repository |
 | `required_checks` | `[]` | Checks required for eligible acceptance; empty fails closed |
-| `merge_mode` | `automatic` | `automatic` arms eligible merges; `manual` waits for the user to merge |
-| `merge_method` | `squash` | Automatic eligible and human-exception command merge method |
-| `spec_merge_mode` | `direct` | `direct` publishes to the current branch; `manual` waits for the user to merge a spec PR |
+| `code_pr_merge_mode` | `automatic` | `automatic` arms eligible merges; `manual` waits for the user to merge |
+| `code_pr_merge_method` | `squash` | Automatic eligible and human-exception command merge method |
+| `spec_pr_merge_mode` | `direct` | `direct` publishes to the current branch; `manual` waits for the user to merge a spec PR |
 | `protected_paths` | seven categories | Changes requiring human QA review; defaults may only grow |
 | `claim_ttl_hours` | `72` | Stale-claim observation threshold |
 | `monitor_poll_seconds` | `30` | Delay between pending-check and auto-merge observations |
 | `board_page_limit` | `100` | Initial Project item read size |
 | `board_max_items` | `2000` | Refuse rather than silently truncate beyond this ceiling |
+| `roles` | `{}` | Per-seat overrides of `recovery` and the merge keys; absent seats inherit |
+| `ui_paths` | `[]` | Extra globs marking user-facing files; these force QA browser evidence |
 | `recovery.max_retries` | `1` | Retries after the initial attempt; `0` disables retries |
 | `recovery.initial_backoff_seconds` | `5` | Wait before the first retry |
 | `recovery.backoff_multiplier` | `2` | Multiplier that lowers retry frequency after each failure |
@@ -172,9 +174,9 @@ Operational excerpt from the generated config:
 
 ```json
 {
-  "merge_mode": "automatic",
-  "merge_method": "squash",
-  "spec_merge_mode": "direct",
+  "code_pr_merge_mode": "automatic",
+  "code_pr_merge_method": "squash",
+  "spec_pr_merge_mode": "direct",
   "monitor_poll_seconds": 30,
   "board_page_limit": 100,
   "board_max_items": 2000,
@@ -194,7 +196,7 @@ succeed remotely even when its response is lost; partial mutations continue
 through their structured recovery instructions instead.
 
 Older configs may contain `spec_completion`; it is accepted for compatibility
-but ignored. Use `spec_merge_mode` to choose the supported publication
+but ignored. Use `spec_pr_merge_mode` to choose the supported publication
 contract.
 
 ## CLI
@@ -236,6 +238,10 @@ human-only and derives the exact reviewed head from durable Card evidence.
 Every command emits one JSON envelope. Never treat a mutation as successful
 without `"ok": true`; partial results name their completed prefix and precise
 fix-forward recovery.
+
+New to this plugin, or to Claude Code? Start with
+[docs/RUNBOOK.md](./docs/RUNBOOK.md) — a cold-start guide from creating the
+accounts through shipping one Card, with a checkpoint after every step.
 
 See [docs/USAGE.md](./docs/USAGE.md) for the operational flow and
 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for authority and invariants.

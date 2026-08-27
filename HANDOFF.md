@@ -4,7 +4,7 @@
 
 **Stack**: Claude Code plugin / Python 3.12 standard library / GitHub CLI / GitHub Projects v2 / Git / Slidev
 
-**Last updated**: 2026-08-21 — sessions 10–11 (Lee's side): per-seat workers, installable plugin, CCAM dashboard, full unattended Ollama run, and fixes for everything that run exposed
+**Last updated**: 2026-08-27 — session 12: per-role retry/merge config, merge-mode renames, the QA decomposition (spec-blind browser seat + validated browser evidence), and the cold-start runbook
 
 ---
 
@@ -184,6 +184,37 @@ auto-merge and protected QA work end to end.
 - **Seat binding is a process-level floor, not a cryptographic one** (scripts/agent_teams/policy.py, resolve_acting_role) — an agent that deliberately scrubs `CLAUDECODE` from its environment can still claim `human`. The merge floor remains GitHub branch protection. See CONFIGURATION.md "Process environment".
 - **Plugin snapshot layout** — `claude plugin install` from the local marketplace copies the whole working tree (546 MB with slides/node_modules; .gitignore not honoured). Move the deck out of the plugin repo or point `source` at a `plugin/` subdirectory.
 - **Installed snapshot drifts from source** — `claude plugin update` is a no-op while the version string is unchanged; uninstall + install after pulls.
+- ~~**The CCAM dashboard's config form is behind this branch**~~ — resolved
+  2026-08-27 in `../agent-teams-dashboard` (uncommitted, branch
+  `feat/plugin-scope-listing`). The descriptor now carries the current key
+  names, a per-role section, and `ui_paths`; the form resolves inherited
+  defaults. Verified against the real plugin: `# pass 9`, `# fail 0`.
+- **The two repositories can drift** (`agent-teams-dashboard`
+  `server/lib/agent-teams/config-schema.js`) — the descriptor is
+  documentation-derived and is not imported from the plugin, so a future
+  config key silently fails to appear in the form. The dashboard test now
+  pins the three renamed keys and rejects the old ones, which catches a
+  *rename*; it cannot catch an *addition*. Adding a config key means editing
+  that file too.
+- **The QA decomposition has never run live** (agents/qa-browser-worker.md,
+  skills/verifying-delivery) — 517 hermetic tests prove the browser-evidence
+  refusal, the seat contracts, and the per-role schedules. Nothing proves that
+  a real `qa-worker` actually spawns three passes and a browser worker, that
+  the browser worker stays blind to the diff in practice, or that Playwright
+  drives the delivered app from a detached worktree. First real test is the new
+  dataset run.
+- ~~**Nested QA helpers may re-break dashboard attribution**~~ (todo item 8) —
+  checked 2026-08-27. The 08-21 `SubagentStop` fix **holds at depth 3**
+  (coordinator → `qa-worker` → typed helper); a new regression test in the
+  dashboard's `server/__tests__/api.test.js` pins it, and the full server suite
+  is 115/115. Residual, deliberately not fixed: attribution among several
+  *untyped* helpers running concurrently still uses the oldest-working
+  fallback, so review passes can complete in the wrong order in the Workflows
+  tab. Cosmetic — a typed seat worker can no longer be completed by a helper,
+  which was the damaging form.
+- **`browser_evidence` is attested, like `falsified_by`** (policy.py) — the
+  schema can require a flow, an invalid-input case, and a console reading; it
+  cannot prove a browser was ever opened.
 - **No automatic field provisioning or audit database** — intentionally deferred; doctor validates and GitHub artifacts remain the trail.
 
 ---
@@ -231,9 +262,16 @@ No local implementation blocker.
 
 ## Current State
 
-mvp/producer-from-scratch at the 08-21 commit (Lee's side) on top of 980a93c
-(Joanne's config externalization + recovery) and 3f82792 (08-21 slides).
-Full suite 462/462; `claude plugin validate .` passes.
+mvp/producer-from-scratch, **uncommitted session-12 work** on top of the 08-21
+commit (Lee's side), itself on 980a93c (Joanne's config externalization +
+recovery) and 3f82792 (08-21 slides). Full suite 519/519;
+`claude plugin validate .` passes; `git diff --check` clean. Nothing committed
+or pushed — that still requires explicit user instruction.
+
+**Session 12 touches Joanne's config work directly.** The externalized config
+grew a `roles` block and lost three key names to clearer ones (old names still
+load). See the session log below for the shape and the reasoning; the
+dashboard's config form needs the same keys added on Lee's side.
 
 **For Joanne — things that changed under you since 980a93c (please review, all
 touch your files):**
@@ -249,6 +287,20 @@ touch your files):**
 9. **Host setting for Ollama-served models**: `skillListingBudgetFraction: 0.05` (documented in CONFIGURATION.md) — without it 8 of 10 skill descriptions are dropped and intent routing fails silently.
 
 ## Next Steps
+
+0. **Run the new dataset end to end with the QA split on** (todo 6). It is the
+   first live test of the browser worker, the three review passes, and the
+   nested-spawn dashboard attribution all at once. Verify both JSON and CSV
+   inputs; the new use case is store/venue info, not transit routing.
+0b. **Have the team lead execute `docs/RUNBOOK.md` cold** (todo 7 — the
+   document is written; the point of it is the dry run). Ask them to note
+   the last Checkpoint that passed wherever they get stuck; that note is
+   the defect report. Part 7 (dashboard) especially needs correcting from
+   a real setup.
+0c. **Commit the dashboard changes** — `../agent-teams-dashboard` has
+   uncommitted work on `feat/plugin-scope-listing` (config descriptor, the
+   inheritance-aware form, and the depth-3 regression test). Left uncommitted
+   at the user's instruction, same as this repository.
 
 1. ~~Lazy-loading runtime evidence~~ — done live 08-12 (see session 9); optionally archive the worker transcripts as durable evidence.
 2. Tighten Producer.next_actions so a Backlog human Card is shown as a readiness gate only when check_spec_gate confirms the recorded exact commit is still current; add the focused stale-record test.
@@ -271,6 +323,119 @@ decision accepts sibling plugins as runtime dependencies.
 ## Session Log
 
 <!-- newest entry at top -->
+
+### 2026-08-27 — Session 12 (per-role config, merge renames, QA decomposition)
+
+Implemented todo items 1-5 from the 2026-08-21 review, uncommitted on
+`mvp/producer-from-scratch`. Tests 462 → 517, `claude plugin validate .`
+passes, `git diff --check` clean.
+
+**1+2 — per-role config and the merge renames.** `spec_merge_mode` →
+`spec_pr_merge_mode`, `merge_mode` → `code_pr_merge_mode`, `merge_method` →
+`code_pr_merge_method`; old names still parse and are dropped on save, the
+current name wins when both appear. New optional `roles` block keyed by
+`analyst / architect / dev / qa / lead / merge_master` overriding `recovery`
+field by field (overrides stored, never a resolved copy, so a later edit to a
+top-level default still reaches the fields a role did not restate). A key under
+a role that does not consume it is a validation error naming the owner.
+`recovery_policy` became `{default, roles}` and every planned action now
+carries its own resolved `recovery`. `Board` takes a `seat` so transport
+retries spend the bound seat's budget. CONFIGURATION.md gained a "consumed by"
+column, a per-role section, and a renamed-settings table.
+
+**Caught by a test, worth remembering**: the parser's local `roles` shadowed
+the one holding `dispatch_roles`, so a `roles` block silently overwrote the
+dispatch allow-list with its own seat keys. A block naming only valid seats
+produced *no error at all* — the board just stopped dispatching two of three
+roles. Only the round-trip test with `merge_master` in it failed.
+`test_roles_block_does_not_disturb_dispatch_roles` now pins it.
+
+**3+4+5 — QA.** Decision record: `docs/decisions/2026-08-27-qa-decomposition.md`.
+Two axes, one verdict authority. New `agents/qa-browser-worker.md` gets the
+Card, spec, and running app but **not the diff** — the blindness is the point,
+and it is what makes QA's evidence independent rather than a second read of
+Dev's work. `qa-worker` gained `Agent`/`SendMessage`/`ListAgents` and spawns up
+to three review passes (`structure`/`behaviour`/`risk` — three bundles, not
+eight, so the diff is copied three times for non-overlapping findings) plus the
+browser worker. `next_actions` is unchanged: still one spawn per Card stage.
+
+`Verdict.browser_evidence` is a new validated field: `policy.validate_verdict`
+(now taking an optional duck-typed `config`) refuses a **pass** whose changed
+files match the new `ui_paths` config and which carries no flows, invalid-input
+cases, and console reading. Backend and docs Cards are unaffected; a `fail`
+never carries the burden. The browser procedure lives in exactly one file
+(`references/browser-pass.md`); `verifying-delivery` holds only the exclusivity
+rule and a fallback for when no browser worker was dispatched.
+
+**Checked, not assumed**: Claude Code subagents *can* spawn subagents (three
+layers, needs `Agent` in `tools`) and `SendMessage` works between siblings with
+a roster (v2.1.206+). This repository's "workers cannot spawn grandchildren" was
+our policy, not a platform limit. Also established: same-Card stages are
+sequential, so dev and qa workers are never co-alive — direct dev↔qa messaging
+is impossible under the current contract, which is why item 5 landed as
+QA-internal messaging instead.
+
+**7 — the runbook.** `docs/RUNBOOK.md`: cold-start, English, written for
+someone who has used neither this plugin nor Claude Code. Accounts and tool
+install → a Claude Code primer → plugin install → GitHub repo/Project/fields/CI/
+branch-protection → `init`/`doctor` → one Card shipped end to end → optional
+dashboard → a troubleshooting chapter built from the failures this project
+actually hit. **Every part ends with a Checkpoint** (a command plus its expected
+output) because the team lead's stated plan is to run it cold and find the gaps.
+
+Two tests pin it: `test_runbook_names_only_commands_that_exist` (its command
+appendix is the part most likely to rot silently) and
+`test_runbook_keeps_its_checkpoints`. Every cited command and flag was verified
+against `_build_parser` rather than written from memory.
+
+Part 7 (the dashboard) is **explicitly marked unverified** — CCAM is not in this
+tree, so it is reconstructed from this handoff rather than from its source. It
+says so in a callout at the top of the section, and the runbook closes with a
+"what this does not cover" list.
+
+**Doc rename sweep.** README, USAGE, ARCHITECTURE, and IMPLEMENTATION_PLAN were
+still on `spec_merge_mode` / `merge_mode` / `merge_method`; all four now use the
+current names. Only CONFIGURATION.md's rename table still mentions the old ones,
+deliberately. README also gained `roles`/`ui_paths` rows and a pointer to the
+runbook.
+
+Not done: items 6 (dataset — not delivered here), 8 (dashboard Workflows tab,
+and now with a concrete reason to re-check it), 9 (parked).
+
+---
+
+### 2026-08-27 — Session 12b (dashboard, `../agent-teams-dashboard`)
+
+The dashboard turned out to be available after all, so Part 7 of the runbook is
+now written from its source rather than reconstructed, and two flagged
+follow-ups are closed. All uncommitted, on `feat/plugin-scope-listing`.
+
+**A real bug, not just a gap.** The config form still wrote `merge_mode`. The
+plugin accepts it (legacy) but rewrites it to `code_pr_merge_mode` on save — so
+the key the form looks for disappears from the file it just wrote, and the
+user's merge-mode choice appeared to revert to "default" on the next read.
+Renaming the three keys in `config-schema.js` fixes it.
+
+Also added there: a `roles` section (per-seat `max_retries` plus the
+merge-master merge keys), `ui_paths`, and a `defaultFrom` mechanism —
+per-role fields inherit from the top level, so a static default would have
+greyed in the plugin's built-in value and contradicted the configured one.
+Inheriting enums get an explicit `inherit` option, because a `<select>` always
+holds a value and without it one touch would write an override the form could
+never clear.
+
+**Todo 8 discharged with evidence.** The 08-21 `SubagentStop` fix holds at
+depth 3 (coordinator → `qa-worker` → typed helper), pinned by a new test in
+`server/__tests__/api.test.js`. Residual: untyped concurrent helpers still fall
+back to oldest-working attribution — cosmetic ordering, and the damaging form
+(a helper completing a seat worker) stays fixed.
+
+Verified: `agent-teams-config.test.js` 9/9 **against the real plugin**
+(`AGENT_TEAMS_SCRIPTS=.../agent-teams/scripts AGENT_TEAMS_PYTHON=python` — the
+default `python3` does not exist on Windows, which is why that suite had been
+silently skipping), `api.test.js` 115/115, client 334/334, `tsc -b` clean.
+
+---
 
 ### 2026-08-20 → 08-21 — Sessions 10–11 (Lee's side — dashboard, full unattended run, fixes)
 

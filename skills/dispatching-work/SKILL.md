@@ -20,9 +20,16 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py" next-actions
 Every successful result includes `config_revision` and `recovery_policy`.
 `next-actions` reloads the dashboard-managed config on every invocation.
 Replace the cached policy with the newest result before continuing.
+
+`recovery_policy` is `{"default": {...}, "roles": {"architect": {...}, ...}}`.
+**Retry budgets are per role**, because the seats fail differently: an
+architect stalled on a slow read and a QA worker bounced by a rate limit do not
+want the same number of attempts. Every returned action also carries its own
+resolved `recovery`, so use the action's copy and never a global one.
 `max_retries` counts retries after the initial attempt, and
 `retry_delays_seconds` is the exact bounded wait before retry 1, retry 2, and
-so on. Do not substitute a hard-coded retry count or delay.
+so on. Do not substitute a hard-coded retry count or delay, and do not apply
+one seat's budget to another's action.
 
 If `config_revision` changes, discard every unstarted action from the older
 plan and use the new result. Do not interrupt an already running CLI command or
@@ -47,6 +54,10 @@ settings, re-run `next-actions` before starting another returned action.
   fallback still happens inside the current session; it is never handed to the
   human. The action's `env` field (`AGENT_TEAMS_ACTING_ROLE=<seat>`) is the
   worker's process binding; the prompt already tells the worker to set it.
+  A `qa-worker` may spawn its own review passes and one
+  `agent-teams:qa-browser-worker` beneath itself. Those are its evidence
+  producers, not actions for you to plan or dispatch: keep planning one spawn
+  per Card stage, and expect the extra agents to appear nested under it.
 - `kind: controller` or `kind: reconcile`: invoke the plugin CLI with the
   returned `argv`, prefixed by
   `python "${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py"`. These are
@@ -77,7 +88,8 @@ qa eligible -> manual mode: human merge gate -> reconcile -> Done
 
 4. Prevent a spin loop. Track `(Card, routing_state, routine)` during this run.
 If a child returns without changing durable state, or a retry-safe controller
-fails for the same Card, routine, and head, use `recovery_policy`:
+fails for the same Card, routine, and head, use **that action's own**
+`recovery` (falling back to `recovery_policy.roles[<the action's role>]`):
 
 - retry no more than `max_retries` times after the initial attempt;
 - before retry *n*, wait entry *n* from `retry_delays_seconds`;

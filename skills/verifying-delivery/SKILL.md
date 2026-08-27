@@ -152,9 +152,27 @@ Free prose is refused — it cannot be checked, and "no branch coverage" contain
 coverage and this is not a pass. Full shape:
 `references/verdict-schema.md`.
 
-For user-interface Cards, verify in a browser: reproduce each issue, capture a
-screenshot for every one, check the console after each interaction, and never
-record credentials. Test as a user before reading the source.
+### 7b. Browser evidence, which this seat does not gather
+
+**You do not open a browser.** For a user-facing Card the browser pass is run
+by the `qa-browser-worker` you dispatch (see "Reviewer passes"), and its
+`browser_evidence` block comes back as data for you to fold into your verdict.
+
+That split is deliberate. The browser worker gets the Card, the specification,
+and the running application — **not the diff**. A reviewer who has read the
+implementation tests what the implementation does; a reviewer who has read only
+the acceptance criteria tests what the product promised, and only the second
+one finds a promise that was never implemented at all. Running both halves
+yourself collapses that back into a single perspective and buys nothing.
+
+One exception: **if no browser worker was dispatched** — the carrier does not
+expose it, or this session cannot spawn — load `references/browser-pass.md`
+and run the pass yourself. Exactly one of the two happens per Card, never both.
+
+`accept` refuses a **pass** whose changed files match the configured
+`ui_paths` and which carries no `browser_evidence`, the same way it refuses a
+pass with no `falsified_by`. Backend-only and documentation-only Cards are
+unaffected.
 
 ### 8. Publish, then accept
 
@@ -190,13 +208,66 @@ route the Card by hand.
 
 ## Reviewer passes
 
-Independent passes per dimension are useful when the session supports them.
-They are **evidence producers, never authorities**: you remain responsible for
-complete coverage, for reconciling their disagreements, and for the synthesis.
-Two passes agreeing raises confidence; neither one gets to publish.
+You are the only seat that publishes a verdict. Everything below produces
+**evidence for you to reconcile**; none of it gets to publish, route, or move a
+Card. Two passes agreeing raises confidence. Two passes disagreeing is a
+finding worth challenging, not a tie to break by majority.
 
-Correctness never depends on any of that being available. A single careful pass
-through all eight dimensions is a valid review.
+Correctness never depends on any of this being available. **A single careful
+pass through all eight dimensions, with the browser pass run yourself, is a
+complete and valid review.** Dispatch what the session supports; do the rest
+inline.
+
+### Three review passes, not eight
+
+The eight dimensions are lenses over one diff, so one agent per dimension would
+copy the whole diff eight times to get findings that substantially overlap —
+`design` and `architecture` answer nearly the same question, as do
+`compatibility` and `cross-file`. Group them into three bundles whose members
+genuinely inform each other and which are genuinely independent of one another:
+
+| Pass | Dimensions | The question it answers |
+|---|---|---|
+| `structure` | `design` · `architecture` · `cross-file` | Does it belong in this system, in this shape? |
+| `behaviour` | `correctness` · `edge-cases` · `compatibility` | Does it do the right thing, including at the edges? |
+| `risk` | `security` · `test-strength` | Can it be broken, and would we find out? |
+
+Each pass gets the Card, the specification, the diff, and its own bundle from
+`references/review-dimensions.md`. Each returns findings with quoted code and
+confidence scores. You deduplicate, challenge, and synthesise.
+
+### The browser pass
+
+For a user-facing Card, dispatch a `qa-browser-worker` as well. Give it the
+Card, the specification, and the head SHA — **never the diff, and never your
+findings.** Its blindness is the whole reason it is a separate agent, and it is
+enforced by what you put in the prompt.
+
+It returns a `browser_evidence` block. Fold it in verbatim; do not re-run it,
+and do not soften it because your code read disagreed.
+
+### Talking to them
+
+Use `SendMessage` to brief a pass and to answer its questions, and read what it
+sends back. Two rules keep this from becoming the token sink it can easily be:
+
+- **Send references, not contents.** A file path, a Card number, a head SHA. Do
+  not paste the diff into a message — the worker can read it.
+- **One round trip per pass by default.** Brief it, get findings back. A second
+  exchange needs a reason: a specific disagreement to resolve, or a question
+  whose answer changes the finding. "Any update?" is not a reason.
+
+The conversation is recorded and readable afterwards, which is much of its
+value: an agent's reasoning that never leaves its own context cannot be
+audited when it turns out to be wrong.
+
+### What stays yours
+
+- **Completeness.** A pass returning nothing for its bundle means it found
+  nothing, which you verify rather than assume.
+- **Deduplication.** The same defect from three passes is one finding at higher
+  confidence, not three findings.
+- **The verdict.** One head, one verdict, published by you.
 
 ## Boundaries
 
@@ -212,6 +283,7 @@ through all eight dimensions is a valid review.
 
 | File | When to read |
 |---|---|
-| `references/review-dimensions.md` | What each of the eight dimensions asks; running them as bounded passes |
+| `references/review-dimensions.md` | What each of the eight dimensions asks; the three bundles they group into |
 | `references/evidence-and-challenge.md` | The pre-emit gate, confidence calibration, falsification, blind-spot loop |
 | `references/verdict-schema.md` | The JSON document, field by field, with a valid and a refused example |
+| `references/browser-pass.md` | **Only** when no browser worker was dispatched and you must run the pass yourself |

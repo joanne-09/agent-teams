@@ -75,6 +75,48 @@ class ConfigTests(unittest.TestCase):
         current = config(spec_completion="opened")
         self.assertNotIn("spec_completion", current.to_dict())
 
+    def test_runbook_names_only_commands_that_exist(self):
+        """The runbook is executed cold by someone who cannot debug it.
+
+        Its command appendix is the part most likely to rot silently: a
+        renamed subcommand leaves prose that looks authoritative and fails on
+        the reader's machine, which is the worst possible place to find out.
+        """
+        runbook = (
+            Path(__file__).parents[1] / "docs" / "RUNBOOK.md"
+        ).read_text(encoding="utf-8")
+        parser = producer_board._build_parser()
+        actions = [
+            action for action in parser._subparsers._group_actions
+            if hasattr(action, "choices")
+        ]
+        known = set(actions[0].choices)
+
+        cited = set()
+        for line in runbook.splitlines():
+            stripped = line.strip().lstrip("$ ")
+            if not stripped.startswith("producer_board.py"):
+                continue
+            parts = stripped.split()
+            if len(parts) > 1:
+                cited.add(parts[1])
+        self.assertTrue(cited, "the runbook cites no commands at all")
+        self.assertEqual(cited - known, set())
+
+    def test_runbook_keeps_its_checkpoints(self):
+        """Checkpoints are how the reader knows a step actually worked.
+
+        The team lead's stated plan is to run this cold and find the gaps, so
+        an unverifiable step is a defect rather than a style choice.
+        """
+        runbook = (
+            Path(__file__).parents[1] / "docs" / "RUNBOOK.md"
+        ).read_text(encoding="utf-8")
+        self.assertGreaterEqual(runbook.count("Checkpoint"), 10)
+        # Renamed keys must not reappear as live instructions.
+        self.assertIn("spec_pr_merge_mode", runbook)
+        self.assertIn("code_pr_merge_mode", runbook)
+
     def test_configuration_reference_covers_every_serialized_key(self):
         reference = (
             Path(__file__).parents[1] / "docs" / "CONFIGURATION.md"
@@ -120,8 +162,10 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(current.monitor_poll_seconds, 30)
         self.assertEqual(current.board_page_limit, 100)
         self.assertEqual(current.board_max_items, 2000)
-        self.assertEqual(current.merge_mode, "automatic")
-        self.assertEqual(current.spec_merge_mode, "direct")
+        # Renamed 2026-08-21: the old pair did not say which Pull Request
+        # each governed. Same defaults, current vocabulary.
+        self.assertEqual(current.code_pr_merge_mode, "automatic")
+        self.assertEqual(current.spec_pr_merge_mode, "direct")
         self.assertEqual(current.recovery.max_retries, 1)
         self.assertEqual(current.recovery.initial_backoff_seconds, 5.0)
         self.assertEqual(current.recovery.backoff_multiplier, 2.0)
@@ -191,9 +235,10 @@ class ConsumerConfigTests(unittest.TestCase):
     def test_defaults_are_conservative(self):
         current = config()
         self.assertEqual(current.workspace, "../.worktrees")
-        self.assertEqual(current.merge_mode, "automatic")
-        self.assertEqual(current.spec_merge_mode, "direct")
-        self.assertEqual(current.merge_method, "squash")
+        # Renamed 2026-08-21; see test_operational_defaults_are_externalised.
+        self.assertEqual(current.code_pr_merge_mode, "automatic")
+        self.assertEqual(current.spec_pr_merge_mode, "direct")
+        self.assertEqual(current.code_pr_merge_method, "squash")
         self.assertEqual(current.required_checks, ())
         self.assertEqual(current.claim_ttl_hours, 72)
 
@@ -230,17 +275,28 @@ class ConsumerConfigTests(unittest.TestCase):
         ).protected_paths["agent-instructions"]
         self.assertEqual(len(patterns), len(set(patterns)))
 
+    # These three were written against the pre-2026-08-21 key names. They
+    # now feed the LEGACY name deliberately and assert the CURRENT one
+    # comes back in the message: that is the whole contract of the rename
+    # -- an old config file still validates, and the error teaches the
+    # reader the name to migrate to rather than echoing the dead one.
     def test_unknown_merge_method_is_rejected(self):
-        with self.assertRaisesRegex(ConfigError, "merge_method"):
+        with self.assertRaisesRegex(ConfigError, "code_pr_merge_method"):
             config(merge_method="cherry-pick")
+        with self.assertRaisesRegex(ConfigError, "code_pr_merge_method"):
+            config(code_pr_merge_method="cherry-pick")
 
     def test_unknown_merge_mode_is_rejected(self):
-        with self.assertRaisesRegex(ConfigError, "merge_mode"):
+        with self.assertRaisesRegex(ConfigError, "code_pr_merge_mode"):
             config(merge_mode="sometimes")
+        with self.assertRaisesRegex(ConfigError, "code_pr_merge_mode"):
+            config(code_pr_merge_mode="sometimes")
 
     def test_unknown_spec_merge_mode_is_rejected(self):
-        with self.assertRaisesRegex(ConfigError, "spec_merge_mode"):
+        with self.assertRaisesRegex(ConfigError, "spec_pr_merge_mode"):
             config(spec_merge_mode="sometimes")
+        with self.assertRaisesRegex(ConfigError, "spec_pr_merge_mode"):
+            config(spec_pr_merge_mode="sometimes")
 
     def test_workspace_must_resolve_outside_the_repository(self):
         # A repo-internal worktree gets scanned by editors and confuses which
@@ -545,9 +601,14 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["board_page_limit"], 100)
         self.assertEqual(payload["board_max_items"], 2000)
         self.assertEqual(payload["recovery"]["max_retries"], 1)
-        self.assertEqual(payload["merge_mode"], "automatic")
+        self.assertEqual(payload["code_pr_merge_mode"], "automatic")
         self.assertEqual(Config.load(target).project_number, 3)
-        self.assertEqual(payload["spec_merge_mode"], "direct")
+        self.assertEqual(payload["spec_pr_merge_mode"], "direct")
+        # A generated file carries only the current vocabulary, so a fresh
+        # repository never starts life owing a migration.
+        self.assertNotIn("merge_mode", payload)
+        self.assertNotIn("spec_merge_mode", payload)
+        self.assertNotIn("merge_method", payload)
 
     def test_init_accepts_required_checks_for_automatic_merge(self):
         args = producer_board._build_parser().parse_args([
@@ -609,7 +670,13 @@ class CliTests(unittest.TestCase):
         self.assertNotEqual(before["config_revision"], after["config_revision"])
         self.assertEqual(after["actions"], [])
         self.assertEqual(after["human_gates"][0]["gate"], "manual_merge")
-        self.assertEqual(after["recovery_policy"]["max_retries"], 0)
+        # recovery_policy became {default, roles} on 2026-08-21 so the
+        # coordinator can hold each seat to its own budget. A live edit to
+        # the top-level default must still reach every seat that did not
+        # override it -- that inheritance is the point of the reshape.
+        self.assertEqual(after["recovery_policy"]["default"]["max_retries"], 0)
+        for seat, schedule in after["recovery_policy"]["roles"].items():
+            self.assertEqual(schedule["max_retries"], 0, seat)
 
     def test_promote_uses_the_recorded_spec_without_a_path_argument(self):
         args = producer_board._build_parser().parse_args(["promote", "20"])
