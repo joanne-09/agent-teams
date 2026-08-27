@@ -26,6 +26,14 @@ python C:\path\to\agent-teams\scripts\producer_board.py doctor
 preconditions for deterministic acceptance. Configuration parsing reports all
 validation errors together.
 
+Every settings table below has the same five columns. **Values** is the full
+set a field accepts, so the accepted input is readable without consulting the
+validator. **Consumed by** names the seat that actually reads the setting,
+which is what makes a per-role override meaningful: a setting no seat reads
+under a given role is refused by the parser rather than silently ignored. A
+setting read on every board access is marked *all seats*; `doctor` reads most
+of them again to report preconditions.
+
 ## Live dashboard updates
 
 A running coordinator does not cache the config file for the whole session.
@@ -159,16 +167,16 @@ field inside one: what a role does not restate, it inherits.
 
 ## Repository and Project
 
-| Setting | Type | Default | Meaning |
-|---|---|---|---|
-| `repo` | string | required | GitHub repository in `OWNER/REPO` form. |
-| `project_owner` | string | required | User or organization that owns the GitHub Project. |
-| `project_number` | positive integer | required | GitHub Project number, not an Issue number or database ID. |
-| `role_field` | non-empty string | `"Role"` | Project single-select field that stores the current seat. |
-| `status_field` | non-empty string | `"Status"` | Project single-select field that stores lifecycle state. |
-| `backlog_status` | non-empty string | `"Backlog"` | Project option used for canonical `Backlog`. |
-| `ready_status` | non-empty string | `"Ready"` | Project option used for canonical `Ready`. |
-| `status_overrides` | object | `{}` | Maps other canonical Status names to repository-specific option names. |
+| Setting | Values | Default | Consumed by | Meaning |
+|---|---|---|---|---|
+| `repo` | string in `OWNER/REPO` form | required | all seats, every command | GitHub repository the board Cards and Pull Requests live in. |
+| `project_owner` | string | required | all seats, every command | User or organization that owns the GitHub Project. |
+| `project_number` | positive integer | required | all seats, every command | GitHub Project number, not an Issue number or database ID. |
+| `role_field` | non-empty string | `"Role"` | all seats, every board read and write | Project single-select field that stores the current seat. |
+| `status_field` | non-empty string | `"Status"` | all seats, every board read and write | Project single-select field that stores lifecycle state. |
+| `backlog_status` | non-empty string | `"Backlog"` | all seats, every board read and write | Project option used for canonical `Backlog`. |
+| `ready_status` | non-empty string | `"Ready"` | all seats, every board read and write | Project option used for canonical `Ready`. |
+| `status_overrides` | object; keys from `Backlog`, `Ready`, `In Progress`, `Blocked`, `In Review`, `Done` | `{}` | all seats, every board read and write | Maps other canonical Status names to repository-specific option names. |
 
 The Role field must contain these exact option values:
 `analyst`, `architect`, `dev`, `qa`, `lead`, and `human`. Role option
@@ -192,13 +200,13 @@ take precedence over overrides for those two states. For example:
 
 ## Dispatch and lifecycle limits
 
-| Setting | Type | Default | Meaning |
-|---|---|---|---|
-| `dispatch_roles` | non-empty unique string array | `["architect", "dev", "qa"]` | Allow-list and priority order for Ready work. Values must be valid Role tokens. |
-| `wip_limit` | non-negative integer | `5` | Maximum active Cards admitted before new Ready work waits. Active means `In Progress` plus `In Review`. `0` disables the limit. |
-| `handoff_cap` | non-negative integer | `6` | Refuses another handoff once the Card already has this many handoffs. `0` disables the cap. |
-| `workspace` | non-empty string | `"../.worktrees"` | Parent directory for claim worktrees. It must begin with `..` so worktrees stay outside the repository. |
-| `claim_ttl_hours` | non-negative integer | `72` | Stale-claim observation threshold reported with claim/worktree status. It never authorizes automatic branch or worktree deletion. |
+| Setting | Values | Default | Consumed by | Meaning |
+|---|---|---|---|---|
+| `dispatch_roles` | non-empty array of unique Role tokens: `analyst`, `architect`, `dev`, `qa`, `lead` | `["architect", "dev", "qa"]` | lead (`next-actions`, `brief`) | Allow-list and priority order for Ready work. |
+| `wip_limit` | non-negative integer | `5` | lead (`next-actions` admission) | Maximum active Cards admitted before new Ready work waits. Active means `In Progress` plus `In Review`. `0` disables the limit. |
+| `handoff_cap` | non-negative integer | `6` | every seat that hands off; qa when returning a stale exception | Refuses another handoff once the Card already has this many handoffs. `0` disables the cap. |
+| `workspace` | non-empty string beginning `..` | `"../.worktrees"` | dev (claim worktree), qa (review worktree) | Parent directory for claim worktrees. It must begin with `..` so worktrees stay outside the repository. |
+| `claim_ttl_hours` | non-negative integer | `72` | lead and human (`worktree-status`) | Stale-claim observation threshold reported with claim/worktree status. It never authorizes automatic branch or worktree deletion. |
 
 When WIP capacity is limited, earlier entries in `dispatch_roles` sort ahead of
 later entries; Issue number is the deterministic tie-breaker.
@@ -211,11 +219,11 @@ architect's business. The **code** Pull Request carries an implementation and
 is closed by the merge executor after QA. Each setting names its Pull Request,
 so the pair can be told apart without reading this page:
 
-| Setting | Values | Default | Governs | Consumed by |
+| Setting | Values | Default | Consumed by | Meaning |
 |---|---|---|---|---|
-| `spec_pr_merge_mode` | `direct`, `manual` | `direct` | How a product specification reaches the base branch. | architect (`publish-spec`, and the planner's spec gate) |
-| `code_pr_merge_mode` | `automatic`, `manual` | `automatic` | Who merges an eligible implementation Pull Request after QA. | merge executor, inside `accept` |
-| `code_pr_merge_method` | `squash`, `merge`, `rebase` | `squash` | How agent-teams closes the code Pull Request when it issues the merge itself. | merge executor, inside `accept` and `approve-exception` |
+| `spec_pr_merge_mode` | `direct`, `manual` | `direct` | architect (`publish-spec`, and the planner's spec gate) | How a product specification reaches the base branch. |
+| `code_pr_merge_mode` | `automatic`, `manual` | `automatic` | merge executor, inside `accept` | Who merges an eligible implementation Pull Request after QA. |
+| `code_pr_merge_method` | `squash`, `merge`, `rebase` | `squash` | merge executor, inside `accept` and `approve-exception` | How agent-teams closes the code Pull Request when it issues the merge itself. |
 
 These three were named `spec_merge_mode`, `merge_mode`, and `merge_method`
 before 2026-08-21. The old names still load, so an existing repository keeps
@@ -262,9 +270,9 @@ depart from it, because architect, dev, QA, and the merge executor fail in
 different ways: an architect stalled on a slow specification read and a QA
 worker bounced by a rate limit do not want the same number of attempts.
 
-| Setting | Type | Default | Meaning |
-|---|---|---|---|
-| `roles` | object keyed by seat | `{}` | Per-role overrides. Absent seats, and absent fields within a seat, inherit the top-level default. |
+| Setting | Values | Default | Consumed by | Meaning |
+|---|---|---|---|---|
+| `roles` | object keyed by seat; accepted seats and fields are in the table below | `{}` | the seat named by each key | Per-role overrides. Absent seats, and absent fields within a seat, inherit the top-level default. |
 
 Valid seats and what each accepts:
 
@@ -310,10 +318,10 @@ than having to be matched back to a seat by the reader.
 
 ## Required checks and protected paths
 
-| Setting | Type | Default | Meaning |
-|---|---|---|---|
-| `required_checks` | string array | `[]` | Exact GitHub check names that must conclude `SUCCESS` before an implementation is eligible. |
-| `protected_paths` | object of string arrays | built-in categories | Category-to-glob mapping that routes matching changes to the human QA-exception lane. |
+| Setting | Values | Default | Consumed by | Meaning |
+|---|---|---|---|---|
+| `required_checks` | array of exact GitHub check names | `[]` | merge executor (`accept`), lead (`next-actions`), `doctor` | Checks that must conclude `SUCCESS` before an implementation is eligible. |
+| `protected_paths` | object of glob arrays; built-in categories can be extended but never emptied or removed | built-in categories | qa (verdict classification), merge executor (`accept`) | Category-to-glob mapping that routes matching changes to the human QA-exception lane. |
 
 An empty `required_checks` fails closed: no delivery becomes routinely
 eligible, even with a passing QA verdict. Configure the same check names in
@@ -345,9 +353,9 @@ The default security patterns still apply in this example.
 
 ## User-facing paths and browser evidence
 
-| Setting | Type | Default | Meaning |
-|---|---|---|---|
-| `ui_paths` | string array | `[]` | Extra globs marking user-facing files. Merged with the built-in list; the defaults always apply. |
+| Setting | Values | Default | Consumed by | Meaning |
+|---|---|---|---|---|
+| `ui_paths` | array of glob patterns | `[]` | qa (`validate_verdict`, when the verdict is a `pass`) | Extra globs marking user-facing files. Merged with the built-in list; the defaults always apply. |
 
 A QA `pass` whose changed files match any of these is refused unless the
 verdict carries a `browser_evidence` block. This exists because QA was found
@@ -388,15 +396,15 @@ producing it is `references/browser-pass.md`.
 `recovery` is an object containing the four `recovery.*` settings listed
 below.
 
-| Setting | Type | Default | Meaning |
-|---|---|---|---|
-| `monitor_poll_seconds` | positive integer | `30` | Coordinator wait before re-reading pending checks or merge state. |
-| `board_page_limit` | positive integer | `100` | Project items requested per GraphQL page (GitHub caps a page at 100). |
-| `board_max_items` | positive integer | `2000` | Ceiling on Project items read in one command; must be at least `board_page_limit`. |
-| `recovery.max_retries` | non-negative integer | `1` | Retries after the initial attempt. `0` disables retries. |
-| `recovery.initial_backoff_seconds` | finite non-negative number | `5.0` | Wait before retry 1. |
-| `recovery.backoff_multiplier` | finite number at least `1.0` | `2.0` | Exponential multiplier for later retry delays. |
-| `recovery.max_backoff_seconds` | finite non-negative number | `60.0` | Per-retry delay cap; must be at least the initial delay. |
+| Setting | Values | Default | Consumed by | Meaning |
+|---|---|---|---|---|
+| `monitor_poll_seconds` | positive integer | `30` | lead (`next-actions`) | Coordinator wait before re-reading pending checks or merge state. |
+| `board_page_limit` | positive integer | `100` | all seats, every board read | Project items requested per GraphQL page (GitHub caps a page at 100). |
+| `board_max_items` | positive integer, at least `board_page_limit` | `2000` | all seats, every board read | Ceiling on Project items read in one command. |
+| `recovery.max_retries` | non-negative integer | `1` | lead, retrying a spawned seat; all seats, retrying a transient GitHub read | Retries after the initial attempt. `0` disables retries. |
+| `recovery.initial_backoff_seconds` | finite non-negative number | `5.0` | lead; all seats | Wait before retry 1. |
+| `recovery.backoff_multiplier` | finite number at least `1.0` | `2.0` | lead; all seats | Exponential multiplier for later retry delays. |
+| `recovery.max_backoff_seconds` | finite non-negative number, at least `recovery.initial_backoff_seconds` | `60.0` | lead; all seats | Per-retry delay cap. |
 
 The retry delay before retry number *n* is:
 
