@@ -801,6 +801,17 @@ Claude session**:
 python /absolute/path/to/agent-teams/scripts/producer_board.py promote N
 ```
 
+To see everything currently waiting on you rather than checking Card by Card,
+run this from your own shell as well:
+
+```bash
+python /absolute/path/to/agent-teams/scripts/producer_board.py gates
+```
+
+If you set the dashboard up in Part 7, its Agent Teams page shows that same
+list with an **Approve** button per gate, which is the least friction of the
+three routes. See 7.3.
+
 > **Checkpoint 6.4**
 > The Card shows Status `Ready` on the board.
 
@@ -927,14 +938,46 @@ that already finished, not only live ones.
 | Workflows | The spawn tree — which workers the lead created, and which helpers they created |
 | Analytics | Usage and cost over time |
 | CC Config | The skills and subagents Claude Code has loaded, plugin ones marked |
-| Agent Teams | A form that edits `.agent-teams/config.json` |
+| Agent Teams | The gates waiting on you, with Approve buttons, and a form that edits `.agent-teams/config.json` |
 | Run | Start a Claude Code session from the browser |
 
 The per-subagent conversation log is the genuinely useful part. When a QA
 worker reaches a conclusion you disagree with, you can read how it got there
 instead of inferring it from the outcome.
 
-### 7.3 The Agent Teams config tab
+### 7.3 The Agent Teams page — human gates
+
+The top of the page is the reason to have the dashboard open during a run: the
+gates waiting on you, each with the Card, the evidence behind it, and a button
+that opens it. It is the same list `producer_board.py gates` prints.
+
+Each row shows the exact command the server will run, so the button is
+checkable rather than magic. Two things behave deliberately:
+
+- **The readiness button works out of the box.** It runs `promote N` as
+  `human`, which is allowed because the dashboard is *your* process, not a
+  model's session. The Card's handoff comment records that the approval came
+  from the dashboard.
+- **The protected-change button is disabled unless you asked for it.** That
+  gate merges to the base branch. Start the dashboard with
+  `AGENT_TEAMS_HUMAN_GATES=merge` in its environment to enable it; otherwise
+  the row shows you the command to run in your own terminal and says why.
+
+Gates that GitHub opens rather than the plugin — a specification Pull Request,
+or an eligible merge when merge execution is configured as manual — show a link
+to the Pull Request instead of a button. There is no plugin command for those,
+so the page does not pretend there is.
+
+Worth being clear about, because the plugin is: this is the same kind of floor
+as everything else here — a process-level one. Anything that can reach the
+dashboard's localhost API can press these buttons the way you can. The floor
+under a merge remains GitHub branch protection.
+
+> **Checkpoint 7.3**
+> With a Card at the readiness gate, the Agent Teams page lists it and the
+> Approve button moves it to `Ready` on the GitHub board.
+
+### 7.4 The Agent Teams page — config
 
 It never re-implements the plugin's validation rules. Every read and write goes
 through the plugin's own Python `Config` class, so what the dashboard saves is
@@ -955,7 +998,7 @@ Point it at your target repository, and note:
 - **Changes apply at the next command boundary.** No restart; the previous file
   is backed up on every save.
 
-### 7.4 Verify the pieces fit
+### 7.5 Verify the pieces fit
 
 The dashboard talks to the plugin through a Python bridge that needs to know
 where the plugin lives. Its own test suite exercises that path end to end:
@@ -964,7 +1007,7 @@ where the plugin lives. Its own test suite exercises that path end to end:
 AGENT_TEAMS_SCRIPTS=/absolute/path/to/agent-teams/scripts AGENT_TEAMS_PYTHON=python   node --test server/__tests__/agent-teams-config.test.js
 ```
 
-> **Checkpoint 7.4**
+> **Checkpoint 7.5**
 > Expect `# pass 9` and `# fail 0`.
 >
 > If it reports `SKIP agent-teams package or python3 not available`, the bridge
@@ -982,7 +1025,7 @@ npm run test:server      # expect 0 failures
 npm run test:client      # expect 0 failures
 ```
 
-### 7.5 One thing to keep an eye on
+### 7.6 One thing to keep an eye on
 
 The QA seat spawns helpers beneath itself, which makes the agent tree three
 levels deep: coordinator → `qa-worker` → browser worker and review passes.
@@ -1166,6 +1209,7 @@ And the read-only commands are always safe to run directly:
 ```bash
 producer_board.py brief
 producer_board.py next-actions
+producer_board.py gates
 producer_board.py worktree-status
 ```
 
@@ -1182,6 +1226,7 @@ producer_board.py init --repo OWNER/REPO --project-owner OWNER --project-number 
 producer_board.py doctor
 producer_board.py brief [--format text|json]
 producer_board.py next-actions [ISSUE]
+producer_board.py gates [ISSUE]
 producer_board.py bootstrap --role ROLE
 
 producer_board.py intake --title T (--body B | --body-file F)

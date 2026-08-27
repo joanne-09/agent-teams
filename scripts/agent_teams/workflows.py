@@ -387,6 +387,59 @@ class Producer:
             for card in selected
         ]
 
+    @staticmethod
+    def _with_origin(note: str, origin: str) -> str:
+        """Append the approving surface to a gate comment, unless it is default.
+
+        A terminal approval is left unannotated: it is the documented default,
+        and stamping every historical comment with it would say nothing.
+        """
+        if not origin or origin == "terminal":
+            return note
+        return f"{note} (approved from the {origin})"
+
+    @staticmethod
+    def _gate(
+        base: dict[str, Any],
+        kind: str,
+        instruction: str,
+        *,
+        argv: list[str] | None = None,
+        **extra: Any,
+    ) -> dict[str, Any]:
+        """One human gate in the uniform shape a person-facing surface reads.
+
+        ``argv`` is the whole difference between the two kinds of gate. A gate
+        that carries one is opened by a plugin command, so a button can open
+        it. A gate whose ``argv`` is ``None`` is opened in GitHub itself --
+        no seat, the human included, has a plugin command that would do it --
+        and such a gate always carries ``pull_request`` instead.
+        """
+        return {
+            **base,
+            "gate": kind,
+            "instruction": instruction,
+            "argv": list(argv) if argv else None,
+            **extra,
+        }
+
+    def human_gates(self, number: int | None = None) -> dict[str, Any]:
+        """List only the boundaries a person must open. Read-only.
+
+        ``next-actions`` answers "what happens next", which is a coordinator's
+        question and a large object. A person -- or the surface standing in for
+        one -- asks the much smaller question this answers, and asking it must
+        not require reading a plan that names subagent spawns.
+        """
+        plan = self.next_actions(number)
+        gates = plan["human_gates"]
+        return {
+            "ok": True,
+            "count": len(gates),
+            "actionable": sum(1 for gate in gates if gate.get("argv")),
+            "gates": gates,
+        }
+
     def next_actions(self, number: int | None = None) -> dict[str, Any]:
         """Plan every runnable stage for a current-session subagent carrier.
 
@@ -441,13 +494,15 @@ class Producer:
             if card.status is Status.BACKLOG and card.role is Role.HUMAN:
                 spec = self.board.latest_specification(card.number)
                 if spec:
-                    human_gates.append({
-                        **base, "gate": "readiness", "specification": spec,
-                        "instruction": "Move the Card Status to Ready.",
-                        "field": self.config.status_field,
-                        "value": self.config.status_name(Status.READY),
-                        "cli_convenience": f"promote {card.number}",
-                    })
+                    human_gates.append(self._gate(
+                        base, "readiness",
+                        "Move the Card Status to Ready.",
+                        argv=["promote", str(card.number)],
+                        specification=spec,
+                        field=self.config.status_field,
+                        value=self.config.status_name(Status.READY),
+                        cli_convenience=f"promote {card.number}",
+                    ))
                 else:
                     waiting.append({
                         **base, "reason": "Card is in the human lane without a "
@@ -479,12 +534,15 @@ class Producer:
                 if acceptance and acceptance.acceptance == "protected_change":
                     pr = self.board.pull_request(card.number, card.title)
                     if acceptance.head_sha == pr["head_sha"]:
-                        human_gates.append({
-                            **base, "gate": "qa_exception",
-                            "acceptance": acceptance.to_dict(),
-                            "pull_request": pr["url"],
-                            "command": f"approve-exception {card.number}",
-                        })
+                        human_gates.append(self._gate(
+                            base, "qa_exception",
+                            "Approve the protected change against the exact "
+                            "reviewed head, or hand it back to development.",
+                            argv=["approve-exception", str(card.number)],
+                            acceptance=acceptance.to_dict(),
+                            pull_request=pr["url"],
+                            command=f"approve-exception {card.number}",
+                        ))
                     else:
                         actions.append({
                             **base, "kind": "controller", "role": Role.QA.value,
@@ -536,13 +594,12 @@ class Producer:
                             "durable base-branch commit",
                         })
                     elif spec_pr["state"] == "OPEN":
-                        human_gates.append({
-                            **base,
-                            "gate": "spec_merge",
-                            "specification": specification,
-                            "pull_request": spec_pr["url"],
-                            "instruction": "Merge the specification Pull Request.",
-                        })
+                        human_gates.append(self._gate(
+                            base, "spec_merge",
+                            "Merge the specification Pull Request in GitHub.",
+                            specification=specification,
+                            pull_request=spec_pr["url"],
+                        ))
                     else:
                         waiting.append({
                             **base,
@@ -664,15 +721,14 @@ class Producer:
                                 "argv": ["reconcile-done", str(card.number)],
                             })
                         elif self.config.effective_code_pr_merge_mode() == "manual":
-                            human_gates.append({
-                                **base,
-                                "gate": "manual_merge",
-                                "acceptance": accepted.to_dict(),
-                                "pull_request": pr["url"],
-                                "instruction": "Merge the eligible Pull Request.",
-                                "reason": "merge_mode is manual; the controller "
-                                "will not issue a merge command",
-                            })
+                            human_gates.append(self._gate(
+                                base, "manual_merge",
+                                "Merge the eligible Pull Request in GitHub.",
+                                acceptance=accepted.to_dict(),
+                                pull_request=pr["url"],
+                                reason="code_pr_merge_mode is manual; the "
+                                "controller will not issue a merge command",
+                            ))
                         elif pr["auto_merge_enabled"]:
                             actions.append({
                                 **base, "kind": "monitor", "role": Role.LEAD.value,
@@ -1041,6 +1097,7 @@ class Producer:
         spec_reference: str = "",
         acting_role: Role = Role.HUMAN,
         reason: str = "",
+        origin: str = "terminal",
     ) -> dict[str, Any]:
         """Open the readiness gate on one shaped Card and send it to development.
 
@@ -1052,6 +1109,11 @@ class Producer:
         Two independent semantic operations run in order: the Status
         transition, then the Role handoff. If the handoff fails, the Card is
         Ready but unowned, and the result says exactly that.
+
+        ``origin`` names the surface the person used (:func:`policy.human_origin`).
+        It grants nothing -- ``policy.check_action`` has already decided -- but a
+        gate opened from somewhere other than a terminal says so on the Card, so
+        the durable trail never has to be guessed at afterwards.
         """
         policy.check_action("promote_to_ready", acting_role)
         card = self.board.card(number)
@@ -1096,7 +1158,10 @@ class Producer:
                 number,
                 acting_role,
                 Role.DEV,
-                reason=reason or "Specification is durable; implementation is Ready.",
+                reason=self._with_origin(
+                    reason or "Specification is durable; implementation is Ready.",
+                    origin,
+                ),
                 needs="Implement against the documented acceptance criteria.",
                 artifacts=gate["reference"],
             )
@@ -1124,6 +1189,7 @@ class Producer:
             "role": Role.DEV.value,
             "spec": gate["reference"],
             "spec_state": gate["state"],
+            "origin": origin,
             "completed": log.completed,
             "comment": handoff["comment"],
         }
@@ -2291,9 +2357,16 @@ class Consumer:
         return {"ok": True, "issue": number, "url": card.url, **outcome}
 
     def approve_exception(
-        self, number: int, acting_role: Role = Role.HUMAN
+        self, number: int, acting_role: Role = Role.HUMAN,
+        origin: str = "terminal",
     ) -> dict[str, Any]:
-        """Human final gate: merge the exact reviewed head and reconcile Done."""
+        """Human final gate: merge the exact reviewed head and reconcile Done.
+
+        ``origin`` names the surface the person used (:func:`policy.human_origin`)
+        and is recorded on the Card before the merge, not after: this is the one
+        route by which a protected change reaches the base branch, so the record
+        of who approved it from where must survive even a failed merge.
+        """
         policy.check_action("merge_pull_request", acting_role)
         card = self._bound_card(number, Role.HUMAN, Status.IN_REVIEW)
         acceptance = self.board.latest_acceptance(number)
@@ -2307,6 +2380,19 @@ class Consumer:
                 "the Pull Request head changed after the exception was recorded; "
                 "hand it back to QA for a current-head verdict"
             )
+        # Non-fatal: the approval record is worth having, but refusing to
+        # merge because GitHub would not take a comment would strand the one
+        # gate a person cannot route around.
+        approval = (
+            f"Human exception approved from the {origin} for head "
+            f"`{acceptance.head_sha}`: {pr['url']}"
+        )
+        try:
+            self.board.comment_on_card(number, approval)
+            recorded: dict[str, Any] = {"ok": True}
+        except AgentTeamsError as exc:
+            recorded = {"ok": False, "error": str(exc)}
+
         self.board.merge_pull_request(
             pr["number"],
             self.config.effective_code_pr_merge_method(),
@@ -2320,6 +2406,7 @@ class Consumer:
             )
         return {
             "ok": True, "issue": number, "acceptance": "human_exception",
+            "origin": origin, "approval_recorded": recorded,
             "pull_request": pr["url"],
             **self._reconcile_to_done(number, card, pr, state, acting_role),
         }

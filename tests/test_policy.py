@@ -384,5 +384,47 @@ class SeatBindingTests(unittest.TestCase):
         self.assertFalse(policy.agent_session({"CLAUDECODE": ""}))
 
 
+class HumanOriginTests(unittest.TestCase):
+    """The origin label describes a human gate; it never widens who may open one."""
+
+    AGENT = {"CLAUDECODE": "1"}
+
+    def test_absent_variable_is_the_terminal(self):
+        self.assertEqual(policy.human_origin({}), "terminal")
+
+    def test_a_known_surface_names_itself(self):
+        self.assertEqual(
+            policy.human_origin({policy.HUMAN_ORIGIN_ENV: "dashboard"}), "dashboard"
+        )
+        self.assertEqual(
+            policy.human_origin({policy.HUMAN_ORIGIN_ENV: " Dashboard "}), "dashboard"
+        )
+
+    def test_an_unknown_surface_is_refused(self):
+        # The value reaches a GitHub comment, so the vocabulary is closed.
+        with self.assertRaisesRegex(policy.ActionForbidden, "unknown human origin"):
+            policy.human_origin({policy.HUMAN_ORIGIN_ENV: "curl | sh"})
+
+    def test_the_label_grants_no_authority(self):
+        """The point of the whole design: a label is not a seat.
+
+        An agent session that stamps itself `dashboard` is still refused
+        `human`, because the refusal keys on the agent markers and never on
+        this variable.
+        """
+        env = dict(self.AGENT, **{policy.HUMAN_ORIGIN_ENV: "dashboard"})
+        self.assertEqual(policy.human_origin(env), "dashboard")
+        with self.assertRaisesRegex(policy.ActionForbidden, "human"):
+            policy.resolve_acting_role(Role.HUMAN, env)
+
+    def test_the_label_does_not_loosen_a_seat_binding(self):
+        env = {
+            policy.ACTING_ROLE_ENV: "dev",
+            policy.HUMAN_ORIGIN_ENV: "dashboard",
+        }
+        with self.assertRaises(policy.SeatMismatch):
+            policy.resolve_acting_role(Role.HUMAN, env)
+
+
 if __name__ == "__main__":
     unittest.main()

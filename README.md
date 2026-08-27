@@ -206,6 +206,7 @@ producer_board.py doctor
 producer_board.py bootstrap --role ROLE
 producer_board.py brief [--format text|json]
 producer_board.py next-actions [ISSUE]
+producer_board.py gates [ISSUE]
 producer_board.py intake --title TITLE (--body BODY | --body-file FILE)
 producer_board.py clarify ISSUE (--note NOTE | --note-file FILE)
 producer_board.py publish-spec ISSUE --path docs/...md
@@ -223,6 +224,12 @@ producer_board.py worktree-status [ISSUE]
 ```
 
 `next-actions` is read-only and returns `actions`, `human_gates`, and `waiting`.
+`gates` is the same gate list on its own -- the read a person makes, or a
+person-facing surface makes for them. Each entry carries `argv` when a plugin
+command opens the gate (`readiness`, `qa_exception`) and `pull_request` when
+GitHub does (`spec_merge`, `manual_merge`); a gate with no `argv` has no plugin
+command by design. The CCAM dashboard's Agent Teams page renders that list with
+an approve button, so the readiness gate no longer requires a terminal.
 The orchestration skill spawns `kind: spawn` actions, executes deterministic
 `kind: controller` and `kind: reconcile` actions, waits and rechecks
 `kind: monitor`, rereads GitHub, and stops only when no automatic action

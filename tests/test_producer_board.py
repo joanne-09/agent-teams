@@ -25,9 +25,19 @@ from agent_teams.model import (  # noqa: E402
     ACCEPTANCE_MARKER, Role, Status,
 )
 from agent_teams.model import REQUIRED_DIMENSIONS, VERDICT_MARKER  # noqa: E402
+from agent_teams.model import SPECIFICATION_MARKER  # noqa: E402
 from fake_gh import (  # noqa: E402
     FIELDS, REPO, FakeGh, FakeGit, SaturatingGh, board_with,
 )
+
+
+def spec_comment(card: int, path: str = "docs/specs/card.md") -> str:
+    """A durable specification record as `publish-spec` writes it to a Card."""
+    payload = json.dumps({
+        "card": card, "path": path, "commit": "a" * 40,
+        "branch": "main", "mode": "direct", "state": "TRACKED",
+    })
+    return SPECIFICATION_MARKER + "\n\n```json\n" + payload + "\n```"
 
 
 def config(**overrides):
@@ -677,6 +687,44 @@ class CliTests(unittest.TestCase):
         self.assertEqual(after["recovery_policy"]["default"]["max_retries"], 0)
         for seat, schedule in after["recovery_policy"]["roles"].items():
             self.assertEqual(schedule["max_retries"], 0, seat)
+
+    def test_gates_lists_only_the_human_boundaries(self):
+        gh = FakeGh(
+            items=board_with(
+                (20, "Ready decision", "Backlog", "human"),
+                (12, "Build", "Ready", "dev"),
+            ),
+            comments=[spec_comment(20)],
+        )
+        code, out, err = self._run("gates", gh=gh)
+        self.assertEqual(code, 0, err)
+        payload = json.loads(out)
+        self.assertTrue(payload["ok"])
+        self.assertEqual([g["number"] for g in payload["gates"]], [20])
+        self.assertEqual(payload["gates"][0]["argv"], ["promote", "20"])
+        self.assertEqual(payload["actionable"], 1)
+
+    def test_gates_is_read_only(self):
+        gh = FakeGh(
+            items=board_with((20, "Ready decision", "Backlog", "human")),
+            comments=[spec_comment(20)],
+        )
+        code, _, err = self._run("gates", gh=gh)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(gh.calls_matching("project", "item-edit"), [])
+
+    def test_an_unknown_human_origin_refuses_before_any_github_call(self):
+        gh = FakeGh()
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = producer_board.main(
+                ["--config", str(self.config_path), "promote", "8"],
+                gh=gh, env={policy.HUMAN_ORIGIN_ENV: "somewhere-else"},
+            )
+        self.assertEqual(code, 1)
+        payload = json.loads(err.getvalue())
+        self.assertIn("unknown human origin", payload["error"])
+        self.assertEqual(gh.calls_matching("project", "item-edit"), [])
 
     def test_promote_uses_the_recorded_spec_without_a_path_argument(self):
         args = producer_board._build_parser().parse_args(["promote", "20"])

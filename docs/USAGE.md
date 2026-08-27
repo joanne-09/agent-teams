@@ -118,6 +118,11 @@ and hands ownership to development automatically. If the spec changed,
 architect republishes it first. `promote N` remains an optional CLI
 convenience that performs the Status change and handoff together.
 
+You do not have to reach a terminal for this. `producer_board.py gates` lists
+every gate that is waiting on you, and the Agent Teams page of the CCAM
+dashboard renders that list with an Approve button per gate -- see "Opening a
+gate without a terminal" below.
+
 ### Run the team
 
 Say:
@@ -234,6 +239,7 @@ producer_board.py doctor
 producer_board.py bootstrap --role ROLE
 producer_board.py brief [--format text|json]
 producer_board.py next-actions [ISSUE]
+producer_board.py gates [ISSUE]
 producer_board.py intake --title T (--body B | --body-file F)
 producer_board.py clarify ISSUE (--note N | --note-file F)
 producer_board.py publish-spec ISSUE --path docs/...md
@@ -250,7 +256,10 @@ producer_board.py approve-exception ISSUE
 producer_board.py worktree-status [ISSUE]
 ```
 
-`next-actions` is read-only. `accept`, `refresh-verification`, and
+`next-actions` and `gates` are read-only. `gates` is the narrow read: only the
+boundaries waiting on a person, each with the `argv` that opens it when a
+plugin command does (`readiness`, `qa_exception`) or the Pull Request to merge
+when GitHub does (`spec_merge`, `manual_merge`). `accept`, `refresh-verification`, and
 `approve-exception` take only an Issue number; none accepts a caller-chosen PR
 or route. Every mutation must return `"ok": true` before it is reported as
 successful.
@@ -261,6 +270,28 @@ workers) wins over the flag, and inside any Claude Code session a command that
 claims or defaults to `human` is refused. Run `promote`, `approve-exception`,
 and `release-claim` from your own terminal; from the lead's session they are
 refused by design.
+
+### Opening a gate without a terminal
+
+The CCAM dashboard's Agent Teams page lists the same gates and opens the two
+that a command opens. It is a human surface, so it runs the command with the
+Claude Code session markers removed and stamps
+`AGENT_TEAMS_HUMAN_ORIGIN=dashboard`; the gate comment on the Card then says
+the approval came from the dashboard rather than a terminal.
+
+Two properties are worth knowing before you rely on it:
+
+- The page sends a Card number and a gate kind, never a command. The server
+  re-reads `gates` and runs the `argv` the plugin published for that exact
+  gate, so a stale tab cannot open a gate the board has since closed.
+- The **readiness** button is on by default; the **protected-change** button is
+  not, because it merges to the base branch. Start the dashboard with
+  `AGENT_TEAMS_HUMAN_GATES=merge` to enable it, or open that one from your own
+  terminal.
+
+This is the same class of floor as the seat binding, and it has the same limit:
+anything that can reach the dashboard's localhost API can press a button the
+way a person can. The floor under a merge is still GitHub branch protection.
 
 Completion has one owner. A delivery Pull Request names its Card as
 `Card: #<issue>` and must not use `Closes`/`Fixes`/`Resolves`; `reconcile`

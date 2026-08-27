@@ -536,6 +536,48 @@ decision 4), closing readiness closed every path to it at once: `promote`,
 `transition --to Ready`, and `create-card --status Ready`. Decomposition
 therefore creates children at `(Backlog, human)`, not `(Ready, dev)`.
 
+#### 4.5.1 Enumerating the gates
+
+`next_actions` answers "what happens next", which is the coordinator's
+question. A person, or a surface acting for one, asks a smaller question:
+*what is waiting on me?* `human_gates` (CLI: `gates`) is that read. It is the
+same computation narrowed to the gate list, so the two can never disagree
+about whether a gate is open.
+
+Every gate entry has one uniform shape. `argv` is the whole distinction
+between the two kinds:
+
+| `argv` | Opened by | Gates |
+|---|---|---|
+| present | a plugin command | `readiness`, `qa_exception` |
+| `null` | GitHub itself, and the entry carries `pull_request` | `spec_merge`, `manual_merge` |
+
+That distinction is normative, not cosmetic. A gate without `argv` has no
+plugin command *by design* — no seat, the human included, may merge a Pull
+Request of its own choosing (`policy.HARD_FLOORS`), and configuring merge
+execution as manual means GitHub is where it happens. A surface that renders
+a button for such a gate would be inventing authority the plugin refuses.
+
+#### 4.5.2 Where a human opened a gate
+
+`AGENT_TEAMS_HUMAN_ORIGIN` names the surface a person acted from: `terminal`
+(the default, and what an absent variable means) or `dashboard`. It is a
+**provenance label, not an authority grant**. `resolve_acting_role` decides
+who may act as `human`, and it keys on the agent-session markers alone — so
+an agent session that stamps itself `dashboard` is refused exactly as before.
+The vocabulary is closed because the value reaches a GitHub comment.
+
+What it buys is a durable trail. `promote` appends the surface to the handoff
+comment; `approve_exception` records it on the Card *before* it merges, since
+that is the one route by which a protected change reaches the base branch and
+the record must survive a failed merge.
+
+This does not change the honest limit stated in §10.2 and Appendix A: seat
+binding is a process-level floor, not a cryptographic one. A non-agent human
+surface that runs plugin commands necessarily lets anything that can reach
+*that surface* open a gate. The floor under a merge remains GitHub branch
+protection.
+
 ---
 
 ## 5. The four durable artifacts

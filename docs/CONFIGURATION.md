@@ -437,6 +437,7 @@ not from the config file.
 |---|---|
 | `AGENT_TEAMS_ACTING_ROLE` | Binds the process to one seat. Every command acts as that seat; a `--acting-role` that disagrees is refused (`SeatMismatch`). Dispatch actions carry it in their `env` field and the worker prompt tells the worker to set it. |
 | `CLAUDECODE`, `CLAUDE_CODE_SESSION_ID` | Stamped by Claude Code on every shell it runs. When either is present, a command that claims or defaults to `human` is refused: human authority is exercised from the human's own terminal, never from a model session. This closed the live bypass where the lead ran `promote` without `--acting-role` and inherited the human default. It is a process-level floor, not a cryptographic one; the merge floor remains GitHub branch protection. |
+| `AGENT_TEAMS_HUMAN_ORIGIN` | Names the surface a person opened a human gate from: `terminal` (the default, and what an absent variable means) or `dashboard`. It is a **provenance label, not an authority grant** -- the refusal above keys on the agent markers and never on this variable, so setting it inside an agent session buys nothing. What it earns is a durable trail: `promote` appends the surface to the handoff comment and `approve-exception` records it on the Card before it merges. Any value outside the closed vocabulary is refused, because the value reaches a GitHub comment. |
 
 ### Host settings for unrecognised models
 

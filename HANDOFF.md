@@ -4,7 +4,7 @@
 
 **Stack**: Claude Code plugin / Python 3.12 standard library / GitHub CLI / GitHub Projects v2 / Git / Slidev
 
-**Last updated**: 2026-08-27 — session 12: per-role retry/merge config, merge-mode renames, the QA decomposition (spec-blind browser seat + validated browser evidence), and the cold-start runbook
+**Last updated**: 2026-08-27 — session 13: the human gates became a button. `gates` is a first-class read, every gate entry has one uniform shape, and the dashboard's Agent Teams page opens the two that a command opens
 
 ---
 
@@ -41,6 +41,7 @@ The earlier full implementation is a **separate sibling repository**, `../agent-
 - **Authority is checked before the first GitHub call**, so a refusal costs nothing and leaves no partial state.
 - **Status and Role are orthogonal.** A handoff changes Role and writes context; it never silently changes Status. When both must move, that is two operations.
 - **Honest partial failure.** Multi-step mutations return `{ok:false, partial:true, completed:[...], failed:..., recovery:[...]}`. Creation steps are never replayed; nothing ever claims a rollback that did not run.
+- **The gates are enumerable, and openable from a surface that is not a terminal.** `human_gates` (CLI `gates`) is `next_actions` narrowed to the gate list, so the two cannot disagree. Every entry carries `argv` when a plugin command opens the gate (`readiness`, `qa_exception`) and `pull_request` when GitHub does (`spec_merge`, `manual_merge`) — a gate with no `argv` has no plugin command *by design*, and a surface that drew a button for one would be inventing authority the plugin refuses. `AGENT_TEAMS_HUMAN_ORIGIN` is a provenance label on the resulting comment, never a grant: `resolve_acting_role` still keys on the agent markers alone.
 - **One human gate plus one exception lane, now implemented.** `promote_to_ready` refuses every agent seat including `lead`. `merge_pull_request` — free-form merge of a caller-chosen Pull Request — **remains in `policy.HARD_FLOORS`**; decision 8 did not remove it. A companion action `request_automated_merge` is refused to *all six* seats including `human`, so "no seat may request a merge" is an assertion rather than an absence.
 - **Verdict and acceptance are separate types**, neither convertible into the other. QA writes `Verdict` (`pass`/`fail`/`blocked`, bound to the exact head SHA); policy writes `Acceptance` (`eligible`/`defect`/`protected_change`); QA cannot select its own route. That separation is structural, not prose.
 - **Protected changes name files, not just categories.** Seven default categories, configurable; policy may add but emptying a default category is a configuration error.
@@ -212,6 +213,17 @@ auto-merge and protected QA work end to end.
   fallback, so review passes can complete in the wrong order in the Workflows
   tab. Cosmetic — a typed seat worker can no longer be completed by a helper,
   which was the damaging form.
+- **The dashboard gate button widens who can open a gate, by exactly as much as the dashboard is reachable** (`agent-teams-dashboard`
+  `server/lib/agent-teams/gates.js`) — it strips `CLAUDECODE` /
+  `CLAUDE_CODE_SESSION_ID` from the child, which is the same environment
+  scrub the plugin's own docstring names as the way to lie about being a
+  person. That is correct for a browser click and indistinguishable from a
+  `curl` of the localhost API. Mitigations shipped: the readiness gate only
+  moves a Card to Ready; the **merge** gate needs
+  `AGENT_TEAMS_HUMAN_GATES=merge` on the server; the client sends a Card and
+  a gate kind, never a command. Unmitigated: set `DASHBOARD_TOKEN` if the
+  host is shared. The floor under a merge is still branch protection.
+- **The gate button has never run against a live board** (`server/lib/agent-teams/gates.js`) — 12 hermetic tests prove the opt-in, the refusal to take a command from the client, and the environment scrub; nothing yet proves `gates` parses on a real board or that `promote` succeeds through the subprocess. First real test is the next dataset run.
 - **`browser_evidence` is attested, like `falsified_by`** (policy.py) — the
   schema can require a flow, an invalid-input case, and a console reading; it
   cannot prove a browser was ever opened.
@@ -262,11 +274,13 @@ No local implementation blocker.
 
 ## Current State
 
-mvp/producer-from-scratch, **uncommitted session-12 work** on top of the 08-21
-commit (Lee's side), itself on 980a93c (Joanne's config externalization +
-recovery) and 3f82792 (08-21 slides). Full suite 519/519;
-`claude plugin validate .` passes; `git diff --check` clean. Nothing committed
-or pushed — that still requires explicit user instruction.
+mvp/producer-from-scratch, **uncommitted session-12 and session-13 work** on
+top of the 08-21 commit (Lee's side), itself on 980a93c (Joanne's config
+externalization + recovery) and 3f82792 (08-21 slides). Full suite 535/535;
+`claude plugin validate .` passes; `git diff --check` clean. The dashboard
+side is uncommitted on `feat/plugin-scope-listing`: server 1047/1047,
+client 334/334, `tsc -b` clean. Nothing committed or pushed in either
+repository — that still requires explicit user instruction.
 
 **Session 12 touches Joanne's config work directly.** The externalized config
 grew a `roles` block and lost three key names to clearer ones (old names still
@@ -299,8 +313,14 @@ touch your files):**
    a real setup.
 0c. **Commit the dashboard changes** — `../agent-teams-dashboard` has
    uncommitted work on `feat/plugin-scope-listing` (config descriptor, the
-   inheritance-aware form, and the depth-3 regression test). Left uncommitted
-   at the user's instruction, same as this repository.
+   inheritance-aware form, the depth-3 regression test, and now the human-gate
+   route, panel, and its 12 tests). Left uncommitted at the user's
+   instruction, same as this repository.
+0d. **Press the gate button once against the live board** (session 13). The
+   readiness route is the one to try: start the dashboard, open the Agent
+   Teams page against `agent-teams-test`, and approve the Card held at the
+   gate. Card #21 is still deliberately parked there from session 9, which
+   makes it the obvious subject — decide first whether to spend it.
 
 1. ~~Lazy-loading runtime evidence~~ — done live 08-12 (see session 9); optionally archive the worker transcripts as durable evidence.
 2. Tighten Producer.next_actions so a Backlog human Card is shown as a readiness gate only when check_spec_gate confirms the recorded exact commit is still current; add the focused stale-record test.
@@ -323,6 +343,75 @@ decision accepts sibling plugins as runtime dependencies.
 ## Session Log
 
 <!-- newest entry at top -->
+
+### 2026-08-27 — Session 13 (the human gate stopped needing a terminal)
+
+The readiness gate was the last routine step that made a person leave whatever
+they were doing and type `producer_board.py promote 19`. It is now a button on
+the dashboard's Agent Teams page. Both repositories changed; both are
+uncommitted.
+
+**Plugin.** `human_gates` (CLI `gates`) is `next_actions` narrowed to the gate
+list — the same computation, so the two cannot disagree about whether a gate is
+open, and a person-facing surface never has to read a plan that names subagent
+spawns. Every gate entry now goes through one `_gate` helper and has one shape.
+
+The shape is the part worth remembering. Before this, `readiness` carried
+`cli_convenience: "promote 19"`, `qa_exception` carried
+`command: "approve-exception 21"`, and `spec_merge` / `manual_merge` carried
+neither — three spellings of the same idea and one silent gap. Now every entry
+has `argv`: a list when a plugin command opens the gate, `null` when GitHub
+does, in which case it carries `pull_request` instead. That `null` is
+normative, not a placeholder — no seat, the human included, may merge a Pull
+Request of its own choosing (`HARD_FLOORS`), so a surface drawing a button for
+those gates would be inventing authority the plugin refuses.
+
+`AGENT_TEAMS_HUMAN_ORIGIN` (`terminal` | `dashboard`) came out of the same
+work. It is deliberately **not** an authority mechanism: `resolve_acting_role`
+still keys on the agent markers alone, so an agent session stamping itself
+`dashboard` is refused exactly as before — there is a test that asserts
+precisely that, because it is the property most likely to be "simplified" away
+later. What it earns is the trail: `promote` appends the surface to the handoff
+comment, and `approve_exception` writes it to the Card *before* it merges,
+since that is the one route by which a protected change reaches the base branch
+and the record has to survive a failed merge. The vocabulary is closed because
+the value lands in a GitHub comment.
+
+**Dashboard** (`../agent-teams-dashboard`, `feat/plugin-scope-listing`).
+`server/lib/agent-teams/gates.js` + two routes + `AgentTeamsGates.tsx`, which
+now sits above the config form because it is the part that waits on you.
+
+**The honest part, and the reason this took design rather than plumbing.** The
+plugin refuses the `human` seat to any process carrying `CLAUDECODE`, and the
+dashboard server has almost certainly inherited it from the terminal that
+started it. So the child's environment is scrubbed of those markers — which is
+*exactly* the manoeuvre `resolve_acting_role`'s own docstring names as the way
+an agent lies about being a person. It is right here (a person clicked) and
+indistinguishable from a `curl` of the localhost API. Three things keep it
+proportionate rather than pretending it is airtight:
+
+1. The client sends a Card number and a gate kind, never a command. The server
+   re-reads `gates` and runs the `argv` the plugin published for that exact
+   gate, so a stale tab cannot open a closed gate and the endpoint is a button
+   rather than a remote shell.
+2. The **merge** gate is opt-in: `AGENT_TEAMS_HUMAN_GATES=merge` on the server,
+   or the button stays disabled and the row shows the terminal command and says
+   why. The readiness gate, which only moves a Card to Ready, is on by default.
+3. It is written down — in `gates.js`, in USAGE, in ARCHITECTURE 4.5.2, in the
+   dashboard README, and in Known Issues above — in the same terms the plugin
+   already uses about its own seat binding. The floor under a merge remains
+   GitHub branch protection.
+
+Also fixed in passing: `dispatching-work` still named `spec_merge_mode` and
+`merge_mode`, which session 12's rename sweep covered in the four docs but not
+in the skills.
+
+Tests 519 → 535 (plugin); dashboard server 1047/1047 with 12 new, client
+334/334 with the Agent Teams screen snapshot reviewed and regenerated,
+`tsc -b` clean. `claude plugin validate .` and `git diff --check` pass. Not
+done: no live press yet — see Next Step 0d.
+
+---
 
 ### 2026-08-27 — Session 12 (per-role config, merge renames, QA decomposition)
 

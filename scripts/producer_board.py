@@ -175,6 +175,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     next_actions.add_argument("issue", type=int, nargs="?")
 
+    gates = sub.add_parser(
+        "gates",
+        help="list only the boundaries a person must open, read-only; each "
+        "entry carries argv when a plugin command opens it",
+    )
+    gates.add_argument("issue", type=int, nargs="?")
+
     intake = sub.add_parser("intake", help="create and hand off a requirement")
     intake.add_argument("--title", required=True)
     body = intake.add_mutually_exclusive_group(required=True)
@@ -458,6 +465,9 @@ def main(
         elif args.command == "next-actions":
             _print(producer.next_actions(args.issue))
 
+        elif args.command == "gates":
+            _print(producer.human_gates(args.issue))
+
         elif args.command == "intake":
             result = producer.intake(args.title, _read_body(args))
             _print(result)
@@ -491,6 +501,7 @@ def main(
                 args.spec or "",
                 _acting_role(args, env),
                 reason=args.note,
+                origin=policy.human_origin(env),
             )
             _print(result)
             return 0 if result.get("ok") else 1
@@ -595,7 +606,8 @@ def main(
 
         elif args.command == "approve-exception":
             result = consumer.approve_exception(
-                args.issue, _acting_role(args, env)
+                args.issue, _acting_role(args, env),
+                origin=policy.human_origin(env),
             )
             _print(result)
             return 0 if result.get("ok") else 1

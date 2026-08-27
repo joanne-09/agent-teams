@@ -26,6 +26,15 @@ SPEC_COMMENT = (
                 "branch": "main"}) + "\n```"
 )
 
+def protected_acceptance_comment(head_sha: str = "a" * 40) -> str:
+    """A `protected_change` acceptance comment as the route evaluator writes it."""
+    payload = json.dumps({
+        "acceptance": "protected_change", "head_sha": head_sha,
+        "policy_version": "test", "reasons": ["protected file"],
+    })
+    return ACCEPTANCE_MARKER + "\n\n```json\n" + payload + "\n```"
+
+
 def manual_spec_comment(state="OPEN", commit="f" * 40):
     payload = {
         "card": 20,
@@ -97,6 +106,25 @@ class PromoteTests(unittest.TestCase):
         edits = gh.calls_matching("project", "item-edit")
         self.assertIn("STATUS_READY", edits[0])
         self.assertIn("ROLE_DEV", edits[1])
+
+    def test_the_approving_surface_reaches_the_card(self):
+        """A gate opened from somewhere other than a terminal says so.
+
+        The origin is a label on a decision policy has already made, so the
+        assertion that matters is that it lands in the durable comment rather
+        than only in the caller's return value.
+        """
+        team, gh = producer(FakeGh(items=AT_THE_GATE, comments=[SPEC_COMMENT]))
+        result = team.promote(20, origin="dashboard")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["origin"], "dashboard")
+        self.assertIn("approved from the dashboard", result["comment"])
+
+    def test_a_terminal_approval_is_left_unannotated(self):
+        team, _ = producer(FakeGh(items=AT_THE_GATE, comments=[SPEC_COMMENT]))
+        result = team.promote(20)
+        self.assertEqual(result["origin"], "terminal")
+        self.assertNotIn("approved from", result["comment"])
 
     def test_status_only_readiness_is_finalized_without_another_human_command(self):
         items = board_with((20, "Shaped requirement", "Ready", "human"))
@@ -577,6 +605,57 @@ class NextActionsTests(unittest.TestCase):
         self.assertEqual(readiness["field"], "Status")
         self.assertEqual(readiness["value"], "Ready")
         self.assertNotIn("command", readiness)
+
+    def test_every_gate_carries_argv_or_a_pull_request(self):
+        """The contract a person-facing surface reads.
+
+        A gate a plugin command opens must say so in one machine-readable
+        place; a gate GitHub opens must name the Pull Request instead. A gate
+        with neither is unopenable by anyone reading only this list, which is
+        the failure this pins.
+        """
+        items = board_with(
+            (20, "Ready decision", "Backlog", "human"),
+            (21, "QA exception", "In Review", "human"),
+        )
+        team, _ = producer(FakeGh(
+            items=items,
+            comments=[SPEC_COMMENT, protected_acceptance_comment()],
+        ))
+        gates = {g["number"]: g for g in team.next_actions()["human_gates"]}
+        self.assertEqual(gates[20]["argv"], ["promote", "20"])
+        self.assertEqual(gates[21]["argv"], ["approve-exception", "21"])
+        for gate in gates.values():
+            self.assertTrue(gate["instruction"])
+            self.assertTrue(gate.get("argv") or gate.get("pull_request"))
+
+    def test_human_gates_is_the_narrow_read_of_the_same_plan(self):
+        items = board_with(
+            (20, "Ready decision", "Backlog", "human"),
+            (21, "QA exception", "In Review", "human"),
+            (22, "Build", "Ready", "dev"),
+        )
+        team, _ = producer(FakeGh(
+            items=items,
+            comments=[SPEC_COMMENT, protected_acceptance_comment()],
+        ))
+        result = team.human_gates()
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["count"], 2)
+        # Both of these gates carry a command, so a button can open both.
+        self.assertEqual(result["actionable"], 2)
+        self.assertEqual([gate["number"] for gate in result["gates"]], [20, 21])
+        # It never leaks the coordinator's spawn plan for #22.
+        self.assertNotIn("actions", result)
+
+    def test_human_gates_scopes_to_one_card(self):
+        items = board_with(
+            (20, "Ready decision", "Backlog", "human"),
+            (23, "Other decision", "Backlog", "human"),
+        )
+        team, _ = producer(FakeGh(items=items, comments=[SPEC_COMMENT]))
+        result = team.human_gates(20)
+        self.assertEqual([gate["number"] for gate in result["gates"]], [20])
 
     def test_confirmed_eligible_merge_becomes_automatic_reconciliation(self):
         acceptance = ACCEPTANCE_MARKER + "\n\n```json\n" + json.dumps({

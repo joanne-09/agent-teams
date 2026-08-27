@@ -110,7 +110,7 @@ comments, Pull Request creation, or merge commands.
 
 `human_gates` contains the only work the coordinator may not perform:
 
-- `spec_merge`: `spec_merge_mode: manual` published the exact specification
+- `spec_merge`: `spec_pr_merge_mode: manual` published the exact specification
   head in a Pull Request. Ask the human to merge that Pull Request in GitHub.
   Never merge it or move the Card. On the next loop, a confirmed merge becomes
   an automatic `finalize-spec-merge` action and architect shaping resumes.
@@ -124,10 +124,16 @@ comments, Pull Request creation, or merge commands.
   command is `approve-exception N`, which validates the exact reviewed head,
   merges it, and reconciles the Card to `Done`.
 - `manual_merge`: deterministic acceptance found the exact head eligible, but
-  `merge_mode` assigns routine merge execution to the user. Present the
+  `code_pr_merge_mode` assigns routine merge execution to the user. Present the
   returned Pull Request and ask the human to merge it in GitHub. Never issue a
   merge command for this gate. On the next loop, a confirmed merge becomes an
   automatic `reconcile-done` action.
+
+Every gate carries `argv` when a plugin command opens it and `pull_request`
+when GitHub does. If the human is running the CCAM dashboard, say that the
+Agent Teams page lists these gates with a button; it changes where they act,
+never that they must. Whichever surface they use, you wait for the durable
+GitHub state to change -- never for them to tell you they are done.
 
 Keep other independent actions moving even while one Card waits at a human
 gate. Stop the overall loop only when there are no actions or monitors, leaving

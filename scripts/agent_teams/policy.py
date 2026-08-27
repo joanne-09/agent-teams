@@ -416,6 +416,37 @@ def agent_session(env: Mapping[str, str]) -> bool:
     return any(env.get(marker) for marker in AGENT_SESSION_MARKERS)
 
 
+#: Environment variable through which a non-agent human surface names itself.
+#: It is a *provenance label*, never an authority grant: the ``human`` refusal
+#: below still keys on :data:`AGENT_SESSION_MARKERS`, so setting this inside an
+#: agent session buys the caller nothing. What it earns is a durable trail that
+#: says which surface a person opened a gate from.
+HUMAN_ORIGIN_ENV = "AGENT_TEAMS_HUMAN_ORIGIN"
+
+#: Closed vocabulary. It is closed because the value reaches a GitHub comment;
+#: free text there would be an injection surface, and an unrecognised label is
+#: more likely a typo than a new surface.
+HUMAN_ORIGINS: tuple[str, ...] = ("terminal", "dashboard")
+
+
+def human_origin(env: Mapping[str, str]) -> str:
+    """Name the surface a human command was issued from, for the durable trail.
+
+    Absent the variable the answer is ``terminal`` -- the historical and still
+    the default way a person opens a gate. This never widens who may act as
+    ``human``; :func:`resolve_acting_role` alone decides that.
+    """
+    raw = (env.get(HUMAN_ORIGIN_ENV) or "").strip().lower()
+    if not raw:
+        return "terminal"
+    if raw not in HUMAN_ORIGINS:
+        raise ActionForbidden(
+            f"unknown human origin {raw!r} ({HUMAN_ORIGIN_ENV}); known surfaces: "
+            + ", ".join(HUMAN_ORIGINS)
+        )
+    return raw
+
+
 def resolve_acting_role(
     claimed: Role | None, env: Mapping[str, str], fallback: Role | None = None
 ) -> Role:
