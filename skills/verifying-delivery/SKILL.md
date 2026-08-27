@@ -165,9 +165,12 @@ the acceptance criteria tests what the product promised, and only the second
 one finds a promise that was never implemented at all. Running both halves
 yourself collapses that back into a single perspective and buys nothing.
 
-One exception: **if no browser worker was dispatched** — the carrier does not
-expose it, or this session cannot spawn — load `references/browser-pass.md`
-and run the pass yourself. Exactly one of the two happens per Card, never both.
+One exception: **if no browser worker was dispatched because the spawn attempt
+failed** — the Agent tool is missing from your toolset, or the Agent call
+itself returned an error — load `references/browser-pass.md`, run the pass
+yourself, and record the failed spawn in the verdict's `limitations`. Exactly
+one of the two happens per Card, never both — and "I judged dispatch
+unnecessary" is not one of the two.
 
 `accept` refuses a **pass** whose changed files match the configured
 `ui_paths` and which carries no `browser_evidence`, the same way it refuses a
@@ -213,10 +216,14 @@ You are the only seat that publishes a verdict. Everything below produces
 Card. Two passes agreeing raises confidence. Two passes disagreeing is a
 finding worth challenging, not a tie to break by majority.
 
-Correctness never depends on any of this being available. **A single careful
-pass through all eight dimensions, with the browser pass run yourself, is a
-complete and valid review.** Dispatch what the session supports; do the rest
-inline.
+Dispatching is not a judgment call: **if the Agent tool is in your toolset,
+attempt the spawns** — the three review passes, and the browser worker for a
+user-facing Card. Availability is discovered by attempting, never assumed away.
+Correctness still does not depend on any of this being available: when the
+Agent tool is absent or a spawn attempt errors, a single careful pass through
+all eight dimensions, with the browser pass run yourself, is a complete and
+valid review — record the failed or unavailable spawn in `limitations` so the
+verdict says who actually gathered its evidence.
 
 ### Three review passes, not eight
 

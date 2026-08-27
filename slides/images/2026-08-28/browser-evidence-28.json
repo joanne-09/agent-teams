@@ -1,0 +1,187 @@
+{
+  "tool": "playwright (chromium headless) 1.62.1",
+  "base_url": "http://localhost:8099/oil-map.html",
+  "head_sha": "5f8aac44785cd32d5de50afa5966683854646d4f",
+  "flows": [
+    {
+      "name": "f-county-click-no-query (AC3)",
+      "steps": [
+        "navigated, waited networkidle; map pane present=true",
+        "clicked 台中市 polygon (path index 6): {\"ok\":true}",
+        "panel heading: \"台中市\"; record count: 14; panel(200): 台中市\n中聯油脂股份有限公司\n2026-06-30\n\n中聯油脂股份有限公司供應之大豆沙拉油經檢出苯駢芘(Benzo[a]pyrene)含量超過食品中污染物質及毒素衛生標準法定上限，下游業者於2026年5月13日內部檢驗發現異常，中聯公司遲至2026年6月30日始向主管機關通報，衛生福利部食品藥物管理署於同日接獲通報後，隔日會同地方衛生局前往稽查，命業者停止相關產品製造及販售，並啟動產品流向追查、回",
+        "console errors: []"
+      ],
+      "result": "pass",
+      "screenshot": "evidence/f-county-click.png"
+    },
+    {
+      "name": "a-search-business-name-null-brand (AC4/AC5)",
+      "steps": [
+        "filled #search-input '中聯油脂' (this record has null brand)",
+        "heading: \"搜尋: 中聯油脂\"; record count: 1",
+        "panel(400): 搜尋: 中聯油脂\n中聯油脂股份有限公司\n2026-06-30\n\n中聯油脂股份有限公司供應之大豆沙拉油經檢出苯駢芘(Benzo[a]pyrene)含量超過食品中污染物質及毒素衛生標準法定上限，下游業者於2026年5月13日內部檢驗發現異常，中聯公司遲至2026年6月30日始向主管機關通報，衛生福利部食品藥物管理署於同日接獲通報後，隔日會同地方衛生局前往稽查，命業者停止相關產品製造及販售，並啟動產品流向追查、回收及下架作業。\n\n罰鍰: 未公開\n適用法規: 未公開\n油品: 大豆沙拉油 / 未公開 / 未公開",
+        "console errors: []"
+      ],
+      "result": "pass",
+      "screenshot": "evidence/a-search-biz.png"
+    },
+    {
+      "name": "b-search-oil-brand-county-independence (AC5)",
+      "steps": [
+        "clicked 台北市 (5 records): {\"ok\":true}; heading=\"台北市\" count=5",
+        "filled #search-input '福壽' (brand on 50 records across all 7 counties per dataset)",
+        "after query: heading=\"搜尋: 福壽\"; record count=50 (expect 50, not 5)",
+        "panel(300): 搜尋: 福壽\n新祥紀食品有限公司\n2026-07-02\n\n列於福壽實業股份有限公司問題油品下游業者清單（製表日期2026-07-02），曾購入受苯駢芘污染事件影響之油品，非違規處分對象。\n\n罰鍰: 未公開\n適用法規: 不適用（下游業者清單，非裁罰）\n油品: 沙拉油－塑桶 3L、沙拉油 18Ｌ / 福壽實業 / C1160426K、C2160426O\n勤穩貿易有限公司\n2026-07-02\n\n列於福壽實業股份有限公司問題油品下游業者清單（製表日期2026-07-02），曾購入受苯駢芘污染事件影響之油品，非違規處分對象。\n\n罰鍰: 未公開\n適用法規: 不適用（下游業者清單，非裁罰）\n油品: 沙拉油",
+        "console errors: []"
+      ],
+      "result": "pass",
+      "screenshot": "evidence/b-search-brand.png"
+    },
+    {
+      "name": "c-active-query-overrides-county-view (AC5)",
+      "steps": [
+        "clicked 新北市 (path 15): {\"ok\":true}; heading=\"新北市\" count=19",
+        "filled #search-input '中聯油脂' (should override county view)",
+        "after query: heading=\"搜尋: 中聯油脂\" count=1; panel(250): 搜尋: 中聯油脂\n中聯油脂股份有限公司\n2026-06-30\n\n中聯油脂股份有限公司供應之大豆沙拉油經檢出苯駢芘(Benzo[a]pyrene)含量超過食品中污染物質及毒素衛生標準法定上限，下游業者於2026年5月13日內部檢驗發現異常，中聯公司遲至2026年6月30日始向主管機關通報，衛生福利部食品藥物管理署於同日接獲通報後，隔日會同地方衛生局前往稽查，命業者停止相關產品製造及販售，並啟動產品流向追查、回收及下架作業。\n\n罰鍰: 未公開\n適用法規: 未公開\n油品: 大豆沙拉油 / 未公開 / ",
+        "console errors: []"
+      ],
+      "result": "pass",
+      "screenshot": "evidence/c-query-overrides.png"
+    },
+    {
+      "name": "d-clear-query-restores-county-view (AC5)",
+      "steps": [
+        "clicked 新北市: {\"ok\":true}; heading=\"新北市\" count=19",
+        "typed '中聯油脂' then cleared #search-input to empty",
+        "after clear: heading=\"新北市\" count=19; panel(250): 新北市\n菖駿企業社\n2026-07-02\n\n列於福壽實業股份有限公司問題油品下游業者清單（製表日期2026-07-02），曾購入受苯駢芘污染事件影響之油品，非違規處分對象。\n\n罰鍰: 未公開\n適用法規: 不適用（下游業者清單，非裁罰）\n油品: 沙拉油 18Ｌ / 福壽實業 / C2150426O\n津鼎有限公司\n2026-07-02\n\n列於福壽實業股份有限公司問題油品下游業者清單（製表日期2026-07-02），曾購入受苯駢芘污染事件影響之油品，非違規處分對象。\n\n罰鍰: 未公開\n適用法規: 不適",
+        "console errors: []"
+      ],
+      "result": "pass",
+      "screenshot": "evidence/d-clear-restores.png"
+    },
+    {
+      "name": "d2-clear-query-no-prior-county-default-placeholder (AC5)",
+      "steps": [
+        "loaded page (no county clicked)",
+        "typed '中聯油脂' then cleared #search-input",
+        "heading: \"\"; panel: \"Click a county to see its recorded violations.\"",
+        "console errors: []"
+      ],
+      "result": "pass",
+      "screenshot": "evidence/d2-clear-default.png"
+    },
+    {
+      "name": "e-non-matching-query-zero-state (AC5)",
+      "steps": [
+        "filled #search-input 'ZZZ_NOTHING_ZZZ'",
+        "heading: \"搜尋: ZZZ_NOTHING_ZZZ\"; record count: 0; panel: \"搜尋: ZZZ_NOTHING_ZZZ\n\nNo matching records\"",
+        "console errors: []"
+      ],
+      "result": "pass",
+      "screenshot": "evidence/e-no-match.png"
+    },
+    {
+      "name": "edge-reload-mid-query",
+      "steps": [
+        "filled '福壽' then reloaded",
+        "after reload: input=\"\"; panel(200): \"Click a county to see its recorded violations.\"",
+        "console errors: []"
+      ],
+      "result": "pass",
+      "screenshot": "evidence/edge-reload.png"
+    },
+    {
+      "name": "edge-narrow-viewport-400px (spec: desktop-only v1, check no crash)",
+      "steps": [
+        "set viewport 400x800",
+        "filled '福壽'",
+        "panel(150): \"搜尋: 福壽\n新祥紀食品有限公司\n2026-07-02\n\n列於福壽實業股份有限公司問題油品下游業者清單（製表日期2026-07-02），曾購入受苯駢芘污染事件影響之油品，非違規處分對象。\n\n罰鍰: 未公開\n適用法規: 不適用（下游業者清單，非裁罰）\n油品: 沙拉油－塑桶 3L、沙拉油 18Ｌ / 福\"",
+        "console errors: []"
+      ],
+      "result": "pass",
+      "screenshot": "evidence/edge-narrow.png"
+    },
+    {
+      "name": "edge-double-fill-rapid",
+      "steps": [
+        "rapid double fill '中聯' then '中聯油脂'",
+        "record count: 1; panel(200): \"搜尋: 中聯油脂\n中聯油脂股份有限公司\n2026-06-30\n\n中聯油脂股份有限公司供應之大豆沙拉油經檢出苯駢芘(Benzo[a]pyrene)含量超過食品中污染物質及毒素衛生標準法定上限，下游業者於2026年5月13日內部檢驗發現異常，中聯公司遲至2026年6月30日始向主管機關通報，衛生福利部食品藥物管理署於同日接獲通報後，隔日會同地方衛生局前往稽查，命業者停止相關產品製造及販售，並啟動產品流\"",
+        "console errors: []"
+      ],
+      "result": "pass",
+      "screenshot": "evidence/edge-double.png"
+    },
+    {
+      "name": "clean-load-console-check",
+      "steps": [
+        "fresh load, idle 1.5s",
+        "console errors: []",
+        "console warnings (first 5): []"
+      ],
+      "result": "pass",
+      "screenshot": "evidence/clean-load.png"
+    }
+  ],
+  "input_validation": [
+    {
+      "field": "#search-input",
+      "input": "empty (no text)",
+      "expected": "no error, default placeholder; no crash",
+      "actual": "panel(200): Click a county to see its recorded violations. | console errors: [] | script-tags-in-panel: 0",
+      "result": "pass"
+    },
+    {
+      "field": "#search-input",
+      "input": "whitespace-only (spaces+tab)",
+      "expected": "treated as empty -> placeholder (no match), no crash",
+      "actual": "panel(200): Click a county to see its recorded violations. | console errors: [] | script-tags-in-panel: 0",
+      "result": "pass"
+    },
+    {
+      "field": "#search-input",
+      "input": "over-long (3000 chars A)",
+      "expected": "no crash; no hang; handled gracefully",
+      "actual": "panel(200): 搜尋: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA | console errors: [] | script-tags-in-panel: 0",
+      "result": "pass"
+    },
+    {
+      "field": "#search-input",
+      "input": "injection <script>alert(1)</script>",
+      "expected": "no script execution, no alert; literal text / no-match",
+      "actual": "panel(200): 搜尋: <script>alert(1)</script>\n\nNo matching records | console errors: [] | script-tags-in-panel: 0",
+      "result": "pass"
+    },
+    {
+      "field": "#search-input",
+      "input": "SQL injection ; DROP TABLE x;--",
+      "expected": "no crash; literal substring -> no match",
+      "actual": "panel(200): 搜尋: '; DROP TABLE x;--\n\nNo matching records | console errors: [] | script-tags-in-panel: 0",
+      "result": "pass"
+    },
+    {
+      "field": "#search-input",
+      "input": "path traversal ../../etc/passwd",
+      "expected": "no crash; literal substring -> no match",
+      "actual": "panel(200): 搜尋: ../../etc/passwd\n\nNo matching records | console errors: [] | script-tags-in-panel: 0",
+      "result": "pass"
+    },
+    {
+      "field": "#search-input",
+      "input": "Unicode RTL override U+202E",
+      "expected": "no crash; literal search",
+      "actual": "panel(200): 搜尋: ‮test\n\nNo matching records | console errors: [] | script-tags-in-panel: 0",
+      "result": "pass"
+    },
+    {
+      "field": "#search-input",
+      "input": "normal valid: 福壽",
+      "expected": "matches 50 records (brand)",
+      "actual": "panel(200): 搜尋: 福壽\n新祥紀食品有限公司\n2026-07-02\n\n列於福壽實業股份有限公司問題油品下游業者清單（製表日期2026-07-02），曾購入受苯駢芘污染事件影響之油品，非違規處分對象。\n\n罰鍰: 未公開\n適用法規: 不適用（下游業者清單，非裁罰）\n油品: 沙拉油－塑桶 3L、沙拉油 18Ｌ / 福壽實業 / C1160426K、C2160426O\n勤穩貿易有限公司\n2026-07-02\n\n列於福 | console errors: [] | script-tags-in-panel: 0",
+      "result": "pass"
+    }
+  ],
+  "console": {
+    "errors": [],
+    "warnings": []
+  }
+}

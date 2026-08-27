@@ -144,9 +144,11 @@ come from reading the Developer's diff.
 
 ## Fallbacks, so none of this is load-bearing
 
-If the carrier will not spawn helpers, `qa-worker` does the work inline: eight
-dimensions itself, and the browser pass from
-`references/browser-pass.md`. Exactly one of "the browser worker ran it" or
+If the carrier will not spawn helpers — the Agent tool absent, or the spawn
+attempt itself erroring; discovered by attempting, not assumed (the 2026-08-28
+live run showed a model will otherwise talk itself into inline work) —
+`qa-worker` does the work inline: eight dimensions itself, and the browser pass
+from `references/browser-pass.md`. Exactly one of "the browser worker ran it" or
 "the reviewer ran it" happens per Card — never both, which is why the browser
 procedure lives in exactly one file and `verifying-delivery` holds only the
 exclusivity rule.

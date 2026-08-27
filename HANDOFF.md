@@ -4,7 +4,7 @@
 
 **Stack**: Claude Code plugin / Python 3.12 standard library / GitHub CLI / GitHub Projects v2 / Git / Slidev
 
-**Last updated**: 2026-08-27 — session 13: the human gates became a button. `gates` is a first-class read, every gate entry has one uniform shape, and the dashboard's Agent Teams page opens the two that a command opens
+**Last updated**: 2026-08-28 — session 14: the QA split ran live twice; the first run went inline, the spawn-first prose fix landed, and the second run fanned out fully (structure/behaviour/risk + spec-blind browser worker, one PASS verdict on Card #28)
 
 ---
 
@@ -343,6 +343,20 @@ decision accepts sibling plugins as runtime dependencies.
 ## Session Log
 
 <!-- newest entry at top -->
+
+### 2026-08-28 — Session 14 (Lee: the QA split ran live, went inline once, and the prose got fixed)
+
+Two live re-verification runs (glm-5.2 over Ollama, tmux demo session, Lee's tree).
+
+**Run 1, Card #26**: PASS at the merged head; the stuck 08-21 card is finally Done. The browser-evidence gate fired twice — first refusing the worker's attempt to publish without a browser pass, then refusing a malformed `browser_evidence.console` shape. **The fan-out did not happen**: no helper spawns, no deliberation, one agent inline.
+
+**Why (checked, not assumed)**: not the platform — a live probe showed a background-spawned qa-worker spawns `agent-teams:qa-browser-worker` fine, and current docs allow 3-layer nesting. The cause was our own text: `qa-worker.md`'s shared contract said "do not spawn another agent" two sections before the helpers section allowed it, and `verifying-delivery` called a single inline pass "a complete and valid review — dispatch what the session supports". glm resolved the contradiction conservatively.
+
+**The fix (this session, tests 462→535 still green, `plugin validate` OK)**: spawn-first wording in three places — `agents/qa-worker.md` (contract line now grants exactly the helpers; fallback requires an *attempted* spawn and records the failure mode in `limitations`), `skills/verifying-delivery/SKILL.md` (Reviewer-passes intro: "dispatching is not a judgment call"; 7b exception now triggers only on a failed attempt — the test-pinned "if no browser worker was dispatched" phrase kept), and the decision record's fallback paragraph.
+
+**Run 2, Card #28** (board manually reverted with raw `gh` + verdict/acceptance comments deleted — Done is terminal in policy, deliberate bypass, user-approved): **full fan-out** — structure/behaviour/risk + spec-blind browser worker under one qa seat, one PASS verdict. 43/43 tests, 11 flows + 8 garbage-input cases (XSS rendered as literal text, 0 script tags, clean console), security 10/10, mutation-confirmed test strength, and one genuine finding: the DOM wiring layer has no test that fails when it breaks (the risk pass deleted it; 43/43 stayed green) — spec-accepted, follow-up Card candidate.
+
+Deck: QA pages of `slides/2026-08-28-weekly.md` updated with the real evidence (new "The Split, Live" + "The First Run Ignored the Split" pages, real XSS case replacing the placeholder JSON, stale "nothing ran live" notes corrected); PNG-export checked. Dashboard again duplicated helper rows with shifting parents and left one stale "Working" — the known attribution cosmetic, now with a fresh reproduction.
 
 ### 2026-08-27 — Session 13 (the human gate stopped needing a terminal)
 

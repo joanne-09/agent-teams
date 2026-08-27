@@ -1,0 +1,6 @@
+
+  ⏺ main
+  ◯ qa-worker-28                  [role:qa] [board-card:#28] [expected:(In Review, q...     7m 12s · ↓ 72.2k tokens
+  ◯ general-purpose               Behaviour review pass                                     1m 49s · ↓ 56.5k tokens
+  ◯ general-purpose               Risk review pass                                          1m 41s · ↓ 59.3k tokens
+  ◯ agent-teams:qa-browser-work…  Browser pass for Card #28                                  1m 5s · ↓ 20.6k tokens
