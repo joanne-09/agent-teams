@@ -41,7 +41,7 @@ deterministic acceptance, configure required CI checks and pass those exact
 names through repeatable `--required-check`. In the default `automatic`
 implementation merge mode, unattended delivery also requires repository
 auto-merge and branch protection; `doctor` reports these missing
-preconditions. `merge_mode: manual` does
+preconditions. `code_pr_merge_mode: manual` does
 not require GitHub auto-merge.
 
 ## Daily operation
@@ -74,10 +74,10 @@ This command:
 
 The modes are:
 
-- `"spec_merge_mode": "direct"` (default): commit and push the current
+- `"spec_pr_merge_mode": "direct"` (default): commit and push the current
   branch, then continue shaping. The user only makes the later Card readiness
   edit.
-- `"spec_merge_mode": "manual"`: create a deterministic spec branch and Pull
+- `"spec_pr_merge_mode": "manual"`: create a deterministic spec branch and Pull
   Request, then stop. The user merges that Pull Request. The coordinator runs
   `finalize-spec-merge`, verifies the exact reviewed head and base, syncs the
   base branch, records the durable commit, and starts architect shaping again.
@@ -98,13 +98,13 @@ not respawn architecture for the parent.
 
 ### Optional human gate: specification merge
 
-This gate exists only with `"spec_merge_mode": "manual"`. After
+This gate exists only with `"spec_pr_merge_mode": "manual"`. After
 `publish-spec`, `next-actions` returns a `spec_merge` human gate containing
 the exact Pull Request. Merge it in GitHub; do not move the Card or run the
 finalizer yourself. The coordinator confirms the exact recorded head is merged,
 runs `finalize-spec-merge`, and resumes the architect.
 
-This setting is independent of `merge_mode`, which controls implementation
+This setting is independent of `code_pr_merge_mode`, which controls implementation
 Pull Requests after QA.
 
 ### Human gate 1: readiness
@@ -188,7 +188,7 @@ than silently merging without a CI baseline.
 
 ### Optional human gate: eligible manual merge
 
-Set `"merge_mode": "manual"` when the user wants to merge routine eligible
+Set `"code_pr_merge_mode": "manual"` when the user wants to merge routine eligible
 Pull Requests. After deterministic acceptance, `next-actions` returns a
 `manual_merge` human gate with the exact Pull Request. Merge it in GitHub; do
 not change the Card or run `reconcile-done` yourself. The coordinator confirms

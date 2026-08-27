@@ -57,7 +57,7 @@ dashboard saves a valid snapshot.
 
 Durable in-flight state remains authoritative across a config change. A manual
 specification PR already recorded on a Card must still be merged and finalized;
-changing `spec_merge_mode` does not retroactively bypass it. Existing claim
+changing `spec_pr_merge_mode` does not retroactively bypass it. Existing claim
 worktrees are resolved by their claim branch, so changing `workspace` affects
 new claims while an active claim resumes at its original checkout. Exact-head
 QA and merge evidence remains bound to the recorded head.
@@ -94,6 +94,18 @@ from generated files when it is empty, but an empty object is valid.
     "initial_backoff_seconds": 5.0,
     "backoff_multiplier": 2.0,
     "max_backoff_seconds": 60.0
+  },
+  "roles": {
+    "architect": {
+      "recovery": { "max_retries": 2 },
+      "spec_pr_merge_mode": "direct"
+    },
+    "dev": { "recovery": { "max_retries": 1 } },
+    "qa": { "recovery": { "max_retries": 3 } },
+    "merge_master": {
+      "code_pr_merge_mode": "automatic",
+      "code_pr_merge_method": "squash"
+    }
   },
   "workspace": "../.worktrees",
   "protected_paths": {
@@ -133,12 +145,17 @@ from generated files when it is empty, but an empty object is valid.
     "build",
     "test"
   ],
-  "spec_merge_mode": "direct",
-  "merge_mode": "automatic",
-  "merge_method": "squash",
+  "spec_pr_merge_mode": "direct",
+  "code_pr_merge_mode": "automatic",
+  "code_pr_merge_method": "squash",
+  "ui_paths": [],
   "claim_ttl_hours": 72
 }
 ```
+
+`roles` and `ui_paths` are omitted from generated files when they are empty,
+like `status_overrides`. Every role in `roles` is optional, and so is every
+field inside one: what a role does not restate, it inherits.
 
 ## Repository and Project
 
@@ -188,15 +205,24 @@ later entries; Issue number is the deterministic tie-breaker.
 
 ## Specification and implementation merges
 
-`spec_merge_mode` and `merge_mode` are independent:
+There are two Pull Requests in this system and they are governed separately.
+The **spec** Pull Request carries a product specification and is the
+architect's business. The **code** Pull Request carries an implementation and
+is closed by the merge executor after QA. Each setting names its Pull Request,
+so the pair can be told apart without reading this page:
 
-| Setting | Values | Default | Controls |
-|---|---|---|---|
-| `spec_merge_mode` | `direct`, `manual` | `direct` | How a product specification reaches the base branch. |
-| `merge_mode` | `automatic`, `manual` | `automatic` | Who merges an eligible implementation Pull Request after QA. |
-| `merge_method` | `squash`, `merge`, `rebase` | `squash` | Method used when agent-teams executes an implementation merge. |
+| Setting | Values | Default | Governs | Consumed by |
+|---|---|---|---|---|
+| `spec_pr_merge_mode` | `direct`, `manual` | `direct` | How a product specification reaches the base branch. | architect (`publish-spec`, and the planner's spec gate) |
+| `code_pr_merge_mode` | `automatic`, `manual` | `automatic` | Who merges an eligible implementation Pull Request after QA. | merge executor, inside `accept` |
+| `code_pr_merge_method` | `squash`, `merge`, `rebase` | `squash` | How agent-teams closes the code Pull Request when it issues the merge itself. | merge executor, inside `accept` and `approve-exception` |
 
-### `spec_merge_mode`
+These three were named `spec_merge_mode`, `merge_mode`, and `merge_method`
+before 2026-08-21. The old names still load, so an existing repository keeps
+working untouched; they are dropped the first time agent-teams writes the file.
+See [Renamed settings](#renamed-settings).
+
+### `spec_pr_merge_mode`
 
 - `direct`: `publish-spec` commits and pushes only the requested
   `docs/**/*.md` file to the current branch. Architect shaping continues.
@@ -206,7 +232,7 @@ later entries; Issue number is the deterministic tie-breaker.
   the exact head and base, runs `finalize-spec-merge`, records the durable
   base-branch commit, and resumes architect shaping.
 
-### `merge_mode`
+### `code_pr_merge_mode`
 
 - `automatic`: an exact implementation head that passes deterministic
   acceptance is armed for GitHub auto-merge. The coordinator confirms the
@@ -215,9 +241,10 @@ later entries; Issue number is the deterministic tie-breaker.
   The user merges the linked implementation PR; the coordinator confirms it
   and still performs `Done` reconciliation.
 
-`merge_method` does not control a merge performed manually in the GitHub UI,
-including a manual specification PR. It applies when agent-teams issues the
-merge command, including automated eligible merges and approved QA exceptions.
+`code_pr_merge_method` does not control a merge performed manually in the
+GitHub UI, including a manual specification PR. It applies when agent-teams
+issues the merge command, including automated eligible merges and approved QA
+exceptions.
 
 Common combinations:
 
@@ -228,6 +255,59 @@ Common combinations:
 | `direct` | `manual` | Change the Card to `Ready`, then merge the eligible implementation PR. |
 | `manual` | `manual` | Merge the spec PR, change the Card to `Ready`, then merge the eligible implementation PR. |
 
+## Per-role overrides
+
+Every setting above is a **default**. The optional `roles` block lets one role
+depart from it, because architect, dev, QA, and the merge executor fail in
+different ways: an architect stalled on a slow specification read and a QA
+worker bounced by a rate limit do not want the same number of attempts.
+
+| Setting | Type | Default | Meaning |
+|---|---|---|---|
+| `roles` | object keyed by seat | `{}` | Per-role overrides. Absent seats, and absent fields within a seat, inherit the top-level default. |
+
+Valid seats and what each accepts:
+
+| Seat | Accepts | Why |
+|---|---|---|
+| `analyst` | `recovery` | Clarification work; no merge authority. |
+| `architect` | `recovery`, `spec_pr_merge_mode` | Publishes specifications. |
+| `dev` | `recovery` | Implements; never merges. |
+| `qa` | `recovery` | Reviews and runs `accept`; does not choose the route. |
+| `lead` | `recovery` | Coordinates, dispatches, reconciles. |
+| `merge_master` | `recovery`, `code_pr_merge_mode`, `code_pr_merge_method` | The merge executor. Not a board `Role`: it is the function inside `accept` and `approve-exception` that closes a code Pull Request, tunable on its own because the team lead asked for merge behaviour to be separable from whoever's process runs it. |
+
+Two rules make this checkable rather than decorative:
+
+- **A field under a seat that does not consume it is a validation error**, not
+  a silent no-op. `roles.dev.spec_pr_merge_mode` refuses and names `architect`
+  as the owner. The whole reason this block exists is that you could not tell
+  which agent read which field, and a key that parses but does nothing is the
+  worst version of that.
+- **Overrides apply field by field.** A role that restates only `max_retries`
+  keeps the backoff it did not mention. Values are resolved on every read, so
+  editing a top-level default in the dashboard still reaches the roles that
+  inherit it.
+
+```json
+{
+  "recovery": { "max_retries": 1, "initial_backoff_seconds": 5.0 },
+  "roles": {
+    "qa": { "recovery": { "max_retries": 3 } }
+  }
+}
+```
+
+QA now retries three times at 5s, 10s, 20s. Every other seat retries once at
+5s. Nothing else changed.
+
+`next-actions` reports the whole surface as
+`recovery_policy: {default, roles}`, listing every seat even where it only
+inherits — an absent seat would leave the coordinator guessing between "same
+as default" and "not applicable". Each returned action additionally carries
+its own resolved `recovery`, so the retry budget travels with the work rather
+than having to be matched back to a seat by the reader.
+
 ## Required checks and protected paths
 
 | Setting | Type | Default | Meaning |
@@ -237,8 +317,8 @@ Common combinations:
 
 An empty `required_checks` fails closed: no delivery becomes routinely
 eligible, even with a passing QA verdict. Configure the same check names in
-branch protection. `merge_mode: automatic` additionally requires repository
-auto-merge; `doctor` reports missing acceptance preconditions.
+branch protection. `code_pr_merge_mode: automatic` additionally requires
+repository auto-merge; `doctor` reports missing acceptance preconditions.
 
 Repository `protected_paths` extend the built-in policy:
 
@@ -262,6 +342,46 @@ Example:
 ```
 
 The default security patterns still apply in this example.
+
+## User-facing paths and browser evidence
+
+| Setting | Type | Default | Meaning |
+|---|---|---|---|
+| `ui_paths` | string array | `[]` | Extra globs marking user-facing files. Merged with the built-in list; the defaults always apply. |
+
+A QA `pass` whose changed files match any of these is refused unless the
+verdict carries a `browser_evidence` block. This exists because QA was found
+in the 2026-08-21 review to be mostly re-running the Developer's own unit
+tests — work the Developer had already done — while the one bug the unit tests
+missed (a blank page from an ES-module version mismatch) was caught by a
+screenshot taken incidentally. Prose in a skill cannot make that check
+standard; a validated field can.
+
+Built-in patterns:
+
+```text
+**/*.html   **/*.htm    **/*.css   **/*.scss  **/*.sass  **/*.less
+**/*.jsx    **/*.tsx    **/*.vue   **/*.svelte
+**/components/**        **/pages/**           **/views/**
+```
+
+The block a pass must carry, and what each part must contain:
+
+| Key | Required | Meaning |
+|---|---|---|
+| `flows` | at least one | Named journeys actually driven through the interface. Each needs a `name` and at least **two** `steps` — opening a page and screenshotting it is the incidental check this rule replaces. |
+| `input_validation` | at least one | A field fed invalid or garbage input. Each case needs `field`, `input`, `expected`, and `actual`. |
+| `console` | yes | Console state, including an `errors` list. An empty list is a finding; an absent one is a gap. |
+| `tool`, `base_url`, `screenshot` | recommended | What drove the browser, against what, and where the image landed. |
+
+Deliveries touching no user-facing path are unaffected: a mandatory browser
+section on a parser change would be theatre. Only a `pass` carries the burden —
+a `fail` already stops the delivery, and demanding full evidence to report a
+defect would push a reviewer towards a pass.
+
+The full document shape is in
+`skills/verifying-delivery/references/verdict-schema.md`; the procedure for
+producing it is `references/browser-pass.md`.
 
 ## Monitoring, pagination, and recovery
 
@@ -330,8 +450,29 @@ or use a model name with an explicit context suffix such as
 `glm-5.2:cloud[1m]`. Verified 2026-08-21: with the defaults 8 of the 10
 `agent-teams` skill descriptions were omitted from the listing.
 
+## Renamed settings
+
+Three merge settings were renamed on 2026-08-21. The old names could not be
+told apart by reading them: neither `spec_merge_mode` nor `merge_mode` said
+which Pull Request it governed, and `merge_method` read as though it belonged
+to whichever of the two you had looked at last.
+
+| Old name | Current name |
+|---|---|
+| `spec_merge_mode` | `spec_pr_merge_mode` |
+| `merge_mode` | `code_pr_merge_mode` |
+| `merge_method` | `code_pr_merge_method` |
+
+Old names still load, with the same values and the same meaning, so no
+consuming repository breaks on upgrade. They are dropped the first time
+agent-teams writes the file — a repository migrates by letting it save once.
+A file carrying both names for one setting takes the current one, which is
+what a dashboard mid-migration emits. Validation always reports the current
+name, so an error teaches the name to migrate to rather than echoing the dead
+one. The same aliases are accepted inside a `roles` block.
+
 ## Legacy setting
 
 Older files may contain `spec_completion`. It is accepted for compatibility,
-ignored, and omitted when configuration is written. Use `spec_merge_mode`
+ignored, and omitted when configuration is written. Use `spec_pr_merge_mode`
 instead.

@@ -33,9 +33,9 @@ specification Pull Requests, human-carried kickoff prompts, or manual routine
 merge reconciliation.
 
 1. Product specifications are written below `docs/` in the current checkout
-   and published by `publish-spec`. The default `spec_merge_mode=direct`
+   and published by `publish-spec`. The default `spec_pr_merge_mode=direct`
    commits and pushes only that file to the current branch. With
-   `spec_merge_mode=manual`, the command creates a deterministic spec branch
+   `spec_pr_merge_mode=manual`, the command creates a deterministic spec branch
    and Pull Request; the user merges it, then the controller verifies the exact
    head, synchronizes the base branch, and records its durable commit. Legacy
    `spec_completion` keys are accepted and ignored.
@@ -46,11 +46,11 @@ merge reconciliation.
 3. Specification authors are serialized because they share the current checkout.
    Independent implementation and QA workers may run in parallel only when the
    planner admits them under the configured WIP limit.
-4. In the default `spec_merge_mode=direct` and `merge_mode=automatic`
+4. In the default `spec_pr_merge_mode=direct` and `code_pr_merge_mode=automatic`
    combination, the only human gates are moving a specified Card Status to
    `Ready` and protected or genuinely ambiguous QA exceptions
-   (`approve-exception N`). `spec_merge_mode=manual` adds a `spec_merge`
-   gate before shaping continues. `merge_mode=manual` independently adds a
+   (`approve-exception N`). `spec_pr_merge_mode=manual` adds a `spec_merge`
+   gate before shaping continues. `code_pr_merge_mode=manual` independently adds a
    `manual_merge` gate for an eligible implementation Pull Request. Readiness
    handoff, routine QA defects, and confirmed-merge reconciliation remain
    automatic controller paths.
@@ -976,10 +976,10 @@ flowchart LR
 
 The current session coordinates every bounded worker and reconstructs progress
 from GitHub after each stage. The diagram depicts the default
-`spec_merge_mode=direct` route, where readiness is the sole routine human
+`spec_pr_merge_mode=direct` route, where readiness is the sole routine human
 gate; protected or ambiguous QA review is exceptional. With
-`spec_merge_mode=manual`, a user merge gate sits between Architect and Spec,
-after which architect shaping resumes. With `merge_mode=manual`,
+`spec_pr_merge_mode=manual`, a user merge gate sits between Architect and Spec,
+after which architect shaping resumes. With `code_pr_merge_mode=manual`,
 the eligible auto-merge node is replaced by an explicit user merge gate; both
 routes converge on automatic confirmed-merge reconciliation.
 
@@ -1616,7 +1616,7 @@ implemented together.
 | # | Question | Decision | Rationale |
 |---|---|---|---|
 | 1 | Is `architect -> analyst` a legal handoff? | **Yes.** | §4.3 and the adaptation dossier's authority matrix both grant it. An architect that cannot return an under-specified Card must either guess at the requirement or block it, and both are worse than asking. The pre-package implementation omitted this edge; that omission was a defect, not a policy. |
-| 2 | How does a product specification become durable? | **Directly by default, optionally through a user-merged PR.** `spec_merge_mode=direct` commits and pushes only the requested `docs/*.md` path. `spec_merge_mode=manual` creates a deterministic spec PR; after the user merges its exact head, the controller syncs the base. Both routes record the base-branch commit on the Card. | Direct mode keeps the normal workflow to one later Card edit, while manual mode offers explicit review. Neither lets development build against an unmerged or subsequently changed document. `spec_completion` is legacy input and has no effect. |
+| 2 | How does a product specification become durable? | **Directly by default, optionally through a user-merged PR.** `spec_pr_merge_mode=direct` commits and pushes only the requested `docs/*.md` path. `spec_pr_merge_mode=manual` creates a deterministic spec PR; after the user merges its exact head, the controller syncs the base. Both routes record the base-branch commit on the Card. | Direct mode keeps the normal workflow to one later Card edit, while manual mode offers explicit review. Neither lets development build against an unmerged or subsequently changed document. `spec_completion` is legacy input and has no effect. |
 | 3 | Does the intake Card become the implementation Card, or does decomposition create new ones? | **Both, by shape.** A genuine single-Card change is promoted in place. A specification with several independently shippable slices creates flat implementation Cards, and the intake Card keeps a summary comment. | Reusing the intake Card for a multi-slice specification would force one Consumer session to deliver several Pull Requests, breaking the one-Card-one-delivery invariant. Creating a second Card for a genuinely single change adds a hop that carries no information. |
 | 4 | Which seat authority governs a generic Status transition? | The **destination** decides. Moving to `Ready` is checked as `promote_to_ready`; moving to `Done` as `reconcile_done`; every other move as `transition_card`. | Without this, a generic `transition` is a hole through which any seat takes an action its own policy row forbids — an analyst could reach `Ready` despite `promote_to_ready` refusing that seat. Keying the check to the destination keeps one rule in one place. |
 | 5 | Does that destination rule apply to Card *creation* as well as movement? | **Yes, on both axes.** Creating a Card writes a whole `(Status, Role)` routing state, so `create_card` asks the destination Status's action question and — when the new Card is owned by a seat other than the creator — the destination Role's handoff question. Keeping a Card one creates is not a handoff. | Decision 4 was enforced only where a Card *moved*. Creation reached the same states by a different door: an analyst refused `promote_to_ready` could create a Card already `Ready`, and one refused the `analyst -> dev` edge of §4.3 could create one already sitting in the development lane. A rule that governs only one of the two ways to reach a state is not a rule. |
@@ -1651,7 +1651,7 @@ state. A companion action `request_automated_merge` exists in the policy table
 refused to **every** seat, including `human`, so that "no seat may request a
 merge" is an assertion the test suite makes rather than an absence nobody
 notices going missing.
-With `merge_mode=manual`, the same deterministic `eligible` result exposes
+With `code_pr_merge_mode=manual`, the same deterministic `eligible` result exposes
 the accepted exact head to the user and the controller issues no merge command.
 This does not grant merge authority to any agent seat.
 
