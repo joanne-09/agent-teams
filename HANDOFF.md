@@ -4,7 +4,7 @@
 
 **Stack**: Claude Code plugin / Python 3.12 standard library / GitHub CLI / GitHub Projects v2 / Git / Slidev
 
-**Last updated**: 2026-08-27 — session 13: the human gates became a button. `gates` is a first-class read, every gate entry has one uniform shape, and the dashboard's Agent Teams page opens the two that a command opens
+**Last updated**: 2026-08-28 — session 14: sessions 12 and 13 are committed in both repositories, the 08-28 deck and a Chinese Part 1 speaking script are written, and the gap between this QA and a real QA organisation is now recorded rather than assumed
 
 ---
 
@@ -204,6 +204,32 @@ auto-merge and protected QA work end to end.
   the browser worker stays blind to the diff in practice, or that Playwright
   drives the delivered app from a detached worktree. First real test is the new
   dataset run.
+- **QA produces evidence, not test assets** (`skills/verifying-delivery/references/browser-pass.md`,
+  the worktree and publish sections) — the browser pass runs in a detached
+  worktree that is removed when it finishes, and its evidence is bound to one
+  commit: *"a new push invalidates all of it."* Nothing is persisted, so every
+  Card re-derives its flows from the specification and no suite ever
+  accumulates. What that leaves uncovered, none of it currently owned by
+  anyone: **cross-Card regression** (nothing re-checks #26 when #27 lands — it
+  rests entirely on the dev's own unit tests), a **defect record** with
+  severity and an escape-rate metric, a **browser/OS matrix**, **test-data and
+  environment management**, and a **release-level gate** (we gate per-PR).
+  Defensible at the current scope — one Card, one PR, walking-skeleton apps —
+  and load-bearing the moment Cards accumulate on one product.
+- **The coverage gate the 2026-08-21 review asked for was not built** — the
+  team lead described QA checking a coverage percentage against a threshold
+  before accepting. `test_strength` instead takes the *stronger* position that
+  line coverage is not behavioural evidence at all (`docs/RUNBOOK.md` test-strength
+  note; `test_line_coverage_alone_is_not_test_strength`). That is a defensible
+  substitution, but it is a substitution rather than a completion, and it has
+  never been put to the team lead as one.
+- **Half of QA is still a second code review** (`agents/qa-worker.md`) — the
+  three `structure`/`behaviour`/`risk` passes read the Developer's diff, which
+  in most organisations is dev peer review, not QA. The 08-21 complaint that
+  "QA repeats Dev's work" is answered by the browser worker (axis A), not by
+  these; the decision record already says axis B is the smaller half. Related:
+  `qa-worker` runs `accept`, and real QA does not merge — `merge_master` makes
+  the merge behaviour separable but does not move the trigger off the QA seat.
 - ~~**Nested QA helpers may re-break dashboard attribution**~~ (todo item 8) —
   checked 2026-08-27. The 08-21 `SubagentStop` fix **holds at depth 3**
   (coordinator → `qa-worker` → typed helper); a new regression test in the
@@ -237,6 +263,17 @@ auto-merge and protected QA work end to end.
 - **Mutation-testing infrastructure** — decide whether to add a tool that can verify QA falsification claims instead of only validating their structure.
 - **Parent Card closure** — decide whether and when a decomposed parent becomes Done after all children ship; live Card #18 is now the concrete case (#19/#20 Done, #21 held, parent still `(Backlog, architect)`).
 - **Demo scope and audience** — decide whether the next deck update targets the requested internal colleague-sharing package only or also prepares for the broader meeting.
+- **Whether QA accumulates test assets, or stays a per-PR reviewer** — options:
+  **(A)** the browser worker commits its flows as Playwright specs into the
+  consuming repository and every later Card runs the accumulated suite at its
+  head, which buys real cross-Card regression cheaply; **(B)** leave QA
+  stateless and let the dev's unit tests carry regression, as today. (A) is not
+  a small change: `qa-browser-worker` currently **publishes nothing** by design,
+  and letting it write to the repository grants it an authority the seat was
+  deliberately denied — the suite would more likely have to be owned by dev, or
+  committed by `qa-worker` under the existing verdict authority. Need: one live
+  run on the new dataset to see whether the derived flows are stable enough to
+  be worth keeping at all, plus the team lead's answer on scope (Next Step 0e).
 
 Settled this session: workflow skills remain locally adapted and attributed
 rather than runtime dependencies; the worker preserves dynamic loading by
@@ -248,6 +285,7 @@ deterministic validation and Role handoff.
 
 ## Hard-won Discoveries
 
+- **"Independent" and "accumulating" are different QA properties, and only the first was bought.** The 2026-08-27 decomposition correctly read the 08-21 complaint as being about *independence of evidence*, and the blind browser worker answers it. What went unexamined is that a real QA organisation's other defining property is **memory** — a test-case library and a regression suite that outlive any one delivery. Ours re-derives its flows from the specification every time and deletes its worktree, so it can never catch a regression it did not personally cause. Worth recording because the asymmetry is the opposite of the effort spent: axis A was the expensive work, and the missing axis is cheap (persist the flows). Do not let "QA was rebuilt" read as "QA is complete".
 - **Subagent skills frontmatter is eager, not lazy.** Listing six skills in agent-teams-worker injected all six complete bodies at startup. Removing that list and retaining the Skill tool preserves on-demand loading; next-actions must name the one qualified skill explicitly.
 - **A mixed intake skill creates routing risk.** New-requirement intake and returned-Card clarification have different mutation boundaries. Extracting clarifying-card prevents a returned Card from accidentally running intake and creating a duplicate Issue.
 - **Reuse and architecture are different layers.** board-superpowers, superpowers, and gstack provide strong engineering procedures. Agent-teams should reuse those ideas in focused, attributed skills while owning only the Card routing, Ready gate, durable claim, exact-head acceptance, and automation overlay.
@@ -274,13 +312,30 @@ No local implementation blocker.
 
 ## Current State
 
-mvp/producer-from-scratch, **uncommitted session-12 and session-13 work** on
-top of the 08-21 commit (Lee's side), itself on 980a93c (Joanne's config
-externalization + recovery) and 3f82792 (08-21 slides). Full suite 535/535;
-`claude plugin validate .` passes; `git diff --check` clean. The dashboard
-side is uncommitted on `feat/plugin-scope-listing`: server 1047/1047,
-client 334/334, `tsc -b` clean. Nothing committed or pushed in either
-repository — that still requires explicit user instruction.
+**Both repositories are committed and clean.** The session-12 and session-13
+work that the previous handoff described as uncommitted has landed.
+
+- Plugin, `mvp/producer-from-scratch`, working tree clean at `cb5c52f`:
+  `9cc1983` (QA rebuild + per-role config), `decb04b` / `b86c387` (docs),
+  `c847b64` (08-28 deck Part 1), `cb5c52f` (promote workflow), all on top of
+  the 08-21 commit `225f081`.
+- Dashboard, `feat/plugin-scope-listing`, working tree clean at `d5b225e`
+  (`8e09e4c` config selection fix, then the gate button) on top of `729871f`.
+
+Test figures are as recorded at the end of session 13 and were **not re-run
+this session**: plugin 535/535, dashboard server 1047/1047, client 334/334.
+Pushing is still not done and still requires explicit user instruction.
+
+The 08-28 deck (`slides/2026-08-28-weekly.md`) is written: Part 1 is this
+week's work, Part 2 is the 08-21 live run kept as the reference demo. A
+Chinese speaking script for Part 1 lives **outside this repository** at
+`../2026-08-28-part1-transcript-zh.md`, alongside `../feedback_and_todo.md`
+and `../transcript_clean.md` — the parent folder is not a git repository, so
+none of those three are version-controlled.
+
+Nothing this week has run live. That caveat is stated on the deck's Part 1
+chapter note and in the script's opening, and it is the single most important
+thing not to lose when the material is reused.
 
 **Session 12 touches Joanne's config work directly.** The externalized config
 grew a `roles` block and lost three key names to clearer ones (old names still
@@ -311,16 +366,25 @@ touch your files):**
    the last Checkpoint that passed wherever they get stuck; that note is
    the defect report. Part 7 (dashboard) especially needs correcting from
    a real setup.
-0c. **Commit the dashboard changes** — `../agent-teams-dashboard` has
-   uncommitted work on `feat/plugin-scope-listing` (config descriptor, the
-   inheritance-aware form, the depth-3 regression test, and now the human-gate
-   route, panel, and its 12 tests). Left uncommitted at the user's
-   instruction, same as this repository.
+0c. ~~**Commit the dashboard changes**~~ — done. `../agent-teams-dashboard` is
+   clean on `feat/plugin-scope-listing` at `d5b225e` (config selection fix
+   `8e09e4c`, then the gate button). This repository is likewise clean; see
+   Current State.
 0d. **Press the gate button once against the live board** (session 13). The
    readiness route is the one to try: start the dashboard, open the Agent
    Teams page against `agent-teams-test`, and approve the Card held at the
    gate. Card #21 is still deliberately parked there from session 9, which
    makes it the obvious subject — decide first whether to spend it.
+0e. **Put the QA scope question to the team lead before building any more QA.**
+   He described real QA as a coverage gate plus integration/load planning
+   derived from non-functional requirements. We built *independence* instead,
+   substituted a stronger test-strength rule for the coverage gate, and left
+   the accumulating half (regression suite, cross-Card checks, defect record)
+   unbuilt — see the three new Known Issues entries. Ask him directly whether
+   that half is in scope for this project or out of it. His answer settles the
+   Open Decision "Whether QA accumulates test assets"; **do not start the
+   Playwright-persistence work before it**, because option (A) there grants the
+   browser seat a write authority it was deliberately denied.
 
 1. ~~Lazy-loading runtime evidence~~ — done live 08-12 (see session 9); optionally archive the worker transcripts as durable evidence.
 2. Tighten Producer.next_actions so a Backlog human Card is shown as a readiness gate only when check_spec_gate confirms the recorded exact commit is still current; add the focused stale-record test.
@@ -343,6 +407,49 @@ decision accepts sibling plugins as runtime dependencies.
 ## Session Log
 
 <!-- newest entry at top -->
+
+### 2026-08-28 — Session 14 (the deck's script, and what this QA is not)
+
+No code changed. Both repositories were found already committed and clean —
+the session-12/13 work the last handoff called uncommitted is now `9cc1983`
+through `cb5c52f` here and `d5b225e` on the dashboard. Test suites were not
+re-run; the figures in Test Status are session 13's.
+
+Wrote a Chinese speaking script for Part 1 of `slides/2026-08-28-weekly.md`,
+outside this repo at `../2026-08-28-part1-transcript-zh.md`: per-slide spoken
+text, a separate "if asked" layer carrying the detail the slides deliberately
+omit, the 08-21 nine-item ledger as an appendix, and the "none of this has run
+live" caveat placed at both the open and the close.
+
+**The session's real output is a correction to how the QA rebuild is being
+described.** Asked whether a real company's QA team does what ours does, the
+honest answer is no — ours is roughly half of it. The 2026-08-27 decomposition
+correctly identified *independence of evidence* as the thing 08-21 was
+complaining about, and the blind browser worker genuinely delivers it. What
+nobody examined is the other property that defines a real QA organisation:
+**memory**. `browser-pass.md` removes its worktree when it finishes and binds
+its evidence to one commit, so every Card re-derives its flows from the
+specification and no suite ever accumulates. The consequence is that nothing
+re-checks Card #26 when #27 lands — cross-Card regression rests entirely on
+the dev's own unit tests. Also unbuilt: a defect record with severity, a
+browser matrix, test-environment management, a release-level gate. And two
+things point the other way: three of the QA passes still read the Developer's
+diff, which is dev peer review in most organisations, and `qa-worker` runs
+`accept`, which real QA does not do.
+
+Separately, the coverage gate the team lead explicitly asked for was never
+built; `test_strength` takes the stronger line that coverage is not
+behavioural evidence at all. That is defensible, but it is a substitution and
+he has not been told it was made.
+
+All of the above is now in Known Issues, one new Open Decision, and a
+Hard-won Discovery. **Next Step 0e is to put the scope question to him before
+building more QA** — the obvious fix (persist the browser flows as committed
+Playwright specs, turning per-PR evidence into an accumulating asset) is cheap
+but grants `qa-browser-worker` a write authority it was deliberately denied,
+so it is a design decision and not a chore.
+
+---
 
 ### 2026-08-27 — Session 13 (the human gate stopped needing a terminal)
 
