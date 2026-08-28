@@ -4,7 +4,11 @@
 
 **Stack**: Claude Code plugin / Python 3.12 standard library / GitHub CLI / GitHub Projects v2 / Git / Slidev
 
+<<<<<<< HEAD
 **Last updated**: 2026-08-28 — session 14: sessions 12 and 13 are committed in both repositories, the 08-28 deck and a Chinese Part 1 speaking script are written, and the gap between this QA and a real QA organisation is now recorded rather than assumed
+=======
+**Last updated**: 2026-08-28 — session 14: the QA split ran live twice; the first run went inline, the spawn-first prose fix landed, and the second run fanned out fully (structure/behaviour/risk + spec-blind browser worker, one PASS verdict on Card #28)
+>>>>>>> origin/mvp/producer-from-scratch
 
 ---
 
@@ -408,7 +412,7 @@ decision accepts sibling plugins as runtime dependencies.
 
 <!-- newest entry at top -->
 
-### 2026-08-28 — Session 14 (the deck's script, and what this QA is not)
+### 2026-08-29 — Session 15 (the deck's script, and what this QA is not)
 
 No code changed. Both repositories were found already committed and clean —
 the session-12/13 work the last handoff called uncommitted is now `9cc1983`
@@ -449,7 +453,21 @@ Playwright specs, turning per-PR evidence into an accumulating asset) is cheap
 but grants `qa-browser-worker` a write authority it was deliberately denied,
 so it is a design decision and not a chore.
 
----
+### 2026-08-28 — Session 14 (Lee: the QA split ran live, went inline once, and the prose got fixed)
+
+Two live re-verification runs (glm-5.2 over Ollama, tmux demo session, Lee's tree).
+
+**Run 1, Card #26**: PASS at the merged head; the stuck 08-21 card is finally Done. The browser-evidence gate fired twice — first refusing the worker's attempt to publish without a browser pass, then refusing a malformed `browser_evidence.console` shape. **The fan-out did not happen**: no helper spawns, no deliberation, one agent inline.
+
+**Why (checked, not assumed)**: not the platform — a live probe showed a background-spawned qa-worker spawns `agent-teams:qa-browser-worker` fine, and current docs allow 3-layer nesting. The cause was our own text: `qa-worker.md`'s shared contract said "do not spawn another agent" two sections before the helpers section allowed it, and `verifying-delivery` called a single inline pass "a complete and valid review — dispatch what the session supports". glm resolved the contradiction conservatively.
+
+**The fix (this session, tests 462→535 still green, `plugin validate` OK)**: spawn-first wording in three places — `agents/qa-worker.md` (contract line now grants exactly the helpers; fallback requires an *attempted* spawn and records the failure mode in `limitations`), `skills/verifying-delivery/SKILL.md` (Reviewer-passes intro: "dispatching is not a judgment call"; 7b exception now triggers only on a failed attempt — the test-pinned "if no browser worker was dispatched" phrase kept), and the decision record's fallback paragraph.
+
+**Run 2, Card #28** (board manually reverted with raw `gh` + verdict/acceptance comments deleted — Done is terminal in policy, deliberate bypass, user-approved): **full fan-out** — structure/behaviour/risk + spec-blind browser worker under one qa seat, one PASS verdict. 43/43 tests, 11 flows + 8 garbage-input cases (XSS rendered as literal text, 0 script tags, clean console), security 10/10, mutation-confirmed test strength, and one genuine finding: the DOM wiring layer has no test that fails when it breaks (the risk pass deleted it; 43/43 stayed green) — spec-accepted, follow-up Card candidate.
+
+Deck: QA pages of `slides/2026-08-28-weekly.md` updated with the real evidence (new "The Split, Live" + "What Each Reviewer Did" pages — the latter replaced a short-lived "First Run Ignored the Split" page at the user's request — real XSS case replacing the placeholder JSON, stale "nothing ran live" notes corrected); PNG-export checked. Dashboard again duplicated helper rows with shifting parents and left one stale "Working" — root-caused and fixed the same night in the dashboard fork (`a37ae9d`): a named teammate's meta.json records its instance name as agentType, which minted fake per-card subagent types in the Workflows views and broke the transcript-to-live-row match.
+
+**Late addition — the gate button was pressed for real.** Joanne's dashboard half landed on Windmill10/claude-code-agent-monitor (`d5b225e`, with `8e09e4c` fixing the config-rename drift; server suite green after both). To press it against a genuine gate: intake → spec ran for the QA-recommended follow-up (**Card #32**, failing-on-breakage tests for the search DOM-wiring layer; spec `docs/specs/2026-08-28-card-32-search-wiring-tests.md`, commit 734d2a7 — note: it commits to a `_dom`-seam refactor of oil-map.js, so acceptance must re-confirm the browser pass). The Human-gates panel listed the readiness gate; the **Approve button** promoted it — the board flipped to `(Ready, dev)` with no terminal involved — and the run stopped there deliberately: #32 sits at `(Ready, dev)` as the natural live-demo starter. Deck gained two pages ("The Human Gate Is a Button" in Part 1, "The Same Gate, One Week Later" after Part 2's readiness-gate page) with before/after panel screenshots in `slides/images/2026-08-28/`.
 
 ### 2026-08-27 — Session 13 (the human gate stopped needing a terminal)
 

@@ -23,8 +23,8 @@ Execute the one Card stage in the dispatch prompt. Follow the selected skill's
 bootstrap, compare the expected `(Status, Role)` pair with the live board
 before every mutation, and let live GitHub state win. Mutate only the bound
 Card and its governed artifacts. Persist every outcome to GitHub and stop at
-the stage boundary. Do not choose a second Card, act as `human`, or spawn
-another agent.
+the stage boundary. Do not choose a second Card or act as `human`; spawn no
+agents other than the review helpers granted below.
 
 Never run `git checkout`, `git switch`, or `gh pr checkout` in the repository
 root. Read diffs through `gh`; execute the delivery only inside a detached
@@ -67,6 +67,9 @@ status check.
 
 Everything else in the bounded contract still binds these helpers: they mutate
 no Card but the bound one, never act as `human`, and stop at the stage
-boundary. If the carrier will not spawn them, do the work inline — a single
-careful reviewer covering all eight dimensions and running the browser pass
-personally is a complete review.
+boundary. Spawning them is the default, not a judgment call: attempt the
+spawn. Only when the Agent tool is absent from your toolset, or the Agent call
+itself returns an error, do the work inline — a single careful reviewer
+covering all eight dimensions and running the browser pass personally is a
+complete review — and record which of the two happened in the verdict's
+`limitations`.
