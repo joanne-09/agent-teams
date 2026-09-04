@@ -19,7 +19,7 @@ import json
 import os
 import re
 import tempfile
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, fields as dataclass_fields, replace
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -40,12 +40,27 @@ MERGE_MODES = ("automatic", "manual")
 #: How *specification* changes reach the repository's base branch.
 SPEC_MERGE_MODES = ("direct", "manual")
 
-#: Renamed 2026-08-21. The old pair could not be told apart by name: neither
-#: ``spec_merge_mode`` nor ``merge_mode`` said which Pull Request it governed,
-#: and ``merge_method`` read as if it belonged to whichever one you had just
-#: looked at. Old keys still parse so no consuming repository breaks; they are
-#: dropped when configuration is written.
-LEGACY_KEYS: Mapping[str, str] = {
+#: Renamed 2026-08-21, retired 2026-09-04. The old pair could not be told
+#: apart by name: neither ``spec_merge_mode`` nor ``merge_mode`` said which
+#: Pull Request it governed, and ``merge_method`` read as if it belonged to
+#: whichever one you had just looked at.
+#:
+#: For two weeks the old names were *accepted* and silently rewritten, so that
+#: no consuming repository would break. That compatibility is now refused, and
+#: the reason is a defect it produced rather than a preference. The dashboard's
+#: config form kept writing ``merge_mode``; the plugin accepted it and saved
+#: ``code_pr_merge_mode``, so the key the form read back had vanished from the
+#: file it had just written and the user's merge choice appeared to revert to
+#: the default on every reload. Nothing failed. Accepting both names is what
+#: kept it quiet for a week (see
+#: ``docs/decisions/2026-09-04-retiring-renamed-config-keys.md``).
+#:
+#: A retired key is a **validation error naming its replacement**, never a
+#: silently ignored one. Deleting the alias alone would have been worse than
+#: keeping it: unknown keys are ignored here, so ``{"merge_mode": "manual"}``
+#: would have quietly meant ``code_pr_merge_mode="automatic"`` -- a config
+#: file that reads as if it were honoured and is not.
+RETIRED_KEYS: Mapping[str, str] = {
     "spec_merge_mode": "spec_pr_merge_mode",
     "merge_mode": "code_pr_merge_mode",
     "merge_method": "code_pr_merge_method",
@@ -108,7 +123,123 @@ DEFAULT_PROTECTED_PATHS: Mapping[str, tuple[str, ...]] = {
     "agent-instructions": ("skills/**", "CLAUDE.md", "AGENTS.md"),
     "security-boundaries": ("**/auth/**", "**/*secret*"),
     "architecture-and-design": ("docs/ARCHITECTURE.md", "docs/specs/**"),
+    # Added 2026-09-04. The 2026-08-21 rename of the merge settings reached
+    # five consumers and missed three, and nothing routed it to anybody
+    # because a configuration change touched no governed artifact at all --
+    # no Card, no specification, no diff, no verdict
+    # (docs/traces/2026-09-04-merge-mode-evidence-chain.md, link 2).
+    #
+    # These two files ARE the vocabulary: this module decides which keys exist
+    # and which are retired, and CONFIGURATION.md is where every consumer
+    # looks them up. Protecting them does not make the vocabulary harder to
+    # change; it makes changing it visible, through the human gate that
+    # already exists. `tests/test_config_vocabulary.py` then checks that the
+    # change actually reached everywhere it had to.
+    "configuration-vocabulary": (
+        "scripts/agent_teams/config.py",
+        "docs/CONFIGURATION.md",
+    ),
 }
+
+
+#: Settings whose accepted values are a closed set, and where that set lives.
+#: Named here rather than restated per consumer, so a new mode is added in one
+#: place and every form offering it follows.
+ENUM_OPTIONS: Mapping[str, tuple[str, ...]] = {
+    "spec_pr_merge_mode": SPEC_MERGE_MODES,
+    "code_pr_merge_mode": MERGE_MODES,
+    "code_pr_merge_method": MERGE_METHODS,
+}
+
+
+def vocabulary() -> dict[str, Any]:
+    """What is true of this configuration's shape, for consumers to render.
+
+    Exists because a consumer that cannot read this has to *copy* it, and the
+    copy drifts. The dashboard kept its own hand-written list of these names in
+    ``config-schema.js``, under a header asking the next person to keep it in
+    sync; it wrote ``merge_mode`` for a week after the rename, and then told
+    users old names were still accepted for a day after they were retired.
+    Both were found by accident. See
+    ``docs/decisions/2026-09-04-governing-the-config-vocabulary.md``.
+
+    **Every value here is derived from :class:`Config`, never restated.** A
+    second copy of a default is a second thing to forget, which would relocate
+    the defect rather than remove it. Adding a field to ``Config`` puts it in
+    this export with no edit here.
+
+    What this deliberately does **not** carry is wording: no help text, no
+    section titles, no "advanced" flags. Those are a consumer's choices about
+    presentation, and owning them here would make every phrasing tweak a change
+    to the plugin. The split is: **we say what exists; they say how it looks.**
+
+    ``recovery`` is flattened to ``recovery.<field>`` because that is the shape
+    a form edits. Per-seat overrides are not enumerated -- ``role_keys`` and
+    ``recovery_fields`` let a consumer compose ``roles.<seat>.recovery.<field>``
+    without us predicting how it wants to lay them out.
+    """
+    defaults = Config(repo="x/y", project_owner="x", project_number=1)
+
+    def described(key: str, value: Any, required: bool) -> dict[str, Any]:
+        options = ENUM_OPTIONS.get(key, ())
+        return {
+            "key": key,
+            "type": "enum" if options else _widget_kind(value),
+            "required": required,
+            "default": None if required else _jsonable(value),
+            "options": list(options),
+        }
+
+    settings: list[dict[str, Any]] = []
+    for spec in dataclass_fields(Config):
+        if spec.name == "recovery":
+            recovery = getattr(defaults, "recovery")
+            settings.extend(
+                described(f"recovery.{name}", getattr(recovery, name), False)
+                for name in _RECOVERY_FIELDS
+            )
+            continue
+        required = spec.name in REQUIRED_SETTINGS
+        settings.append(described(spec.name, getattr(defaults, spec.name), required))
+
+    return {
+        "settings": settings,
+        "retired": dict(RETIRED_KEYS),
+        "role_keys": {seat: list(keys) for seat, keys in ROLE_CONFIG_KEYS.items()},
+        "recovery_fields": list(_RECOVERY_FIELDS),
+    }
+
+
+#: The three with no usable default. Derived would be nicer, but a dataclass
+#: field without a default is simply absent from the instance until supplied,
+#: so the distinction has to be stated once. It is asserted against ``Config``
+#: in ``tests/test_config_vocabulary_export.py``.
+REQUIRED_SETTINGS: frozenset[str] = frozenset(
+    {"repo", "project_owner", "project_number"}
+)
+
+
+def _widget_kind(value: Any) -> str:
+    if isinstance(value, bool):
+        return "bool"
+    if isinstance(value, int):
+        return "int"
+    if isinstance(value, float):
+        return "float"
+    if isinstance(value, (list, tuple)):
+        return "string[]"
+    if isinstance(value, Mapping):
+        return "json"
+    return "string"
+
+
+def _jsonable(value: Any) -> Any:
+    """Tuples and mappings become JSON-native, because this crosses a pipe."""
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, Mapping):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    return value
 
 
 class ConfigError(AgentTeamsError):
@@ -388,9 +519,10 @@ class Config:
             key: list(value) for key, value in self.protected_paths.items()
         }
         payload["required_checks"] = list(self.required_checks)
-        # The legacy names are deliberately absent: a written file always
-        # carries the current vocabulary, so a repository migrates simply by
-        # letting agent-teams save once.
+        # The retired names are deliberately absent, and since 2026-09-04 a
+        # file carrying one no longer loads at all: migration is an edit the
+        # repository makes once and can see, not something a save silently
+        # performs underneath it.
         payload["spec_pr_merge_mode"] = self.spec_pr_merge_mode
         payload["code_pr_merge_mode"] = self.code_pr_merge_mode
         payload["code_pr_merge_method"] = self.code_pr_merge_method
@@ -453,6 +585,8 @@ class Config:
     @classmethod
     def from_dict(cls, raw: Mapping[str, Any]) -> "Config":
         problems: list[str] = []
+
+        _retired_key_problems(raw, "", problems)
 
         repo = str(raw.get("repo") or "").strip()
         if not repo:
@@ -676,6 +810,25 @@ class Config:
         return replace(self, **changes)
 
 
+def _retired_key_problems(
+    raw: Mapping[str, Any], prefix: str, problems: list[str]
+) -> None:
+    """Refuse every retired name present, naming what to write instead.
+
+    Reported rather than translated. A rename that a tool keeps absorbing is a
+    rename nothing downstream is ever forced to notice, which is exactly how
+    the dashboard's config form went a week writing a key the plugin no longer
+    stored. The refusal is the notification.
+    """
+    for old, current in RETIRED_KEYS.items():
+        if old in raw:
+            problems.append(
+                f"{prefix}{old!r} was renamed to {current!r} on 2026-08-21 and "
+                f"is no longer accepted; rename the key. Its values are "
+                f"unchanged, so only the name has to move."
+            )
+
+
 def _merge_choice(
     raw: Mapping[str, Any],
     key: str,
@@ -683,19 +836,15 @@ def _merge_choice(
     allowed: tuple[str, ...],
     problems: list[str],
 ) -> str:
-    """One merge setting, accepting its pre-2026-08-21 name.
+    """One merge setting, under its current name and no other.
 
-    The current name wins when both are present, which is what a dashboard
-    mid-migration emits: it has already written the new key and has not yet
-    stopped writing the old one.
+    The pre-2026-08-21 name is not consulted. ``_retired_key_problems`` has
+    already refused the whole configuration if one is present, so there is no
+    path here through which an old key could quietly supply a value.
     """
-    legacy = next((old for old, new in LEGACY_KEYS.items() if new == key), None)
-    if key in raw:
-        value = raw[key]
-    elif legacy is not None and legacy in raw:
-        value = raw[legacy]
-    else:
+    if key not in raw:
         return default
+    value = raw[key]
     text = str(value if value is not None else "").strip().casefold()
     if text not in allowed:
         problems.append(
@@ -731,9 +880,16 @@ def _parse_roles(
             continue
 
         allowed = ROLE_CONFIG_KEYS[seat]
+        _retired_key_problems(settings, f"roles.{seat}.", problems)
         values: dict[str, Any] = {}
         for key, value in settings.items():
-            name = LEGACY_KEYS.get(str(key), str(key))
+            name = str(key)
+            if name in RETIRED_KEYS:
+                # Already refused above with the rename to make. Skipping it
+                # here keeps one retired key from also producing the "this
+                # seat has no such setting" message, which would send the
+                # reader looking for a second, different mistake.
+                continue
             if name in allowed:
                 values[name] = value
                 continue

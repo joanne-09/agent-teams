@@ -123,6 +123,16 @@ comments, Pull Request creation, or merge commands.
   Present the evidence and recommendation. If the human approves, their one
   command is `approve-exception N`, which validates the exact reviewed head,
   merges it, and reconciles the Card to `Done`.
+- `spec_change`: QA found the defect is in the **specification**, not the
+  implementation, and recorded what it says should change. Present each
+  request's document, clause, conflict, and suggested change. If the human
+  approves, their one command is `approve-spec-change N`, which hands the Card
+  to the architect at `(In Progress, architect)` with the approved request
+  recorded on it. **This gate offers no merge**, and that is deliberate rather
+  than an omission: the delivery was built against a baseline QA says is wrong,
+  so "approve it anyway" is not one of the honest answers. If the human
+  disagrees with QA, they reject it — say so on the Card and hand it on; do not
+  reach for `approve-exception`, which answers a different question.
 - `manual_merge`: deterministic acceptance found the exact head eligible, but
   `code_pr_merge_mode` assigns routine merge execution to the user. Present the
   returned Pull Request and ask the human to merge it in GitHub. Never issue a

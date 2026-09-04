@@ -82,6 +82,32 @@ outcome: refuted -- not reachable. Lowered to limitations.
 
 A refuted finding is a success of this process, not a wasted pass.
 
+## When you are unsure, keep it
+
+<!-- The asymmetry below is derived from alibaba/open-code-review's
+     review-filter prompt (Apache-2.0), which states it for a separate
+     fact-checking model. Applied here to the reviewer reconciling its own
+     helper passes. See ATTRIBUTION.md. -->
+
+Challenge exists to refute findings **with evidence**, and the two mistakes
+available to you are not equally bad:
+
+- Keeping a finding that turns out to be wrong costs the Developer a few
+  seconds of attention and leaves a visible record that it was raised.
+- Dropping a finding that was right destroys it silently. It reaches nobody,
+  and nobody ever learns it was dropped.
+
+So the bar for dropping is **proof, not doubt.** "I could not verify this",
+"it looks fine to me", "probably a false positive", and "not worth their time"
+all mean **keep it** — as a lower-confidence finding, or in `limitations` with
+the reason. Only a specific, quotable refutation removes one, and the refutation
+goes in `challenges` where the next reader can check it.
+
+This matters most exactly where you are least likely to notice it: reconciling
+what three review passes sent back. A finding you did not personally derive is
+the easiest one to quietly not carry forward, and deduplication is not the same
+operation as dismissal.
+
 ## The blind-spot loop
 
 Before writing the verdict, ask what you have not actually looked at:

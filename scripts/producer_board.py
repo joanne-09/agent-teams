@@ -338,6 +338,14 @@ def _build_parser() -> argparse.ArgumentParser:
     exception.add_argument("issue", type=int)
     _acting_role_option(exception, "human")
 
+    spec_change = sub.add_parser(
+        "approve-spec-change",
+        help="human gate: approve QA's specification-change request back to "
+             "the architect",
+    )
+    spec_change.add_argument("issue", type=int)
+    _acting_role_option(spec_change, "human")
+
     worktrees = sub.add_parser(
         "worktree-status", help="claims, worktrees, and presence (read-only)"
     )
@@ -606,6 +614,14 @@ def main(
 
         elif args.command == "approve-exception":
             result = consumer.approve_exception(
+                args.issue, _acting_role(args, env),
+                origin=policy.human_origin(env),
+            )
+            _print(result)
+            return 0 if result.get("ok") else 1
+
+        elif args.command == "approve-spec-change":
+            result = consumer.approve_spec_change(
                 args.issue, _acting_role(args, env),
                 origin=policy.human_origin(env),
             )

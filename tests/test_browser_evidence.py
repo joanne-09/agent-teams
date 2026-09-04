@@ -206,7 +206,11 @@ class NonUiDeliveryTests(unittest.TestCase):
             pull_request="https://example.invalid/pull/57",
             changed_files=("src/App.tsx",),
             checks=("npm test: 2 failed",),
-            findings=("the search box submits an empty query",),
+            findings=({
+                "severity": "high", "dimension": "correctness",
+                "confidence": 8,
+                "evidence": "the search box submits an empty query",
+            },),
             next_role=Role.DEV,
         )
         self.assertEqual(problems(failing), [])

@@ -142,7 +142,7 @@ team-of-teams are not required for either completion level.
 | Tech Lead triage skill | Done | `skills/triaging-board/SKILL.md` |
 | Quality Assurance queue inspection skill | Done | `skills/inspecting-queue/SKILL.md`; Producer-shaped, issues no verdicts |
 | Developer execution skill | Done | `skills/consuming-card/SKILL.md` + 3 references; carries the Architect documentation routine too |
-| Quality Assurance engineer verification and acceptance skill | Done | `skills/verifying-delivery/SKILL.md` + 3 references; eight review dimensions, pre-emit evidence gate, challenge loop, blind-spot loop |
+| Quality Assurance engineer verification and acceptance skill | Done | `skills/verifying-delivery/SKILL.md` + 3 references; nine review dimensions, pre-emit evidence gate, challenge loop, blind-spot loop |
 
 ### 4.3 Board adapter
 

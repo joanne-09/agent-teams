@@ -165,7 +165,7 @@ class PublishSpecificationTests(unittest.TestCase):
         items = board_with((20, "Shaped requirement", "Backlog", "architect"))
         git = FakeGit()
         team, gh = producer(
-            FakeGh(items=items), git=git, spec_merge_mode="manual"
+            FakeGh(items=items), git=git, spec_pr_merge_mode="manual"
         )
         result = team.publish_specification(20, SPEC_PATH)
         self.assertTrue(result["ok"])
@@ -213,7 +213,7 @@ class FinalizeSpecificationMergeTests(unittest.TestCase):
                 pr_state=pr_state,
             ),
             git=git,
-            spec_merge_mode="manual",
+            spec_pr_merge_mode="manual",
         )
         return team, gh, git
 
@@ -783,7 +783,7 @@ class NextActionsTests(unittest.TestCase):
                 comments=[acceptance],
                 pr_state={"state": "OPEN", "mergedAt": None},
             ),
-            merge_mode="manual",
+            code_pr_merge_mode="manual",
         )
         result = team.next_actions()
         self.assertEqual(result["actions"], [])
@@ -809,7 +809,7 @@ class NextActionsTests(unittest.TestCase):
                 pr_view=pr_view,
                 pr_state={"state": "OPEN", "mergedAt": None},
             ),
-            spec_merge_mode="manual",
+            spec_pr_merge_mode="manual",
         )
         result = team.next_actions()
         self.assertEqual(result["actions"], [])
@@ -837,7 +837,7 @@ class NextActionsTests(unittest.TestCase):
                     "mergeCommit": {"oid": "d" * 40},
                 },
             ),
-            spec_merge_mode="manual",
+            spec_pr_merge_mode="manual",
         )
         action = team.next_actions()["actions"][0]
         self.assertEqual(action["kind"], "controller")
@@ -1046,7 +1046,15 @@ class WorkerSkillLoadingTests(unittest.TestCase):
             / "authoring-spec"
             / "SKILL.md"
         ).read_text(encoding="utf-8")
-        self.assertIn("spec_merge_mode: manual", skill)
+        # Was `spec_merge_mode: manual` until 2026-09-04. The assertion is
+        # the reason this went unnoticed: the 08-21 rename swept four docs and
+        # `dispatching-work`, missed `authoring-spec` -- the skill for the very
+        # seat that consumes the setting -- and this test then pinned the dead
+        # name in place, so a green suite was evidence the rename had *not*
+        # propagated. Named in the merge-mode evidence-chain trace as the
+        # second surviving break.
+        self.assertIn("spec_pr_merge_mode: manual", skill)
+        self.assertNotIn("`spec_merge_mode", skill)
         self.assertIn("finalize-spec-merge", skill)
         self.assertIn("Do not hand off or decompose yet", skill)
 

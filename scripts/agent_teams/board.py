@@ -16,7 +16,7 @@ from .errors import AgentTeamsError
 import json
 import re
 from dataclasses import replace
-from typing import Any
+from typing import Any, Mapping
 
 from . import policy
 from .config import Config
@@ -25,7 +25,8 @@ from .github import BoardTruncated, Gh, GitHubError
 from .model import (
     ACCEPTANCE_MARKER, Acceptance, Card, DECOMPOSED_CHILD_MARKER,
     DECOMPOSITION_MARKER, DomainError, HANDOFF_MARKER, Handoff, Role,
-    SPECIFICATION_MARKER, Status, VERDICT_MARKER, Verdict,
+    SPEC_CHANGE_MARKER, SPECIFICATION_MARKER, Status, VERDICT_MARKER,
+    Verdict,
 )
 
 
@@ -540,6 +541,82 @@ query($owner: String!, $number: Int!, $first: Int!, $after: String,
             "ok": True, "issue": number, "role": Role.QA.value,
             "accepted_head": accepted_head, "current_head": current_head,
             "comment": comment,
+        }
+
+    def return_to_architect_for_spec_change(
+        self, number: int, requests: "tuple[Any, ...]", origin: str = "terminal"
+    ) -> dict[str, Any]:
+        """Human route: an approved specification-change request goes back.
+
+        The mirror of ``return_stale_exception_to_qa``, and deliberately not a
+        variant of it. That one is the controller withdrawing a decision that
+        no longer applies; this one carries a person's approval, so what it
+        records is *which* requests were approved and from where. Before this
+        existed the same repair happened -- a person edited the specification
+        and approved their own edit -- with nothing on the Card to say a
+        request had ever been made.
+
+        Status moves to ``In Progress`` alongside the Role because the
+        architect has work to do; leaving it ``In Review`` would show a Card
+        under review by a seat that reviews nothing.
+        """
+        if not requests:
+            raise BoardError(
+                "an approved specification change must name the requests it "
+                "approves"
+            )
+        card = self.card(number)
+        if card.status is not Status.IN_REVIEW or card.role is not Role.HUMAN:
+            raise BoardError(
+                f"Issue #{number} is {card.routing_state}; approving a "
+                "specification change requires (In Review, human)"
+            )
+        count = self.handoff_count(number)
+        policy.check_handoff(
+            Role.HUMAN, Role.ARCHITECT, count, self.config.handoff_cap
+        )
+        if not card.item_id:
+            raise BoardError(f"Issue #{number} Project item has no id")
+
+        documents = ", ".join(sorted({
+            str(request.get("document", "?")) for request in requests
+            if isinstance(request, Mapping)
+        })) or "the specification"
+        handoff = Handoff(
+            Role.HUMAN, Role.ARCHITECT,
+            f"A person approved Quality Assurance's specification-change "
+            f"request from the {origin}. The defect is in {documents}, not in "
+            f"the implementation.",
+            needs="revise the specification, republish it, and hand the Card "
+                  "back for implementation against the corrected baseline",
+        )
+        record = _render_block(SPEC_CHANGE_MARKER, {
+            "issue": number,
+            "origin": origin,
+            "approved_requests": [
+                dict(request) for request in requests
+                if isinstance(request, Mapping)
+            ],
+        })
+        comment = handoff.render()
+
+        # Status first, then Role, then the two comments. The approval record
+        # is the thing this whole route exists to produce, so it is posted
+        # even if the handoff comment fails -- a PartialHandoff below still
+        # leaves the reason on the Card.
+        self.set_status(str(card.item_id), Status.IN_PROGRESS)
+        self.set_role(str(card.item_id), Role.ARCHITECT)
+        self.comment_on_card(number, record)
+        try:
+            self.comment_on_card(number, comment)
+        except GitHubError as exc:
+            raise PartialHandoff(
+                number, Role.ARCHITECT, comment, str(exc)
+            ) from exc
+        return {
+            "ok": True, "issue": number, "role": Role.ARCHITECT.value,
+            "status": str(Status.IN_PROGRESS), "origin": origin,
+            "documents": documents, "comment": comment,
         }
 
     # --------------------------------------------------------- pull requests

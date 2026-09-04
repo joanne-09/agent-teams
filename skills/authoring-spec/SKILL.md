@@ -12,9 +12,9 @@ description: Turn one architect-owned Backlog Card into a durable specification 
 
 The architect removes implementation ambiguity, publishes the specification
 through `publish-spec`, and shapes the implementation Cards. With the default
-`spec_merge_mode: direct`, publication commits directly to the current branch
+`spec_pr_merge_mode: direct`, publication commits directly to the current branch
 and the human only makes the later Card readiness decision. With
-`spec_merge_mode: manual`, publication opens a specification Pull Request and
+`spec_pr_merge_mode: manual`, publication opens a specification Pull Request and
 the human merges it before shaping resumes.
 
 ## 1. Bind and understand
@@ -26,6 +26,30 @@ and relevant architecture decisions.
 Research resolvable unknowns instead of asking the human to transport context.
 If a product answer genuinely cannot be inferred or researched, record the
 specific question and hand the Card to `analyst`; do not invent it.
+
+### If you arrived at `(In Progress, architect)` with an approved spec change
+
+Then this is not new shaping. A person approved a Quality Assurance
+specification-change request, and the Card carries an
+`agent-teams:spec-change-approval` comment naming the document, the clause, the
+conflict QA observed, and what it suggested instead.
+
+Three differences from ordinary shaping:
+
+- **Read the request first, and the verdict it came from.** QA reached this
+  conclusion from a running delivery. That evidence is usually the strongest
+  thing available about why the clause cannot hold.
+- **You are amending, not rewriting.** Change the clause that was disputed and
+  whatever depends on it. A rewrite loses the review history the Card carries
+  and makes the approved request untraceable to its effect.
+- **You may disagree.** The approval says a person accepted that the
+  specification should be revisited, not that QA's suggested wording is
+  correct. If the criterion is right and QA misread it, republish it with the
+  ambiguity removed and say in the handoff which reading was intended. That is
+  a specification defect too.
+
+Then republish through `publish-spec` as below and hand the Card back for
+implementation against the corrected baseline.
 
 ## 2. Write the specification
 

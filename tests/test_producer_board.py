@@ -150,7 +150,7 @@ class ConfigTests(unittest.TestCase):
     def test_revision_identifies_the_normalized_config_snapshot(self):
         first = config(required_checks=["build"])
         equivalent = config(required_checks=[" build "])
-        changed = config(required_checks=["build"], merge_mode="manual")
+        changed = config(required_checks=["build"], code_pr_merge_mode="manual")
         self.assertEqual(first.revision, equivalent.revision)
         self.assertNotEqual(first.revision, changed.revision)
         self.assertEqual(len(first.revision), 64)
@@ -158,8 +158,8 @@ class ConfigTests(unittest.TestCase):
     def test_write_atomically_replaces_without_leaving_a_temp_file(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "config.json"
-            config(merge_mode="automatic").write(path)
-            replacement = config(merge_mode="manual")
+            config(code_pr_merge_mode="automatic").write(path)
+            replacement = config(code_pr_merge_mode="manual")
             replacement.write(path)
             self.assertEqual(Config.load(path), replacement)
             self.assertEqual(
@@ -285,26 +285,22 @@ class ConsumerConfigTests(unittest.TestCase):
         ).protected_paths["agent-instructions"]
         self.assertEqual(len(patterns), len(set(patterns)))
 
-    # These three were written against the pre-2026-08-21 key names. They
-    # now feed the LEGACY name deliberately and assert the CURRENT one
-    # comes back in the message: that is the whole contract of the rename
-    # -- an old config file still validates, and the error teaches the
-    # reader the name to migrate to rather than echoing the dead one.
+    # These three were written against the pre-2026-08-21 key names, then
+    # rewritten on 08-27 to feed the legacy name deliberately and assert the
+    # current one came back in the message. That second form is gone: since
+    # 2026-09-04 a legacy name is refused outright, so feeding one here would
+    # have asserted a *retirement* error while claiming to test value
+    # validation -- and the regex would have matched either way. Retirement is
+    # covered by its own tests in test_config_roles.py.
     def test_unknown_merge_method_is_rejected(self):
-        with self.assertRaisesRegex(ConfigError, "code_pr_merge_method"):
-            config(merge_method="cherry-pick")
         with self.assertRaisesRegex(ConfigError, "code_pr_merge_method"):
             config(code_pr_merge_method="cherry-pick")
 
     def test_unknown_merge_mode_is_rejected(self):
         with self.assertRaisesRegex(ConfigError, "code_pr_merge_mode"):
-            config(merge_mode="sometimes")
-        with self.assertRaisesRegex(ConfigError, "code_pr_merge_mode"):
             config(code_pr_merge_mode="sometimes")
 
     def test_unknown_spec_merge_mode_is_rejected(self):
-        with self.assertRaisesRegex(ConfigError, "spec_pr_merge_mode"):
-            config(spec_merge_mode="sometimes")
         with self.assertRaisesRegex(ConfigError, "spec_pr_merge_mode"):
             config(spec_pr_merge_mode="sometimes")
 
@@ -324,10 +320,10 @@ class ConsumerConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "producer.json"
             original = config(
-                required_checks=["build"], merge_method="rebase",
-                merge_mode="manual",
+                required_checks=["build"], code_pr_merge_method="rebase",
+                code_pr_merge_mode="manual",
                 protected_paths={"billing": ["src/billing/**"]},
-                spec_merge_mode="manual",
+                spec_pr_merge_mode="manual",
             )
             original.write(path)
             self.assertEqual(Config.load(path), original)
@@ -669,7 +665,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(before["actions"][0]["argv"], ["accept", "21"])
 
         config(
-            merge_mode="manual",
+            code_pr_merge_mode="manual",
             monitor_poll_seconds=7,
             recovery={"max_retries": 0},
         ).write(self.config_path)

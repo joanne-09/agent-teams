@@ -213,6 +213,34 @@ Card, verifies the head has not changed since the exception record, merges, and
 reconciles to `(Done, lead)`. There is no separate manual `gh pr merge` plus
 `reconcile-done` sequence.
 
+### Human gate 3: specification change
+
+Reached when a verdict carries `spec_change_requests` -- Quality Assurance is
+reporting that the defect is in the **specification**, not the implementation.
+`accept` returns `protected_change` and `next-actions` shows a `spec_change`
+gate carrying each request's document, clause, observed conflict, and suggested
+change.
+
+```bash
+producer_board.py approve-spec-change N
+```
+
+Human-only, like the other two. It records which requests were approved and
+from which surface, then hands the Card to `(In Progress, architect)` for the
+specification to be revised and republished.
+
+**This gate offers no merge, deliberately.** The delivery was built against a
+baseline QA says is wrong, so "approve it anyway" is not one of the honest
+answers, and a surface drawing a merge button here would offer an authority the
+route does not grant. If you disagree with QA, reject the request: record why on
+the Card and hand it on. `approve-exception` answers a different question and is
+refused on a Card carrying a specification-change request.
+
+Unlike `approve-exception`, this gate does **not** expire when the Pull Request
+head moves. That one merges an exact reviewed commit, so a new push invalidates
+it; this one merges nothing, and a specification is wrong whichever commit is
+currently on the branch.
+
 ## Recovery
 
 - Retry count and backoff live under `recovery` in
@@ -253,22 +281,23 @@ producer_board.py accept ISSUE
 producer_board.py refresh-verification ISSUE
 producer_board.py reconcile-done ISSUE
 producer_board.py approve-exception ISSUE
+producer_board.py approve-spec-change ISSUE
 producer_board.py worktree-status [ISSUE]
 ```
 
 `next-actions` and `gates` are read-only. `gates` is the narrow read: only the
 boundaries waiting on a person, each with the `argv` that opens it when a
-plugin command does (`readiness`, `qa_exception`) or the Pull Request to merge
-when GitHub does (`spec_merge`, `manual_merge`). `accept`, `refresh-verification`, and
-`approve-exception` take only an Issue number; none accepts a caller-chosen PR
-or route. Every mutation must return `"ok": true` before it is reported as
+plugin command does (`readiness`, `qa_exception`, `spec_change`) or the Pull
+Request to merge when GitHub does (`spec_merge`, `manual_merge`). `accept`,
+`refresh-verification`, `approve-exception`, and `approve-spec-change` take only
+an Issue number; none accepts a caller-chosen PR or route. Every mutation must return `"ok": true` before it is reported as
 successful.
 
 `--acting-role` is a claim, not an authority. The seat a command actually acts
 as is resolved per process: `AGENT_TEAMS_ACTING_ROLE` (set for spawned
 workers) wins over the flag, and inside any Claude Code session a command that
 claims or defaults to `human` is refused. Run `promote`, `approve-exception`,
-and `release-claim` from your own terminal; from the lead's session they are
+`approve-spec-change`, and `release-claim` from your own terminal; from the lead's session they are
 refused by design.
 
 ### Opening a gate without a terminal

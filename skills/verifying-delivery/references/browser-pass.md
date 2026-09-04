@@ -54,9 +54,23 @@ reason recorded — not a pass with a note, and not a silent skip.
 
 ## Drive it with Playwright
 
-Playwright is what the team already uses and what the agent's own browser
-tooling drives. Prefer it; any tool that produces the same evidence is
-acceptable, and whatever you used goes in `tool`.
+**Playwright, headless Chromium, run from `Bash`.** Not the agent's own browser
+tooling: that drives the operator's real logged-in session, and step 2 below
+submits injection strings to every field.
+
+It is not installed for you — `npm install --no-save playwright` and, on a
+fresh machine, `npx playwright install chromium`, inside the review worktree.
+If it cannot be obtained, that is `blocked` with the reason recorded, not a
+pass with a note.
+
+Any suite producing the same evidence is acceptable. Whatever you used goes in
+`tool` **with its engine and version** (`playwright (chromium headless)
+1.62.1`), because a console listing cannot be checked by someone who does not
+know which engine produced it.
+
+Which suite, why this one rather than Puppeteer / Selenium / Cypress /
+browser-use, and what the choice does not cover:
+`references/browser-tooling.md`.
 
 ### 1. Walk each acceptance criterion as a user would
 

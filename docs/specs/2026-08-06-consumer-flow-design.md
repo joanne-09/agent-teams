@@ -176,8 +176,17 @@ behaviour:
 | `workspace` | string | `"../.worktrees"` | Worktree root; must resolve outside the repository tree |
 | `protected_paths` | object | §7.2 defaults | Category name → glob patterns |
 | `required_checks` | list | `[]` | Check names that must conclude `SUCCESS` before eligibility |
-| `merge_method` | string | `"squash"` | One of `squash`, `merge`, `rebase` |
+| `code_pr_merge_method` | string | `"squash"` | One of `squash`, `merge`, `rebase` |
 | `claim_ttl_hours` | integer | `72` | Age past which triage flags a claim as stale |
+
+> **Amended 2026-09-04.** The fourth row read `merge_method` from approval
+> until today. That key was renamed to `code_pr_merge_method` on 2026-08-21
+> and retired on 2026-09-04; this document was the last consumer still naming
+> the old spelling, and it named it for nine days after the rename because
+> nothing checked. Amended in place rather than superseded: the row documents
+> one key's name, and the design decision it belongs to did not change. The
+> check that now prevents a repeat is `tests/test_config_vocabulary.py`; the
+> incident is `docs/traces/2026-09-04-merge-mode-evidence-chain.md`.
 
 `policy_version` is deliberately **not** configuration. It is a constant in
 `policy.py`, because it identifies the code that made a decision.

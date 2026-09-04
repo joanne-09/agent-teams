@@ -83,12 +83,12 @@ An unenumerated file is an unreviewed file. `accept` compares your
 `changed_files` against the live diff and refuses a pass that omits one, so
 this is enforced rather than encouraged.
 
-### 3. Review the eight dimensions
+### 3. Review the nine dimensions
 
 Every one must appear in the verdict, or the pass is invalid:
 
 `design` · `architecture` · `correctness` · `edge-cases` · `security` ·
-`compatibility` · `cross-file` · `test-strength`
+`compatibility` · `cross-file` · `resource-safety` · `test-strength`
 
 What each one asks, and how to run them as bounded passes:
 `references/review-dimensions.md`.
@@ -108,7 +108,27 @@ softened — suppressed. This single rule is what separates review from
 impression.
 
 Score each finding's confidence 1-10. Below 7, state the caveat in the finding
-itself. At 3-4, it belongs in limitations rather than findings.
+itself. Below 5, it belongs in `limitations` rather than `findings` — filed,
+not deleted.
+
+**A finding is an object, not a sentence**, and `accept` refuses prose:
+
+```json
+{"severity": "medium", "dimension": "architecture", "confidence": 8,
+ "evidence": "board.py:88 reads Config._raw directly; every other caller goes through Config.role_for()",
+ "smell": "Inappropriate Intimacy"}
+```
+
+`severity` (`critical` · `high` · `medium` · `low`), `dimension` (one of the
+nine), `confidence` (1-10) and `evidence` are required; `smell` is optional
+but, when present, must be a name from `references/code-smells.md`. Field by
+field, with the refusals: `references/verdict-schema.md`.
+
+Two of those rules bite rather than tidy. **A `pass` may not carry a
+`critical` or `high` finding** — a finding that would send the Card back to the
+Developer is what `fail` means. And **a smell outside the catalogue is
+refused**, so "do not invent entries" is now a check rather than an
+instruction.
 
 ### 5. Challenge each material finding
 
@@ -119,6 +139,46 @@ findings that survived. A finding nobody tried to break is a guess with a line
 number.
 
 Details: `references/evidence-and-challenge.md`.
+
+### 5b. When the defect is in the specification, say so
+
+Sometimes the challenge in step 5 comes back with an uncomfortable answer: the
+implementation matches the specification, and **the specification is wrong** —
+two criteria contradict each other, a criterion is unachievable as written, or
+it mandates something the delivery has now shown cannot work.
+
+That is not a Developer defect. `dev` may not change a specification, so
+routing it there sends the Card to the one seat that cannot fix it, and what
+actually happened the last time was that a person edited the document by hand
+and approved their own edit with nothing on the Card to say a request had been
+made.
+
+Record it as a `spec_change_requests` entry. Four fields, all required:
+
+```json
+"spec_change_requests": [
+  {"document": "docs/specs/2026-08-28-store-search.md",
+   "clause": "AC4",
+   "conflict": "AC4 requires a visible error when the data files fail to load, but AC2 specifies loading them as an ES module over file://, which Chrome and Safari block before any handler runs. Both cannot hold.",
+   "suggested_change": "replace the ES-module load in AC2 with a classic script plus an explicit fetch, so the failure is observable and AC4 is reachable"}
+]
+```
+
+`accept` then returns `protected_change` and the Card goes to the human, who
+either approves it back to the architect (`approve-spec-change N`) or rejects
+it with the reason recorded. **You are still not choosing the route** — this is
+evidence like every other field, and policy decides what it means.
+
+Three rules:
+
+- **Only when the conflict is in the document.** "I would have designed this
+  differently" is not one. The test is whether an implementation could satisfy
+  every criterion at once; if it could, your finding is about the code.
+- **Name what to write instead.** A request the architect cannot diff is a
+  complaint, and `accept` refuses one missing any of the four fields.
+- **It may accompany a `pass`.** "This ships, and the specification still needs
+  correcting" is a real and useful thing to say. It will not auto-merge — a
+  person looks first, which is the intended cost.
 
 ### 6. Hunt blind spots, then re-review
 
@@ -197,7 +257,7 @@ Which returns exactly one of:
 |---|---|---|
 | `eligible` | Auto-merge armed, then `In Review -> merged -> (Done, lead)` | No human in the loop. Eligibility already required the checks to be green, so the merge normally lands at once and `accept` completes the route |
 | `defect` | `(In Progress, dev)`, same branch and Pull Request | The Developer corrects and re-submits |
-| `protected_change` | `(In Review, human)` | A human decides; the reasons name the exact files that tripped the rule |
+| `protected_change` | `(In Review, human)` | A human decides; the reasons name the exact files that tripped the rule, or the specification clause you disputed |
 
 If the platform merges later — a slow required check, or a merge queue —
 `accept` returns `"merge": "armed"`. The coordinating session observes it via
@@ -221,14 +281,14 @@ attempt the spawns** — the three review passes, and the browser worker for a
 user-facing Card. Availability is discovered by attempting, never assumed away.
 Correctness still does not depend on any of this being available: when the
 Agent tool is absent or a spawn attempt errors, a single careful pass through
-all eight dimensions, with the browser pass run yourself, is a complete and
+all nine dimensions, with the browser pass run yourself, is a complete and
 valid review — record the failed or unavailable spawn in `limitations` so the
 verdict says who actually gathered its evidence.
 
-### Three review passes, not eight
+### Three review passes, not nine
 
-The eight dimensions are lenses over one diff, so one agent per dimension would
-copy the whole diff eight times to get findings that substantially overlap —
+The nine dimensions are lenses over one diff, so one agent per dimension would
+copy the whole diff nine times to get findings that substantially overlap —
 `design` and `architecture` answer nearly the same question, as do
 `compatibility` and `cross-file`. Group them into three bundles whose members
 genuinely inform each other and which are genuinely independent of one another:
@@ -237,11 +297,20 @@ genuinely inform each other and which are genuinely independent of one another:
 |---|---|---|
 | `structure` | `design` · `architecture` · `cross-file` | Does it belong in this system, in this shape? |
 | `behaviour` | `correctness` · `edge-cases` · `compatibility` | Does it do the right thing, including at the edges? |
-| `risk` | `security` · `test-strength` | Can it be broken, and would we find out? |
+| `risk` | `security` · `resource-safety` · `test-strength` | Can it be broken or exhausted, and would we find out? |
 
-Each pass gets the Card, the specification, the diff, and its own bundle from
-`references/review-dimensions.md`. Each returns findings with quoted code and
-confidence scores. You deduplicate, challenge, and synthesise.
+Each pass gets the Card, the specification, the diff, its own bundle from
+`references/review-dimensions.md`, **and `references/code-smells.md`** — the
+`structure` pass for its `design`, `architecture` and `cross-file` sections,
+the `risk` pass for `resource-safety` and `test-strength`. Each returns
+findings in the object shape of step 4. You deduplicate, challenge, and
+synthesise.
+
+The catalogue goes to the passes and not only to you, and that is the whole
+point of naming it here. You reconcile; **they are the ones actually reading
+the code**, so a vocabulary that reaches only this seat is a vocabulary
+applied after the looking is over. A reviewer with no name for "correct but
+rotting" reports nothing or reports taste.
 
 ### The browser pass
 
@@ -285,12 +354,18 @@ audited when it turns out to be wrong.
   constrain this seat.
 - **Never report a verdict as published without `"ok": true`.**
 - **Unresolved uncertainty is `blocked`**, never a qualified pass.
+- **No editing a specification.** A conflict in one is a
+  `spec_change_requests` entry for a human to approve back to the architect
+  (step 5b), never a document you correct yourself. The seat that may not fix
+  the code may not fix the design either.
 
 ## References
 
 | File | When to read |
 |---|---|
-| `references/review-dimensions.md` | What each of the eight dimensions asks; the three bundles they group into |
+| `references/review-dimensions.md` | What each of the nine dimensions asks; the three bundles they group into |
+| `references/code-smells.md` | The closed smell vocabulary for a `design`, `architecture`, `cross-file`, `resource-safety` or `test-strength` finding — and what it deliberately excludes. Send the relevant sections to each review pass |
 | `references/evidence-and-challenge.md` | The pre-emit gate, confidence calibration, falsification, blind-spot loop |
 | `references/verdict-schema.md` | The JSON document, field by field, with a valid and a refused example |
 | `references/browser-pass.md` | **Only** when no browser worker was dispatched and you must run the pass yourself |
+| `references/browser-tooling.md` | Which browser suite the Browser reviewer drives, why that one, and what it does not cover |

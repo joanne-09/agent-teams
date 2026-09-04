@@ -533,7 +533,31 @@ class Producer:
                 acceptance = self.board.latest_acceptance(card.number)
                 if acceptance and acceptance.acceptance == "protected_change":
                     pr = self.board.pull_request(card.number, card.title)
-                    if acceptance.head_sha == pr["head_sha"]:
+                    verdict = self.board.latest_verdict(card.number)
+                    requests = list(
+                        verdict.spec_change_requests if verdict else ()
+                    )
+                    if requests:
+                        # A disputed specification offers no merge button, and
+                        # that is the point rather than an omission: the
+                        # delivery was built against a baseline QA says is
+                        # wrong, so "approve it anyway" is not one of the two
+                        # honest answers. Approve the request, or hand the Card
+                        # on with the rejection recorded. No head comparison --
+                        # this route merges nothing, and a specification is
+                        # wrong whichever commit is currently on the branch.
+                        human_gates.append(self._gate(
+                            base, "spec_change",
+                            "Quality Assurance reports the specification "
+                            "itself is in conflict. Approve the request back "
+                            "to the architect, or reject it and record why.",
+                            argv=["approve-spec-change", str(card.number)],
+                            acceptance=acceptance.to_dict(),
+                            spec_change_requests=requests,
+                            pull_request=pr["url"],
+                            command=f"approve-spec-change {card.number}",
+                        ))
+                    elif acceptance.head_sha == pr["head_sha"]:
                         human_gates.append(self._gate(
                             base, "qa_exception",
                             "Approve the protected change against the exact "
@@ -2409,6 +2433,56 @@ class Consumer:
             "origin": origin, "approval_recorded": recorded,
             "pull_request": pr["url"],
             **self._reconcile_to_done(number, card, pr, state, acting_role),
+        }
+
+    def approve_spec_change(
+        self, number: int, acting_role: Role = Role.HUMAN,
+        origin: str = "terminal",
+    ) -> dict[str, Any]:
+        """Human gate: send a Card back to the architect, request on the record.
+
+        The second thing a person can do with a ``protected_change`` Card, and
+        the one that had no command until 2026-09-04. ``approve-exception``
+        says "merge it anyway"; this says "Quality Assurance is right that the
+        specification is wrong, go and fix the specification".
+
+        Nothing merges here, which is why it is not a ``HARD_FLOOR`` -- but it
+        is still human-only. An agent seat able to reopen a specification on
+        its own reading could rewrite the baseline it is judged against.
+        """
+        policy.check_action("approve_specification_change", acting_role)
+        card = self._bound_card(number, Role.HUMAN, Status.IN_REVIEW)
+        acceptance = self.board.latest_acceptance(number)
+        if acceptance is None or acceptance.acceptance != "protected_change":
+            raise WorkflowError(
+                f"#{number} has no protected-change acceptance record to act on"
+            )
+        verdict = self.board.latest_verdict(number)
+        if verdict is None or not verdict.spec_change_requests:
+            raise WorkflowError(
+                f"#{number} carries no specification-change request. This gate "
+                f"approves QA's recorded request; to accept a protected change "
+                f"as it stands, use `approve-exception {number}`"
+            )
+        # The head check `approve_exception` performs is deliberately absent.
+        # That one merges an exact reviewed commit, so a moved head invalidates
+        # it. This one merges nothing: it routes a *documented* conflict to the
+        # architect, and a specification is wrong regardless of which commit is
+        # currently on the branch.
+        try:
+            outcome = self.board.return_to_architect_for_spec_change(
+                number, verdict.spec_change_requests, origin=origin
+            )
+        except PartialHandoff as exc:
+            return exc.to_result(self.config.repo)
+        return {
+            "ok": True,
+            "acceptance": "specification_change_approved",
+            "requests": [
+                dict(request) for request in verdict.spec_change_requests
+                if isinstance(request, Mapping)
+            ],
+            **outcome,
         }
 
     def refresh_verification(self, number: int) -> dict[str, Any]:

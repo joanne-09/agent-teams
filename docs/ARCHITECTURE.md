@@ -549,7 +549,7 @@ between the two kinds:
 
 | `argv` | Opened by | Gates |
 |---|---|---|
-| present | a plugin command | `readiness`, `qa_exception` |
+| present | a plugin command | `readiness`, `qa_exception`, `spec_change` |
 | `null` | GitHub itself, and the entry carries `pull_request` | `spec_merge`, `manual_merge` |
 
 That distinction is normative, not cosmetic. A gate without `argv` has no
@@ -1224,6 +1224,8 @@ checks: commands, URLs, screenshots, observations, and machine-readable results
 findings: reproducible expected-versus-actual results plus supporting evidence
 challenges: attempts to falsify each material finding and their outcomes
 blind_spots: unreviewed or uncertain areas; must be empty for pass
+spec_change_requests: defects whose cause is the specification, each naming
+  document, clause, conflict, suggested_change; every field required
 limitations: checks not performed, and why
 next_role: qa | dev | human | architect | lead
 ```
@@ -1243,6 +1245,17 @@ reasons: satisfied requirements or exact refusal/escalation reasons
 A pass is also invalid when it is stale, omits a changed file or required
 review dimension, treats line execution as sufficient test evidence, or leaves
 a review blind spot unresolved.
+
+`spec_change_requests` is the one field through which a Quality Assurance
+finding reaches the architect rather than the developer. Present on any verdict
+value, it makes the evaluator return `protected_change`, which is the existing
+human lane: `docs/specs/**` is a protected category, so revising a
+specification was always a human decision. The human's command is
+`approve-spec-change`, which records the approved requests and their origin and
+hands the Card to `(In Progress, architect)`; that gate deliberately offers no
+merge, because the delivery was built against a baseline under dispute. The
+separation is unaffected -- the field is evidence, and policy still chooses the
+route. See `docs/decisions/2026-09-04-qa-spec-feedback-loop.md`.
 
 ### 9.7 Claim and worktree model
 

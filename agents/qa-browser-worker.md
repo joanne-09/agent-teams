@@ -29,6 +29,13 @@ Reading the specification, the Card, and its comments is expected. Reading
 Load `agent-teams:verifying-delivery` through the Skill tool and follow
 `references/browser-pass.md`. In short:
 
+0. Drive the page with **Playwright, headless Chromium, from `Bash`** — not
+   the agent's own browser tooling, which would run a garbage-input pass inside
+   the operator's logged-in session. It is not installed for you
+   (`npm install --no-save playwright`, then `npx playwright install chromium`
+   on a fresh machine). Record the engine and version in `tool`. Why this suite
+   and not Puppeteer, Selenium, Cypress, or an agentic wrapper:
+   `references/browser-tooling.md`.
 1. Start the application from a **detached review worktree** at the exact head
    SHA — never in the repository root, whose branch other workers depend on.
 2. Walk each acceptance criterion as a named flow of at least two steps, and

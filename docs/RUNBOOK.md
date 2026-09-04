@@ -84,13 +84,17 @@ The routine path has **one mandatory human decision**:
 Everything after that — claiming, implementing, reviewing, merging, closing —
 happens without you, unless something unusual comes up.
 
-Two other gates exist but do not fire on the routine path:
+Three other gates exist but do not fire on the routine path:
 
 - **Spec merge** — only if you configure specifications to arrive as Pull
   Requests instead of direct commits.
 - **QA exception** — only when a change touches something protected (CI config,
   authentication, the policy code itself) or QA is genuinely unsure. Then a
   person decides.
+- **Spec change** — only when QA concludes the specification itself is wrong,
+  usually because two acceptance criteria cannot both be satisfied. You approve
+  it back to the architect, or you disagree and say so. There is no "merge it
+  anyway" here, because the code matches a specification that is in dispute.
 
 ### The shape of one Card's life
 
@@ -680,8 +684,17 @@ configured separately — the names say which is which:
 | `code_pr_merge_method` | `squash`, `merge`, `rebase` | `squash` | How agent-teams closes the code PR when it does the merging |
 
 > If you are reading older notes that mention `spec_merge_mode`, `merge_mode`,
-> or `merge_method` — those are the previous names for these three. Old config
-> files still load; the names are rewritten the first time the file is saved.
+> or `merge_method` — those are the previous names for these three, and they
+> **no longer work**. A config file containing one is refused, with the error
+> naming the key to write instead. The values did not change, so fixing it is
+> renaming the key:
+>
+> ```text
+> configuration is invalid:
+>   - 'merge_mode' was renamed to 'code_pr_merge_mode' on 2026-08-21 and is
+>     no longer accepted; rename the key. Its values are unchanged, so only
+>     the name has to move.
+> ```
 
 **Retries, per seat.** Each role can have its own retry budget, because they
 fail differently — an architect waiting on a slow read and a QA worker bounced
@@ -855,7 +868,7 @@ it is the system working.
 
 ### 6.6 If it stops and asks you something
 
-Two gates can fire. Both print exactly what they need.
+Three gates can fire. All of them print exactly what they need.
 
 **`manual_merge`** — only if you set `code_pr_merge_mode: manual`. Merge the
 named Pull Request in GitHub. Do not touch the Card; the coordinator sees the
@@ -871,6 +884,26 @@ python /absolute/path/to/agent-teams/scripts/producer_board.py approve-exception
 This verifies the reviewed commit has not moved since QA looked at it, merges,
 and reconciles. If you disagree with the change instead, say so on the Issue and
 hand it back to `dev`.
+
+**`spec_change`** — QA is telling you the problem is in **the specification**,
+not the code. This happens when two acceptance criteria contradict each other,
+or one turns out to be impossible as written. The gate shows you which
+document, which clause, what QA observed, and what it suggests instead.
+
+If you agree, **from your own terminal**:
+
+```bash
+python /absolute/path/to/agent-teams/scripts/producer_board.py approve-spec-change N
+```
+
+The Card goes back to the architect to revise the specification, with your
+approval and QA's request recorded on the Issue. Development then re-runs
+against the corrected version.
+
+There is deliberately **no "merge it anyway" option here.** The code was built
+to match a specification QA says is wrong, so approving the merge would be
+approving the wrong thing. If you think QA is mistaken, say so on the Issue and
+hand the Card back — that is the other honest answer, and it is recorded too.
 
 ### 6.7 Stopping and resuming
 
@@ -1243,6 +1276,7 @@ producer_board.py accept ISSUE
 producer_board.py refresh-verification ISSUE
 producer_board.py reconcile-done ISSUE
 producer_board.py approve-exception ISSUE            # human only
+producer_board.py approve-spec-change ISSUE          # human only
 producer_board.py worktree-status [ISSUE]
 ```
 

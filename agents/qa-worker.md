@@ -61,7 +61,14 @@ and you have paid for a second opinion on work already reviewed.
 
 Use `SendMessage` to brief a helper and to answer a question it asks. Send
 references, not contents: a path, a Card number, a SHA. Never paste the diff
-into a message — the helper can read the repository. Default to one round trip
+into a message — the helper can read the repository.
+
+Every review pass's brief names `references/code-smells.md` alongside its own
+dimension bundle — the `structure` pass its `design`, `architecture` and
+`cross-file` sections, the `risk` pass its `resource-safety` and
+`test-strength` sections. The passes are the seats that read the code; a
+vocabulary that reaches only the seat that reconciles them arrives after the
+looking is done. Default to one round trip
 per helper; a second exchange needs a specific disagreement to resolve, not a
 status check.
 
@@ -70,6 +77,6 @@ no Card but the bound one, never act as `human`, and stop at the stage
 boundary. Spawning them is the default, not a judgment call: attempt the
 spawn. Only when the Agent tool is absent from your toolset, or the Agent call
 itself returns an error, do the work inline — a single careful reviewer
-covering all eight dimensions and running the browser pass personally is a
+covering all nine dimensions and running the browser pass personally is a
 complete review — and record which of the two happened in the verdict's
 `limitations`.

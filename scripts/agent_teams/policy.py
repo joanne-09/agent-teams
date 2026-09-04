@@ -26,7 +26,8 @@ from enum import Enum
 from typing import Iterable, Mapping
 
 from .model import (
-    Acceptance, Card, REQUIRED_DIMENSIONS, Role, Status,
+    Acceptance, BLOCKING_SEVERITIES, Card, CODE_SMELLS,
+    MINIMUM_FINDING_CONFIDENCE, REQUIRED_DIMENSIONS, Role, SEVERITIES, Status,
     TEST_STRENGTH_DIMENSIONS, Verdict,
 )
 
@@ -280,6 +281,22 @@ ACTION_POLICY: Mapping[str, Mapping[Role, object]] = {
         Role.LEAD: _N,
         Role.HUMAN: _A,
     },
+    # Sending a Card back to the architect because QA found the *specification*
+    # wrong. Human-only, and deliberately so: the team lead's instruction when
+    # he asked for this loop was that the human approval step stays and only
+    # the record becomes trackable. An agent seat that could reopen a spec on
+    # its own reading would be able to rewrite the baseline it is judged
+    # against, which is the one thing the design-conformance dimension rests
+    # on. It is not a HARD_FLOOR -- nothing merges -- but no agent seat holds
+    # it.
+    "approve_specification_change": {
+        Role.ANALYST: _N,
+        Role.ARCHITECT: _N,
+        Role.DEV: _N,
+        Role.QA: _N,
+        Role.LEAD: _N,
+        Role.HUMAN: _A,
+    },
     # Not a seat action at all. Arming automated merge is a *consequence* of
     # an eligible acceptance result, never something a session requests. The
     # row exists so "no seat may request it" is an assertion in the test
@@ -350,6 +367,13 @@ ACTION_REFUSAL_REASONS: Mapping[str, str] = {
         "merging is not a seat action. Publish a complete verdict for the "
         "current head, then run `accept`; deterministic policy decides the "
         "route and only an eligible result reaches the merge controller"
+    ),
+    "approve_specification_change": (
+        "reopening a specification is a human decision. Record the conflict as "
+        "a `spec_change_requests` entry on the verdict -- the document, the "
+        "clause, what you observed, and what you suggest instead -- and "
+        "`accept` will route the Card to the human, who approves it back to "
+        "the architect"
     ),
 }
 
@@ -605,9 +629,16 @@ def validate_verdict(
             f"Request head is now {str(live_head_sha)[:12]}; a new commit "
             f"invalidates the evidence. Re-review the current head."
         )
+    # Checked before the early return below: a specification conflict is most
+    # often reported on a `fail`, which is exactly the verdict value that skips
+    # the rest of these rules. Findings are here for the same reason and a
+    # stronger one -- a `fail`'s findings are what the Developer is handed.
+    problems.extend(_spec_change_problems(verdict))
+    problems.extend(_findings_problems(verdict.findings))
     if verdict.verdict != "pass":
         return problems
 
+    problems.extend(_pass_severity_problems(verdict))
     missing = [d for d in REQUIRED_DIMENSIONS if d not in verdict.review_dimensions]
     if missing:
         problems.append(
@@ -627,6 +658,216 @@ def validate_verdict(
         )
     problems.extend(_test_strength_problems(verdict.test_strength))
     problems.extend(_browser_evidence_problems(verdict, config))
+    return problems
+
+
+#: What a finding must name to be checkable at all. ``severity`` says what it
+#: costs if it ships, ``dimension`` says which of the nine lenses found it,
+#: ``confidence`` says how sure the reviewer is that it is real, and
+#: ``evidence`` is the quoted code without which the skill's step 4 does not
+#: promote the finding in the first place.
+FINDING_FIELDS: tuple[str, ...] = (
+    "severity", "dimension", "confidence", "evidence",
+)
+
+
+def _findings_problems(entries: Iterable[object]) -> list[str]:
+    """Why these findings cannot be compared, challenged, or acted on.
+
+    Structured for the same reason ``test_strength`` is, and the history is
+    the argument. Findings were free text until 2026-09-04, so every rule the
+    review skill stated about them -- carry a severity, score the confidence,
+    name the smell from the catalogue, do not invent one -- was checkable by a
+    reader and by nothing else. An inflated ``[critical]`` tag, a severity
+    word that meant whatever the writer wanted, and a smell coined on the spot
+    were all indistinguishable from the real thing to every consumer
+    downstream.
+
+    Prose is refused outright rather than tolerated alongside objects. The
+    lesson is ``RETIRED_KEYS`` from earlier the same day: a permissive reader
+    that silently accepts the old shape converts a loud failure into a quiet
+    wrong answer, and the reviewer never learns the rule exists.
+
+    Called before ``validate_verdict``'s early return, deliberately. A
+    ``fail``'s findings are the payload that routes to the Developer -- the
+    one verdict value whose findings are actually acted on -- so checking them
+    only on a ``pass`` would leave the important case unchecked.
+    """
+    problems: list[str] = []
+    severities = set(SEVERITIES)
+    dimensions = set(REQUIRED_DIMENSIONS)
+    smells = set(CODE_SMELLS)
+
+    for index, entry in enumerate(entries):
+        label = f"findings[{index}]"
+        if not isinstance(entry, Mapping):
+            problems.append(
+                f"{label} is free text. Each finding must be an object naming "
+                + ", ".join(FINDING_FIELDS)
+                + ", optionally `smell`. Prose cannot be compared to another "
+                  "reviewer's wording or to the same defect on the next Card."
+            )
+            continue
+
+        severity = str(entry.get("severity", "")).strip().casefold()
+        if severity not in severities:
+            problems.append(
+                f"{label} severity {severity or '(missing)'!r} is not "
+                f"recognised; use one of: " + ", ".join(SEVERITIES)
+            )
+
+        dimension = str(entry.get("dimension", "")).strip().casefold()
+        if dimension not in dimensions:
+            problems.append(
+                f"{label} dimension {dimension or '(missing)'!r} is not one "
+                f"of the nine reviewed dimensions; use one of: "
+                + ", ".join(REQUIRED_DIMENSIONS)
+            )
+
+        problems.extend(_confidence_problems(label, entry.get("confidence")))
+
+        if not str(entry.get("evidence", "") or "").strip():
+            problems.append(
+                f"{label} records no evidence. A finding that quotes nothing "
+                f"is an impression, and an impression is not promoted."
+            )
+
+        # Absent is correct and common: most findings have no smell, and a
+        # plain logic bug has none. Only a value outside the catalogue is a
+        # problem -- that is `code-smells.md`'s "do not invent entries",
+        # which until now no check could enforce.
+        smell = str(entry.get("smell", "") or "").strip()
+        if smell and smell not in smells:
+            problems.append(
+                f"{label} names a smell that is not in the catalogue: "
+                f"{smell!r}. Use an entry from "
+                f"references/code-smells.md or describe the finding plainly; "
+                f"a private vocabulary is worse than none, because it looks "
+                f"shared."
+            )
+    return problems
+
+
+def _render_finding(entry: object) -> str:
+    """One finding as the line the Developer reads on the Card.
+
+    The acceptance reason is where a `fail` actually reaches a person, so the
+    structure has to collapse back into a sentence rather than arrive as a
+    repr. Malformed entries are rendered as written: this runs after
+    ``validate_verdict`` has already refused them, and inventing a tidy shape
+    for something the validator rejected would hide which one was wrong.
+    """
+    if not isinstance(entry, Mapping):
+        return str(entry)
+    severity = str(entry.get("severity", "")).strip() or "unrated"
+    dimension = str(entry.get("dimension", "")).strip()
+    evidence = " ".join(str(entry.get("evidence", "") or "").split())
+    smell = str(entry.get("smell", "") or "").strip()
+    head = f"[{severity}]" + (f" {dimension}" if dimension else "")
+    tail = f" ({smell})" if smell else ""
+    return f"{head}: {evidence}{tail}"
+
+
+def _confidence_problems(label: str, raw: object) -> list[str]:
+    """Why this confidence score cannot be read.
+
+    ``bool`` is rejected explicitly because it is an ``int`` in Python, and
+    ``True`` would otherwise read as confidence 1 -- a score below the
+    publishing floor arriving as a plausible-looking value.
+    """
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return [
+            f"{label} records no usable confidence; score it 1-10. "
+            f"How sure you are is not what the severity says."
+        ]
+    if not 1 <= raw <= 10:
+        return [f"{label} confidence {raw} is outside 1-10"]
+    if raw < MINIMUM_FINDING_CONFIDENCE:
+        return [
+            f"{label} is published at confidence {raw}, which is too low to "
+            f"act on; move it to `limitations` with the reason. Do not delete "
+            f"it -- a dropped finding reaches nobody and nobody learns it was "
+            f"dropped."
+        ]
+    return []
+
+
+def _pass_severity_problems(verdict: Verdict) -> list[str]:
+    """Why this pass contradicts its own findings.
+
+    The one rule here that changes an outcome rather than a format.
+    ``verdict-schema.md`` has always said a ``critical`` or ``high`` finding
+    on a ``pass`` is a contradiction, and nothing enforced it, which made
+    writing ``pass`` above a serious finding the cheapest way to ship it.
+
+    The refusal names ``fail`` rather than asking for the finding to be
+    softened or removed. The finding is the honest part of the verdict; the
+    verdict value is the part that disagrees with it.
+    """
+    problems: list[str] = []
+    for index, entry in enumerate(verdict.findings):
+        if not isinstance(entry, Mapping):
+            continue  # already reported as free text
+        severity = str(entry.get("severity", "")).strip().casefold()
+        if severity not in BLOCKING_SEVERITIES:
+            continue
+        problems.append(
+            f"pass carries a {severity} finding (findings[{index}], "
+            f"{str(entry.get('dimension', '')).strip() or 'unknown dimension'}"
+            f"): a finding that would send the Card back to the Developer is "
+            f"what `fail` means. A pass may carry medium and low findings; "
+            f"that is what they are for."
+        )
+    return problems
+
+
+#: What a specification-change request must name to be actionable. Anything
+#: less is an opinion about a document, which the architect cannot diff.
+SPEC_CHANGE_FIELDS: tuple[str, ...] = (
+    "document", "clause", "conflict", "suggested_change",
+)
+
+
+def _spec_change_problems(verdict: Verdict) -> list[str]:
+    """Why these specification-change requests cannot be routed.
+
+    Silent when there are none: this is an occasional finding, not a section
+    every verdict must fill in, and a required-but-usually-empty field teaches
+    reviewers to write something to satisfy the validator.
+
+    The four required keys are the difference between a request the architect
+    can act on and a complaint. "The spec is wrong" names no document. "AC3
+    contradicts AC5" names no fix. What the architect needs is: which document,
+    which part of it, what was observed that conflicts with it, and what to
+    write instead.
+    """
+    requests = verdict.spec_change_requests
+    if not requests:
+        return []
+    if isinstance(requests, (str, bytes)) or not isinstance(
+        requests, (list, tuple)
+    ):
+        return ["spec_change_requests must be a list of objects, not prose"]
+
+    problems: list[str] = []
+    for index, request in enumerate(requests):
+        label = f"spec_change_requests[{index}]"
+        if not isinstance(request, Mapping):
+            problems.append(
+                f"{label} must be an object naming "
+                + ", ".join(SPEC_CHANGE_FIELDS)
+            )
+            continue
+        missing = [
+            name for name in SPEC_CHANGE_FIELDS
+            if not str(request.get(name, "") or "").strip()
+        ]
+        if missing:
+            problems.append(
+                f"{label} is missing {', '.join(missing)}; a specification "
+                f"change the architect cannot diff is a complaint, not a "
+                f"request"
+            )
     return problems
 
 
@@ -863,11 +1104,36 @@ def evaluate_acceptance(
             reasons=tuple(reasons),
         )
 
+    # Checked before `fail`, and that order is the whole point. A defect whose
+    # cause is the specification used to route to `dev` along with every other
+    # fail -- to the one seat that may not change a specification. The Card
+    # then bounced, or a person edited the document by hand and approved their
+    # own edit, off the record. See the 2026-09-04 decision record.
+    #
+    # The route is `protected_change` rather than a fourth acceptance value:
+    # `docs/specs/**` is already a protected category, so a change to a
+    # specification was always a human decision. What was missing was any way
+    # for QA to *say so*, not a new lane to say it in.
+    if verdict.spec_change_requests:
+        named = "; ".join(
+            f"{request.get('document')} ({request.get('clause')}): "
+            f"{request.get('conflict')}"
+            for request in verdict.spec_change_requests
+            if isinstance(request, Mapping)
+        )
+        return result(
+            "protected_change",
+            "Quality Assurance reports the specification itself is in "
+            "conflict, which no Developer seat may correct: " + named,
+            "approve it back to the architect, or reject the request and hand "
+            "the Card on with the reason recorded",
+        )
     if verdict.verdict == "fail":
         return result(
             "defect",
             "Quality Assurance recorded a fail verdict: "
-            + ("; ".join(verdict.findings) or "no finding recorded"),
+            + ("; ".join(_render_finding(f) for f in verdict.findings)
+               or "no finding recorded"),
         )
     if verdict.verdict == "blocked":
         return result(

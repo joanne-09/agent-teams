@@ -207,6 +207,7 @@ take precedence over overrides for those two states. For example:
 | `handoff_cap` | non-negative integer | `6` | every seat that hands off; qa when returning a stale exception | Refuses another handoff once the Card already has this many handoffs. `0` disables the cap. |
 | `workspace` | non-empty string beginning `..` | `"../.worktrees"` | dev (claim worktree), qa (review worktree) | Parent directory for claim worktrees. It must begin with `..` so worktrees stay outside the repository. |
 | `claim_ttl_hours` | non-negative integer | `72` | lead and human (`worktree-status`) | Stale-claim observation threshold reported with claim/worktree status. It never authorizes automatic branch or worktree deletion. |
+| `recovery` | object with `max_retries`, `initial_backoff_seconds`, `backoff_multiplier`, `max_backoff_seconds` | `{"max_retries": 1, "initial_backoff_seconds": 5.0, "backoff_multiplier": 2.0, "max_backoff_seconds": 60.0}` | every seat, as the team default; GitHub transport for safe reads; the coordinating skill for unchanged actions | Bounded retry and exponential-backoff schedule. `max_retries` counts retries *after* the first attempt, so `0` disables them. Per-seat overrides go under `roles`, and a seat that overrides one field keeps the rest of this schedule. |
 
 When WIP capacity is limited, earlier entries in `dispatch_roles` sort ahead of
 later entries; Issue number is the deterministic tie-breaker.
@@ -226,9 +227,9 @@ so the pair can be told apart without reading this page:
 | `code_pr_merge_method` | `squash`, `merge`, `rebase` | `squash` | merge executor, inside `accept` and `approve-exception` | How agent-teams closes the code Pull Request when it issues the merge itself. |
 
 These three were named `spec_merge_mode`, `merge_mode`, and `merge_method`
-before 2026-08-21. The old names still load, so an existing repository keeps
-working untouched; they are dropped the first time agent-teams writes the file.
-See [Renamed settings](#renamed-settings).
+before 2026-08-21. Those names were accepted and silently rewritten for two
+weeks; since 2026-09-04 a file carrying one **does not load**, and the error
+names the key to write instead. See [Retired settings](#retired-settings).
 
 ### `spec_pr_merge_mode`
 
@@ -459,29 +460,49 @@ or use a model name with an explicit context suffix such as
 `glm-5.2:cloud[1m]`. Verified 2026-08-21: with the defaults 8 of the 10
 `agent-teams` skill descriptions were omitted from the listing.
 
-## Renamed settings
+## Retired settings
 
 Three merge settings were renamed on 2026-08-21. The old names could not be
 told apart by reading them: neither `spec_merge_mode` nor `merge_mode` said
 which Pull Request it governed, and `merge_method` read as though it belonged
 to whichever of the two you had looked at last.
 
-| Old name | Current name |
+| Retired name | Write this instead |
 |---|---|
 | `spec_merge_mode` | `spec_pr_merge_mode` |
 | `merge_mode` | `code_pr_merge_mode` |
 | `merge_method` | `code_pr_merge_method` |
 
-Old names still load, with the same values and the same meaning, so no
-consuming repository breaks on upgrade. They are dropped the first time
-agent-teams writes the file — a repository migrates by letting it save once.
-A file carrying both names for one setting takes the current one, which is
-what a dashboard mid-migration emits. Validation always reports the current
-name, so an error teaches the name to migrate to rather than echoing the dead
-one. The same aliases are accepted inside a `roles` block.
+**A retired name is a validation error.** `doctor`, `init`, and every command
+that loads configuration refuse the whole file and name the key to write
+instead, at the top level and inside a `roles` block alike. Every retired key
+present is reported in one pass. The values are unchanged, so migrating is
+renaming the key and nothing else.
+
+For two weeks the old names were accepted and rewritten on save. That is what
+this replaces, and the reason is a defect it produced rather than a
+preference: the dashboard's config form kept writing `merge_mode`, the plugin
+accepted it and saved `code_pr_merge_mode`, and so the key the form read back
+had vanished from the file it had just written — the user's merge choice
+appeared to revert to the default on every reload, and nothing anywhere
+failed. Accepting both names is what kept that quiet for a week.
+
+Note that the refusal, not the deletion, is the mechanism. Unknown keys are
+ignored by this parser, so simply dropping the alias would have made
+`{"merge_mode": "manual"}` mean `code_pr_merge_mode: automatic` — a file that
+reads as though it were honoured and is not. Full reasoning and the rejected
+alternatives:
+[`docs/decisions/2026-09-04-retiring-renamed-config-keys.md`](./decisions/2026-09-04-retiring-renamed-config-keys.md).
 
 ## Legacy setting
 
 Older files may contain `spec_completion`. It is accepted for compatibility,
-ignored, and omitted when configuration is written. Use `spec_pr_merge_mode`
-instead.
+ignored, and omitted when configuration is written.
+
+It is deliberately **not** retired alongside the three names above, and the
+difference is worth stating: those three are renames, so a refusal can tell
+you exactly what to write and your value carries over untouched.
+`spec_completion` is a removed feature whose values (`opened`, and so on) have
+no equivalent in `spec_pr_merge_mode` — a refusal could say only "delete
+this", which is a migration a person has to think about rather than perform.
+Set `spec_pr_merge_mode` to the behaviour you want and remove the old key.

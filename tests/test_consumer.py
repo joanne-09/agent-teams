@@ -49,6 +49,16 @@ def a_verdict(**overrides):
     return Verdict(**base)
 
 
+def a_finding(evidence="parse crashes on an empty header", **overrides):
+    """One valid structured finding. Findings stopped being prose 2026-09-04."""
+    base = {
+        "severity": "high", "dimension": "correctness", "confidence": 9,
+        "evidence": evidence,
+    }
+    base.update(overrides)
+    return base
+
+
 def verdict_comment(**overrides):
     payload = a_verdict(**overrides).to_dict()
     return VERDICT_MARKER + "\n\n```json\n" + json.dumps(payload) + "\n```"
@@ -474,7 +484,7 @@ class VerdictRecordingTests(unittest.TestCase):
 
     def test_the_latest_verdict_wins_when_several_were_posted(self):
         board, _ = self._board(
-            comments=[verdict_comment(verdict="fail", findings=("boom",)),
+            comments=[verdict_comment(verdict="fail", findings=(a_finding("boom"),)),
                       verdict_comment()]
         )
         self.assertEqual(board.latest_verdict(21).verdict, "pass")
@@ -514,7 +524,7 @@ class VerdictRecordingTests(unittest.TestCase):
 class AutoMergeTests(unittest.TestCase):
     def test_arming_auto_merge_uses_the_configured_method(self):
         gh = FakeGh(items=board_with((21, "Delivery", "In Review", "qa")))
-        Board(a_config(merge_method="rebase"), gh=gh).arm_auto_merge(57, "rebase")
+        Board(a_config(code_pr_merge_method="rebase"), gh=gh).arm_auto_merge(57, "rebase")
         call = gh.calls_matching("pr", "merge")[0]
         self.assertIn("--auto", call)
         self.assertIn("--rebase", call)
@@ -583,7 +593,7 @@ class VerdictPublicationTests(unittest.TestCase):
         result = consumer.verdict(21, Verdict(
             verdict="fail", card=21, head_sha="a" * 40, pull_request="p",
             checks=("unittest: 3 failed",),
-            findings=("parse crashes on an empty header",), next_role=Role.DEV,
+            findings=(a_finding(),), next_role=Role.DEV,
         ))
         self.assertTrue(result["ok"])
 
@@ -628,7 +638,7 @@ class AcceptTests(unittest.TestCase):
     def test_manual_mode_waits_for_the_user_without_issuing_merge(self):
         consumer, gh = self._consumer(
             [verdict_comment()],
-            config=a_config(merge_mode="manual"),
+            config=a_config(code_pr_merge_mode="manual"),
             pr_state=self.OPEN,
         )
         result = consumer.accept(21)
@@ -640,7 +650,7 @@ class AcceptTests(unittest.TestCase):
     def test_manual_mode_reconciles_a_merge_the_user_already_completed(self):
         consumer, gh = self._consumer(
             [verdict_comment()],
-            config=a_config(merge_mode="manual"),
+            config=a_config(code_pr_merge_mode="manual"),
             pr_state=self.MERGED,
         )
         result = consumer.accept(21)
@@ -713,7 +723,7 @@ class AcceptTests(unittest.TestCase):
 
     def test_a_defect_is_unaffected_by_the_merge_state(self):
         consumer, gh = self._consumer(
-            [verdict_comment(verdict="fail", findings=("boom",))],
+            [verdict_comment(verdict="fail", findings=(a_finding("boom"),))],
             pr_state=self.MERGED,
         )
         result = consumer.accept(21)
@@ -723,7 +733,7 @@ class AcceptTests(unittest.TestCase):
 
     def test_a_defect_returns_the_card_to_development(self):
         consumer, gh = self._consumer(
-            [verdict_comment(verdict="fail", findings=("crashes on empty",))]
+            [verdict_comment(verdict="fail", findings=(a_finding("crashes on empty"),))]
         )
         result = consumer.accept(21)
         self.assertEqual(result["acceptance"], "defect")
@@ -759,7 +769,7 @@ class AcceptTests(unittest.TestCase):
     def test_the_acceptance_comment_is_posted_on_every_route(self):
         for comment in (
             verdict_comment(),
-            verdict_comment(verdict="fail", findings=("boom",)),
+            verdict_comment(verdict="fail", findings=(a_finding("boom"),)),
         ):
             consumer, gh = self._consumer([comment])
             consumer.accept(21)
@@ -971,7 +981,7 @@ class DoctorAcceptanceTests(unittest.TestCase):
             items=board_with((21, "x", "In Review", "qa")),
             auto_merge_allowed=False,
         )
-        report = Board(a_config(merge_mode="manual"), gh=gh).doctor()
+        report = Board(a_config(code_pr_merge_mode="manual"), gh=gh).doctor()
         self.assertFalse(
             any("auto-merge" in problem for problem in report["acceptance_problems"])
         )

@@ -3,14 +3,24 @@
 agent-teams ships every skill it uses — nothing is invoked from another plugin
 at runtime. Where a skill's text is substantially derived from an open-source
 project, that derivation is recorded here and marked with a comment at the top
-of the derived file. All three sources are MIT-licensed; the notices below
-satisfy their license conditions.
+of the derived file.
+
+Three of the four sources are MIT-licensed and the notices below satisfy their
+conditions. The fourth, **alibaba/open-code-review, is Apache-2.0**, whose
+conditions differ: a derivative must retain the attribution notice and **state
+that changes were made**. Both are done — the row below names what was taken,
+the derived files carry the header comment, and
+`docs/decisions/2026-09-04-adopting-open-code-review.md` records exactly what
+was changed in adapting it. Nothing was copied verbatim; what was taken is
+review *coverage* — a category of question nobody here was asking — restated in
+this repository's own terms and enforcement shape.
 
 | Source | License | Derived into |
 |---|---|---|
 | [board-superpowers](https://github.com/PanQiWei/board-superpowers) — MIT, (c) 2026 PanQiWei | MIT | `skills/intaking-requirement/` (shape judgment, spec awareness, decline policy), `skills/briefing-board/` (report template, recommendation ladder, stale-claim check), `skills/triaging-board/` (stale-claim sweep, blocker classes, evidence rules), `skills/using-agent-teams/` (state table, non-signals, router anti-pattern), `skills/inspecting-queue/` (observation guards), `skills/authoring-spec/` (decomposition gates: INVEST, vertical slicing, SPIDR, sizing); each including any `references/` files. Details: `docs/skill_migration.md` + `docs/skill_migration_audit.md` |
 | [superpowers](https://github.com/obra/superpowers) — MIT, (c) 2025 Jesse Vincent | MIT | `skills/consuming-card/` (test-driven-development Iron Law and Red-Green-Refactor cycle, the rationalizations table, the evidence-before-claims gate and its claim/requires table, worktree isolation discipline) incl. `references/tdd-discipline.md` + `references/claim-and-worktree.md`; `skills/verifying-delivery/` (evidence-before-claims from `verification-before-completion`); `skills/intaking-requirement/` (clarification loop, from `brainstorming`'s elicitation phase; incl. `references/clarifying-requirements.md`). Details: `docs/skill_migration.md` sections 8 + 10 |
 | [gstack](https://github.com/garrytan/gstack) — MIT, (c) 2026 Garry Tan | MIT | `skills/verifying-delivery/` (from `/review`: pre-emit verification gate, confidence calibration 1-10, specialist dispatch with dedup and multi-pass confirmation, conditional adversarial pass, scope-drift detection, DONE/PARTIAL/NOT DONE/CHANGED/UNVERIFIABLE audit vocabulary; from `/qa`: screenshot evidence, repro-is-everything, console checks, credential redaction) incl. `references/review-dimensions.md`, `references/evidence-and-challenge.md`, `references/verdict-schema.md`, `references/browser-pass.md`. Details: `docs/skill_migration.md` section 9 |
+| [open-code-review](https://github.com/alibaba/open-code-review) — Apache-2.0, (c) Alibaba Group | Apache-2.0 | `skills/verifying-delivery/` (the `resource-safety` review dimension, from the default ruleset's "are resources properly released" and "obvious performance issues" categories; the `critical`/`high`/`medium`/`low` severity vocabulary and the rule that severity is a separate axis from confidence; the asymmetric false-positive rule in `references/evidence-and-challenge.md`, from its review-filter prompt) incl. `references/code-smells.md` operational entries. **Not a runtime dependency and not installed** — the `ocr` CLI is an optional accelerator only. Details and gap analysis: `docs/decisions/2026-09-04-adopting-open-code-review.md` |
 
 ## INVENTED by agent-teams (2026-08-27)
 
@@ -130,10 +140,25 @@ Nothing below has a counterpart in any of the three sources:
   non-partial outcome;
 - the `(Status, Role)` orthogonality and the `[expected:...]` staleness check;
 - partial-failure envelopes with a never-replay-creation rule;
-- the eight required review dimensions and the structured verdict document
-  (ARCHITECTURE 7.4 and 9.6, which predate this work);
+- the required review dimensions and the structured verdict document
+  (ARCHITECTURE 7.4 and 9.6, which predate this work); eight of the nine are
+  ours, `resource-safety` is derived — see the open-code-review row;
 - the verdict/acceptance split as two types neither of which converts into the
   other, and the deterministic acceptance decision table;
+- in `references/code-smells.md`, everything except the smell *names*: the
+  grouping by review dimension, the per-entry descriptions tied to this
+  codebase, and the "deliberately not in this catalogue" section — the
+  judgment that Comments, Data Class, Refused Bequest, Alternative Classes
+  with Different Interfaces and Loops would misfire here is ours. The names
+  themselves are Fowler & Beck's published taxonomy (*Refactoring* ch. 3),
+  cited in that file; the four `resource-safety` entries are derived — see the
+  open-code-review row. `model.CODE_SMELLS` and the tests that hold the two in
+  sync are ours;
+- the validated finding object (`severity`, `dimension`, `confidence`,
+  `evidence`, catalogue `smell`), the confidence floor that routes to
+  `limitations` rather than deletion, and the refusal of a `pass` carrying a
+  `critical` or `high` finding — the severity vocabulary itself is derived,
+  per the open-code-review row;
 - exact head-SHA binding, empty-`blind_spots`-for-a-pass, and the changed-file
   enumeration check against the live diff;
 - protected-path classification and the human exception lane;

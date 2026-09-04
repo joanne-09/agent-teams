@@ -113,6 +113,7 @@ DECOMPOSED_CHILD_MARKER = "<!-- agent-teams:decomposed-child -->"
 CLARIFICATION_MARKER = "<!-- agent-teams:clarification -->"
 VERDICT_MARKER = "<!-- agent-teams:verdict -->"
 ACCEPTANCE_MARKER = "<!-- agent-teams:acceptance -->"
+SPEC_CHANGE_MARKER = "<!-- agent-teams:spec-change-approval -->"
 
 
 def _one_line(value: Any, limit: int = 500) -> str:
@@ -195,15 +196,98 @@ class Handoff:
 
 #: ARCHITECTURE.md 9.6. A pass missing any of these has not reviewed the
 #: delivery, whatever its prose claims.
+#: ``resource-safety`` was added 2026-09-04 after surveying Alibaba's
+#: OpenCodeReview (todo 5 of the 2026-08-28 review). Its default ruleset asks
+#: "are resources properly released" and "are there obvious performance
+#: problems" as a first-class category; nothing in the previous eight asked
+#: either. The team lead's own code-smell examples in that same review -- a
+#: connection pool never released until the buffer bursts under load, private
+#: state leaked out until it becomes a security hole -- landed in the gap
+#: between ``correctness`` (the logic is right) and ``security`` (someone
+#: attacks it), which is exactly where exhaustion and leak defects live.
 REQUIRED_DIMENSIONS: tuple[str, ...] = (
     "design", "architecture", "correctness", "edge-cases",
-    "security", "compatibility", "cross-file", "test-strength",
+    "security", "compatibility", "cross-file", "resource-safety",
+    "test-strength",
 )
 
 #: Line coverage is execution evidence, not behavioural proof. A pass must
 #: carry at least one of these stronger dimensions.
 TEST_STRENGTH_DIMENSIONS: tuple[str, ...] = (
     "branch", "scenario", "mutation", "integration", "property", "negative",
+)
+
+#: What a finding costs if it ships, ordered worst first. A separate axis from
+#: confidence, which says how sure the reviewer is that it is real: a
+#: confidence-9 naming nit and a confidence-5 data-loss bug are not comparable
+#: on one number, and ranking by confidence alone puts the nit first.
+#:
+#: The first two are the gate. A finding that would send the Card back to the
+#: Developer is what ``fail`` means, so carrying one on a ``pass`` is a
+#: contradiction rather than a strong opinion; see
+#: ``policy._pass_severity_problems``.
+SEVERITIES: tuple[str, ...] = ("critical", "high", "medium", "low")
+
+#: Severities a ``pass`` may not carry.
+BLOCKING_SEVERITIES: frozenset[str] = frozenset({"critical", "high"})
+
+#: The lowest confidence a finding may be published at. Below this the skill
+#: has always said it belongs in ``limitations`` -- not deleted, which is the
+#: failure mode ``references/evidence-and-challenge.md`` warns about, but filed
+#: where a reader can see it was considered and not acted on.
+MINIMUM_FINDING_CONFIDENCE = 5
+
+#: The closed vocabulary a ``structure``-bundle or ``resource-safety`` finding
+#: names itself with. Fowler & Beck's "Bad Smells in Code" catalogue, plus the
+#: operational categories from alibaba/open-code-review's default ruleset
+#: (Apache-2.0); the prose, the per-dimension grouping, and the entries
+#: deliberately excluded are in
+#: ``skills/verifying-delivery/references/code-smells.md``, which
+#: ``tests/test_findings.py`` checks against this tuple in both directions.
+#:
+#: Closed on purpose. A finding that says *Shotgun Surgery* can be challenged,
+#: deduplicated against another reviewer's wording, and compared to the same
+#: defect on the next Card. One that says "this feels wrong" can do none of
+#: the three, and a name invented on the spot is worse than no name because it
+#: looks shared.
+#:
+#: Membership is enforced; the pairing with a finding's ``dimension`` is not.
+#: The grouping below records which dimension is most likely to notice a
+#: smell, not the only one permitted to report it -- a ``design`` pass can
+#: legitimately see Duplicated Code.
+CODE_SMELLS: tuple[str, ...] = (
+    # design -- this unit is the wrong size or shape
+    "Mysterious Name",
+    "Long Function",
+    "Long Parameter List",
+    "Large Class",
+    "Primitive Obsession",
+    "Data Clumps",
+    "Temporary Field",
+    "Lazy Element",
+    "Speculative Generality",
+    # architecture -- this belongs somewhere else
+    "Feature Envy",
+    "Inappropriate Intimacy",
+    "Message Chains",
+    "Middle Man",
+    "Divergent Change",
+    "Global Data",
+    "Mutable Data",
+    # cross-file -- the change had to be smeared
+    "Shotgun Surgery",
+    "Duplicated Code",
+    "Repeated Switches",
+    "Parallel Inheritance Hierarchies",
+    # resource-safety -- it works, until volume
+    "Unreleased Resource",
+    "N+1",
+    "Unbounded Growth",
+    "Whole-payload Read",
+    # test-strength -- the tests smell too
+    "Assertion-free Test",
+    "Mystery Guest",
+    "Test Mirrors Implementation",
 )
 
 
@@ -237,15 +321,31 @@ class Verdict:
     #: rather than prose for the same reason as test_strength -- a sentence
     #: saying "clicked around, looked fine" cannot be checked.
     browser_evidence: Mapping[str, Any] | None = None
+    #: Defects whose cause is the specification rather than the code, each one
+    #: naming the document, the clause, the observed conflict, and the change
+    #: suggested. Added 2026-09-04: before it, QA findings could only travel to
+    #: the Developer, so a wrong specification had no route at all and was
+    #: repaired by a person editing the document by hand, off the record.
+    #:
+    #: Advisory in the same sense as ``next_role`` -- it is evidence, not a
+    #: route. What it *does* do is make ``evaluate_acceptance`` return
+    #: ``protected_change``, which is the existing human lane; QA still cannot
+    #: name its own outcome. Structured rather than prose for the same reason
+    #: as ``test_strength``: "the spec seems wrong" cannot be acted on, and a
+    #: suggestion nobody can diff is not a suggestion.
+    spec_change_requests: tuple[Mapping[str, Any], ...] = ()
     next_role: Role | None = None
 
     VALUES = ("pass", "fail", "blocked")
 
     #: Every tuple-valued field, so serialisation cannot silently miss one.
+    #: ``spec_change_requests`` holds objects rather than strings; it belongs
+    #: here anyway, because the point of this tuple is that nothing is missed
+    #: on the way to JSON.
     _SEQUENCES = (
         "design_baseline", "review_dimensions", "changed_files",
         "design_conformance", "test_strength", "checks", "findings",
-        "challenges", "blind_spots",
+        "challenges", "blind_spots", "spec_change_requests",
     )
 
     def __post_init__(self) -> None:

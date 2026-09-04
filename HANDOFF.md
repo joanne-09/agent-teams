@@ -4,11 +4,14 @@
 
 **Stack**: Claude Code plugin / Python 3.12 standard library / GitHub CLI / GitHub Projects v2 / Git / Slidev
 
-<<<<<<< HEAD
-**Last updated**: 2026-08-28 — session 14: sessions 12 and 13 are committed in both repositories, the 08-28 deck and a Chinese Part 1 speaking script are written, and the gap between this QA and a real QA organisation is now recorded rather than assumed
-=======
-**Last updated**: 2026-08-28 — session 14: the QA split ran live twice; the first run went inline, the spawn-first prose fix landed, and the second run fanned out fully (structure/behaviour/risk + spec-blind browser worker, one PASS verdict on Card #28)
->>>>>>> origin/mvp/producer-from-scratch
+**Last updated**: 2026-09-04 — session 16: five of the ten 08-28 review items. The merge-mode rename is traced end to end and found never to have entered the pipeline; its old names are now refused rather than translated; QA can route a specification defect to the architect through a recorded human gate; OpenCodeReview was surveyed and its coverage folded in as a ninth review dimension; the Browser reviewer's suite is documented; the 09-04 deck's Part 1 is written. All uncommitted.
+
+<!-- A conflict between the session-14 and session-15 headings sat here
+     unresolved, markers and all, from 2026-08-28 until 2026-09-04. Both
+     statements were true and neither was lost: sessions 12/13 are committed
+     and the QA-versus-real-QA gap is recorded (Known Issues, Open Decisions);
+     the QA split ran live twice on 08-28 (Session Log, session 14). -->
+
 
 ---
 
@@ -46,8 +49,8 @@ The earlier full implementation is a **separate sibling repository**, `../agent-
 - **Status and Role are orthogonal.** A handoff changes Role and writes context; it never silently changes Status. When both must move, that is two operations.
 - **Honest partial failure.** Multi-step mutations return `{ok:false, partial:true, completed:[...], failed:..., recovery:[...]}`. Creation steps are never replayed; nothing ever claims a rollback that did not run.
 - **The gates are enumerable, and openable from a surface that is not a terminal.** `human_gates` (CLI `gates`) is `next_actions` narrowed to the gate list, so the two cannot disagree. Every entry carries `argv` when a plugin command opens the gate (`readiness`, `qa_exception`) and `pull_request` when GitHub does (`spec_merge`, `manual_merge`) — a gate with no `argv` has no plugin command *by design*, and a surface that drew a button for one would be inventing authority the plugin refuses. `AGENT_TEAMS_HUMAN_ORIGIN` is a provenance label on the resulting comment, never a grant: `resolve_acting_role` still keys on the agent markers alone.
-- **One human gate plus one exception lane, now implemented.** `promote_to_ready` refuses every agent seat including `lead`. `merge_pull_request` — free-form merge of a caller-chosen Pull Request — **remains in `policy.HARD_FLOORS`**; decision 8 did not remove it. A companion action `request_automated_merge` is refused to *all six* seats including `human`, so "no seat may request a merge" is an assertion rather than an absence.
-- **Verdict and acceptance are separate types**, neither convertible into the other. QA writes `Verdict` (`pass`/`fail`/`blocked`, bound to the exact head SHA); policy writes `Acceptance` (`eligible`/`defect`/`protected_change`); QA cannot select its own route. That separation is structural, not prose.
+- **One routine human gate plus two exception lanes, all implemented.** Readiness is the routine one. `qa_exception` opens a protected change; `spec_change` (2026-09-04) routes a specification defect back to the architect and deliberately offers **no** merge, because the delivery was built against a baseline QA disputes. `promote_to_ready` refuses every agent seat including `lead`, and so does `approve_specification_change`. `merge_pull_request` — free-form merge of a caller-chosen Pull Request — **remains in `policy.HARD_FLOORS`**; decision 8 did not remove it. A companion action `request_automated_merge` is refused to *all six* seats including `human`, so "no seat may request a merge" is an assertion rather than an absence.
+- **Verdict and acceptance are separate types**, neither convertible into the other. QA writes `Verdict` (`pass`/`fail`/`blocked`, bound to the exact head SHA); policy writes `Acceptance` (`eligible`/`defect`/`protected_change`); QA cannot select its own route. That separation is structural, not prose, and `spec_change_requests` was deliberately built **inside** it: it is a validated evidence field that makes policy return `protected_change`, not a fourth acceptance value and not a route QA picks.
 - **Protected changes name files, not just categories.** Seven default categories, configurable; policy may add but emptying a default category is a configuration error.
 - **agent-teams calls no other plugin.** Skill content is derived locally with attribution; nothing is called at runtime and correctness never depends on a sibling being installed.
 - **All eight Producer skills use focused, attributed procedures.** The new clarifying-card skill separates existing-Card recovery from new intake. Source disciplines are adapted locally from board-superpowers, superpowers, and gstack; ATTRIBUTION.md records what was reused and what agent-teams invented. No sibling plugin is a runtime dependency.
@@ -70,7 +73,9 @@ The earlier full implementation is a **separate sibling repository**, `../agent-
 - **Evidence must be structured to be checkable.** `test_strength` entries are objects with a `dimension` from a closed vocabulary, `evidence`, and optionally `falsified_by`. Free prose is refused — a substring search for "branch" accepts "no branch coverage".
 - Intake leaves Status `Backlog` and Role `architect`. No agent seat may make a Card Ready. `decompose` creates children at `(Backlog, human)`.
 - `dispatch` remains a read-only compatibility view. Automation uses WIP-aware `next-actions`: current-session workers are actually started, direct-spec authoring is serialized, and durable GitHub state—not child prose—decides completion.
-- When superseding a test, leave a comment saying what changed and why. Sessions 4 and 6 both did this; the reasons are inline in `tests/test_policy.py` and `tests/test_consumer.py`.
+- When superseding a test, leave a comment saying what changed and why. Sessions 4, 6, and 16 all did this; the reasons are inline in `tests/test_policy.py`, `tests/test_consumer.py`, `tests/test_config_roles.py`, and `tests/test_producer_board.py`.
+- **A removed config key is a refusal, never a silent ignore.** `from_dict` drops keys it does not recognise, so deleting a name is worse than keeping it: the file reads as though it were honoured and is not. Retired names live in `config.RETIRED_KEYS` and produce a validation error naming the replacement. Same rule for anything retired later.
+- **A finding, a config value, or a piece of evidence must be structured enough to be refused.** The recurring shape across `test_strength`, `browser_evidence`, and now `spec_change_requests`: name the required fields, refuse prose, and report every defect in one pass rather than first-defect-wins.
 
 ---
 
@@ -97,14 +102,18 @@ Live board tests need a disposable repository and Project with all six `Status` 
 - [board-superpowers](https://github.com/PanQiWei/board-superpowers) — MIT. Source for `consuming-card` and `enforcing-pr-contract` derivations; also present locally at `../agent-teams-main`.
 - [superpowers](https://github.com/obra/superpowers) — MIT. Source for TDD and evidence-before-claims discipline. Local copy in the plugin cache under `claude-plugins-official/superpowers/6.2.0/`.
 - [gstack](https://github.com/garrytan/gstack) — MIT. Source for the pre-emit verification gate, confidence calibration, and browser-QA discipline. **Not installed locally**; fetch source text with `curl` on `raw.githubusercontent.com`, not WebFetch (see Hard-won Discoveries).
-- [OpenCodeReview](https://github.com/alibaba/open-code-review), [PR-AF](https://github.com/Agent-Field/pr-af), [GitHub Agentic Workflows](https://github.com/github/gh-aw), [Prow Tide](https://docs.prow.k8s.io/docs/components/core/tide/), [Code Review Benchmark](https://github.com/withmartian/code-review-benchmark) — researched patterns, never dependencies.
+- [OpenCodeReview](https://github.com/alibaba/open-code-review) — **Apache-2.0**, and since 2026-09-04 an actual derivation source, not just a researched pattern: `resource-safety`, the severity vocabulary, and the asymmetric false-positive rule. Read at `main` from `raw.githubusercontent.com`. Still **not** a runtime dependency. See `docs/decisions/2026-09-04-adopting-open-code-review.md`.
+- [PR-AF](https://github.com/Agent-Field/pr-af), [GitHub Agentic Workflows](https://github.com/github/gh-aw), [Prow Tide](https://docs.prow.k8s.io/docs/components/core/tide/), [Code Review Benchmark](https://github.com/withmartian/code-review-benchmark) — researched patterns, never dependencies.
+- Martin Fowler & Kent Beck, *Refactoring* ch. 3 — the smell catalogue `skills/verifying-delivery/references/code-smells.md` uses as a closed vocabulary. Named by the team lead in the 08-28 review.
 - [2026 automated-code-review evaluation](https://arxiv.org/abs/2606.15689) — evidence against making one language-model verdict the merge authority.
 - `../agent-teams-main/docs/agent-team-adaptation/` — the design dossier this adaptation implements.
 - [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — normative design. Appendix A records decisions 1-8; decision 8 is now implemented.
 - [`docs/IMPLEMENTATION_PLAN.md`](./docs/IMPLEMENTATION_PLAN.md) — the sole status ledger.
 - [`docs/specs/2026-08-06-consumer-flow-design.md`](./docs/specs/2026-08-06-consumer-flow-design.md) — the approved Consumer design.
 - [`docs/plans/2026-08-06-consumer-flow.md`](./docs/plans/2026-08-06-consumer-flow.md) — the 17-task implementation plan that was executed.
-- [`ATTRIBUTION.md`](./ATTRIBUTION.md) — per-element `DERIVED` / `INVENTED` labels and the record of what was verified how.
+- [`ATTRIBUTION.md`](./ATTRIBUTION.md) — per-element `DERIVED` / `INVENTED` labels and the record of what was verified how. Note the licence split: three MIT sources plus one Apache-2.0, whose conditions differ.
+- [`docs/traces/2026-09-04-merge-mode-evidence-chain.md`](./docs/traces/2026-09-04-merge-mode-evidence-chain.md) — **read this before arguing about process gaps.** The one place a change was actually followed end to end, with commit hashes so it can be re-run.
+- `docs/decisions/2026-09-04-*.md` — three records from session 16: retiring the renamed config keys, the QA→spec feedback loop, and adopting from OpenCodeReview.
 - [`slides/2026-08-06-weekly.md`](./slides/2026-08-06-weekly.md) — **the QA flow contract.** Session 6 treated this as authoritative and fixed the implementation to match it.
 
 ---
@@ -127,52 +136,76 @@ bbf1335. Before this handoff update, the worktree was clean.
 | Runtime source reuse decision | Done | Source procedures are adapted locally and attributed; no sibling plugin installation required |
 | Live Consumer and merge proof | **Done** (Lee's side, 08-12) | Full live run on the real board: eligible auto-merge, defect/exception lane, exact-head re-verification, automatic reconciliation — see session 9 |
 | Demo annotation package | Pending | Team-lead feedback requests annotated slides, node screenshots, and a Word record of intake questions |
+| Config vocabulary hardened | Done (09-04) | Retired names refused with the replacement named; the trace that justified it is in `docs/traces/` |
+| QA → specification feedback loop | Done, unrun | Validated `spec_change_requests`, `protected_change` routing, human-only `approve-spec-change`, `spec_change` gate |
+| Review coverage from an external source | Done, unrun | `resource-safety` as the ninth dimension, severity vocabulary, smell catalogue; OpenCodeReview surveyed and deliberately not adopted as a dependency |
+| Browser suite documented | Done | Playwright / headless Chromium named, compared against five alternatives, with its coverage gaps stated |
+| Observability | Not started | Todo 4. The evidence-chain trace is the argument for it, not the start of it |
+| New fraud dataset swapped in | Not started | Todos 7-8; the first live test of everything built since 08-27 |
 
 ---
 
 ## Key Files
 
+<Files a new session must understand before touching the current work.>
+
 | File | Status | Description |
 |---|---|---|
-| agents/agent-teams-worker.md | Load-bearing | Generic bounded carrier with the Skill tool and no workflow preload list |
-| scripts/agent_teams/workflows.py | Load-bearing | next-actions selects one routine and qualified skill; also owns readiness, resume, acceptance, and reconciliation workflows |
-| skills/clarifying-card/SKILL.md | New / stable | Resolves one question on an existing Backlog analyst Card without creating a duplicate |
-| skills/intaking-requirement/SKILL.md | Active | New-requirement intake only; returned-Card behavior was extracted |
-| skills/dispatching-work/SKILL.md | Load-bearing | Current-session orchestration loop and exact-skill worker launch |
-| skills/using-agent-teams/SKILL.md | Load-bearing | Small intent router; never selects human |
-| scripts/agent_teams/policy.py | Load-bearing | Network-free authority, verdict validation, and deterministic acceptance |
-| scripts/agent_teams/git.py | Load-bearing | Unique remote claim commit, resume lookup, and guarded worktrees |
-| scripts/agent_teams/board.py | Active | Semantic Project, Issue, Pull Request, verdict, and acceptance operations |
-| README.md | Active | Simple workflow explanation and source-reuse versus agent-teams overlay |
-| docs/ARCHITECTURE.md | Normative | On-demand skill composition and the governance design |
-| CLAUDE_TESTING.md | Active | Ten-skill and lazy-worker verification checklist |
-| tests/test_workflows.py | Active | Planner skill markers, clarifying route, and no-preload worker contract |
-| tests/fake_gh.py | Assumption risk | Fake GitHub shapes; still requires live comparison |
+| `agents/qa-worker.md` | Load-bearing | The only seat that publishes a verdict; spawns three review passes plus the browser worker |
+| `agents/qa-browser-worker.md` | Load-bearing | Spec-blind browser reviewer. **Has no browser tool in its frontmatter** — it drives Playwright through `Bash` |
+| `agents/{analyst,architect,dev,lead}-worker.md` | Stable | Per-seat bounded carriers; identical contract, differing only in seat |
+| `scripts/agent_teams/policy.py` | Load-bearing | Network-free authority, verdict validation, deterministic acceptance. Touched 09-04: `_spec_change_problems`, the spec-change route, `approve_specification_change` |
+| `scripts/agent_teams/config.py` | Load-bearing | `RETIRED_KEYS` + `_retired_key_problems`; per-role settings; `ui_paths`; protected paths |
+| `scripts/agent_teams/workflows.py` | Load-bearing | `next_actions` / `human_gates`; `accept`, `approve_exception`, `approve_spec_change` |
+| `scripts/agent_teams/board.py` | Active | Semantic Project/Issue/PR/verdict operations; `return_to_architect_for_spec_change` |
+| `scripts/agent_teams/model.py` | Load-bearing | `Verdict` (incl. `spec_change_requests`), `Acceptance`, `REQUIRED_DIMENSIONS` (now nine) |
+| `scripts/agent_teams/git.py` | Load-bearing | Unique remote claim commit, resume lookup, guarded worktrees |
+| `skills/verifying-delivery/SKILL.md` | Load-bearing | The QA routine; step 5b is the new spec-change path |
+| `skills/verifying-delivery/references/` | Active | Six references: review dimensions, evidence and challenge, verdict schema, browser pass, **browser tooling**, **code smells** |
+| `skills/authoring-spec/SKILL.md` | Active | Section 1 now handles arriving at `(In Progress, architect)` with an approved spec change |
+| `docs/traces/2026-09-04-merge-mode-evidence-chain.md` | Reference | Why the config vocabulary was hardened, and the three process gaps it named |
+| `docs/decisions/` | Reference | Four records; the three from 09-04 carry the reasoning behind this session's code |
+| `docs/ARCHITECTURE.md` | Normative | Governance design; §9.6 now documents `spec_change_requests` |
+| `docs/RUNBOOK.md` | Active | Cold-start guide; two tests guard its command appendix and its checkpoints |
+| `tests/fake_gh.py` | Assumption risk | Fake GitHub shapes; still not compared field-for-field against live JSON |
+| `tests/test_spec_feedback.py` | New / stable | 28 tests covering the QA→spec route end to end |
+| `slides/2026-09-04-weekly.md` | Active | Part 1 rewritten 09-04; Part 2 is the 08-21 live run, unchanged |
 
 ---
 
 ## Test Status
 
-Session 8 ran only focused checks, as requested:
+**Plugin: 566/566 passing**, `python -m unittest discover -s tests -p "test_*.py"`,
+~60s (the real-Git claim-race tests dominate). Run at the end of session 16.
+`claude plugin validate .` passes. `git diff --check` is clean. The
+sibling-invariant check `grep -rE "superpowers:|gstack:/" skills/` returns
+nothing.
 
-- 16 planner and worker-loading tests passed in 0.012 seconds.
-- clarifying-card, intaking-requirement, using-agent-teams, and dispatching-work all passed quick_validate.py.
-- claude plugin validate . passed.
-- git diff --check passed before this handoff update.
+Session 16 took the suite 537 → 566: 28 new in `tests/test_spec_feedback.py`
+plus one pinning `resource-safety`, against 27 rewritten or superseded across
+`test_config_roles.py`, `test_producer_board.py`, `test_workflows.py`, and
+`test_consumer.py`.
 
-The automation implementation previously passed a 241-test focused regression
-set and the full 385-test hermetic suite in 93.795 seconds before it was
-committed as cf4f681. The full suite was not rerun after the lazy-loading split;
-the 16 focused tests cover the changed planner and worker contract.
+**Two falsification checks were run rather than assumed**, because a test that
+passes on the first run proves nothing about the code it claims to cover:
+
+- Disabling the two spec-change hooks in `policy.py` fails **11 of the 28** new
+  tests. They are not vacuous.
+- Retiring the config keys failed **15 existing tests** on the first run, each
+  naming its call site — which is the behaviour the change exists to produce.
+
+**Dashboard** (`../agent-teams-dashboard`, not re-run this session): server
+1047/1047, client 334/334, `tsc -b` clean, as recorded at the end of session 13.
 
 Hermetic tests prove the policy decision table, claim exclusivity against real
 Git, exact-head protection, partial-failure handling, direct specification
-records, decomposition replay, WIP admission, delayed merge monitoring, and
-merge-evidence-only Done.
+records, decomposition replay, WIP admission, delayed merge monitoring,
+merge-evidence-only Done, the browser-evidence refusal, per-role schedules, the
+retired-key refusals, and the spec-change route.
 
-They do not prove that a real Claude child invokes exactly one Skill at runtime,
-that the Consumer GitHub CLI JSON assumptions match a live repository, or that
-auto-merge and protected QA work end to end.
+They do not prove that live GitHub CLI JSON matches `tests/fake_gh.py`
+field-for-field, that the `protected_change` route works live, or that any of
+the 09-04 work behaves in a real run — **none of it has run live.**
 
 ---
 
@@ -258,6 +291,13 @@ auto-merge and protected QA work end to end.
   schema can require a flow, an invalid-input case, and a console reading; it
   cannot prove a browser was ever opened.
 - **No automatic field provisioning or audit database** — intentionally deferred; doctor validates and GitHub artifacts remain the trail.
+- **The plugin does not eat its own dog food** (whole repository) — agent-teams governs *consuming* repositories; its own source is hand-edited, so every change to it is unrouted, unspecified, and unreviewed by the machinery it ships. Named as gap (A) in the 09-04 evidence-chain trace. A scope decision, but it had never been stated as one.
+- **Configuration is not a governed artifact** (`.agent-teams/config.json`) — gap (B) of the same trace, and the actionable one. No Card, spec, diff, or verdict can carry a config change in this repository or a consuming one, so QA structurally cannot be asked to check one. This is the concrete first question for the observability work: *which artifacts can carry a change, and what happens when someone changes one that cannot?*
+- **`docs/specs/2026-08-06-consumer-flow-design.md:179` still documents `merge_method`** — the retired name, in the approved Consumer design. Not fixed unilaterally: it is a historical approved record, so amending it in place versus superseding it is its own decision.
+- **The dashboard's retired-key help text is now wrong** (`../agent-teams-dashboard` `server/lib/agent-teams/config-schema.js:323`) — it still says old files load and are rewritten. It writes only current names since `8e09e4c`, so nothing is broken; the sentence is stale. That repository was not touched this session.
+- **A finding's location is prose, not a field** — `findings` became a validated object on 2026-09-04 (`severity`, `dimension`, `confidence`, `evidence`, optional catalogue `smell`; see `docs/decisions/2026-09-04-structuring-findings.md`), but OCR's separate `path` / `start_line` / `end_line` was not adopted with it. The location lives inside `evidence` as text, so it cannot be used to anchor a finding to a diff hunk or to deduplicate two reviewers mechanically. Severity inflation also remains reader-caught by design: no validator distinguishes an inflated `critical` from a real one.
+- **`resource-safety` has never been exercised** (`policy.py`, `model.REQUIRED_DIMENSIONS`) — the ninth dimension is required of every pass and no real review has produced one. If it turns out nobody can answer it from a diff, it becomes a box to tick, which is worse than absent.
+- **`spec_completion` remains accepted-and-ignored** (`config.py`) — deliberately not retired alongside the three renames, because it is a removed feature rather than a rename and a refusal could only say "delete this". Recorded so the inconsistency reads as a decision.
 
 ---
 
@@ -279,6 +319,10 @@ auto-merge and protected QA work end to end.
   run on the new dataset to see whether the derived flows are stable enough to
   be worth keeping at all, plus the team lead's answer on scope (Next Step 0e).
 
+- **Whether the plugin should govern its own changes** — options: (A) accept that agent-teams is hand-edited and say so explicitly in ARCHITECTURE as a scope boundary; (B) make configuration and skill changes routable so the pipeline can review its own vocabulary. Need: the team lead's read on whether self-hosting is in scope, since (B) is most of the observability project. Raised by the 09-04 evidence-chain trace.
+- **Whether findings become structured** — options: (A) keep prose with a severity tag, as now; (B) adopt OpenCodeReview's comment shape (`path`, line range, `category`, `severity`) as a validated type. (B) is clearly better and touches `model.py`, `policy.py`, `board.py`, the CLI, and every test fixture, so it needs its own change. Need: nothing — this is a scheduling decision, not an information one.
+- **What to do about `docs/specs/2026-08-06-consumer-flow-design.md`** — options: (A) amend it in place with a dated note; (B) supersede it with a current design record; (C) leave it as a historical artifact and rely on CONFIGURATION.md. Need: a rule for whether approved specs in this repository are living documents or records of a decision. There is no such rule today.
+
 Settled this session: workflow skills remain locally adapted and attributed
 rather than runtime dependencies; the worker preserves dynamic loading by
 invoking one selected skill through the Skill tool. The human changes only Card
@@ -289,6 +333,12 @@ deterministic validation and Role handoff.
 
 ## Hard-won Discoveries
 
+- **A rename the tooling absorbs is a rename nothing downstream is forced to notice.** The compatibility shim added so old test projects would not break did exactly what it promised — and in doing so it converted a loud, immediate, one-line failure into a silent one that took a week to surface (the dashboard writing a key the plugin no longer stored) and a second that took nine days (`authoring-spec` still naming the old key). The second was actively *pinned in place by a passing test*, so a green suite was positive evidence the rename had not propagated. Generalise it: any mechanism that silently accepts an old shape is also a mechanism that hides who is still emitting it.
+- **Deleting a compatibility alias can be worse than keeping it.** `Config.from_dict` ignores unrecognised keys, so removing `LEGACY_KEYS` would have made `{"merge_mode": "manual"}` mean `code_pr_merge_mode: automatic` — the default, and the one that merges without asking. Retirement had to be an *error naming the replacement*, not a deletion. Check what a parser does with unknown input before removing a name from it.
+- **A test asserting current behaviour can hold a bug in place.** Two instances this session. `test_workflows.py` asserted `authoring-spec` contained the retired key name. And three tests in `test_producer_board.py` fed a legacy name and asserted the current name appeared in the error — under retirement those still pass, for the wrong reason, because the retirement message also contains the current name. Both were found by reading the failures, not by the failures themselves.
+- **Look for the missing route in the authority table before building one.** `HANDOFF_AUTHORITY[qa]` already contained `architect`; `REFUSAL_REASONS` already said "route specification defects through the architect"; `LEGAL_TRANSITIONS`' own comment called `In Review -> Backlog` the specification-defect route. The permission and the vocabulary had been there since the beginning and no workflow used any of it. The feature was smaller than it looked.
+- **Reading someone else's ruleset found a gap introspection had not.** Eight review dimensions, written carefully, and none of them asked "what does this acquire and where is it released". OpenCodeReview's default ruleset asks it in one line. The team lead's own code-smell examples had been landing in that gap for two weeks. Surveying is cheaper than thinking harder.
+- **Slidev scopes a per-slide style block, and a literal `<`style`>` tag inside a CSS comment breaks the build.** The built CSS carries a `data-v-` hash, so a style block on one slide does not reach the next — two slides needing the same rule must each carry it (both now say so in a comment, so nobody "deduplicates" them). Separately, writing the literal opening style tag inside a CSS comment makes the Vue SFC parser fail with `Element is missing end tag`, with no line number. Verify a deck with `npx slidev build <file> --out <dir>` rather than eyeballing it.
 - **"Independent" and "accumulating" are different QA properties, and only the first was bought.** The 2026-08-27 decomposition correctly read the 08-21 complaint as being about *independence of evidence*, and the blind browser worker answers it. What went unexamined is that a real QA organisation's other defining property is **memory** — a test-case library and a regression suite that outlive any one delivery. Ours re-derives its flows from the specification every time and deletes its worktree, so it can never catch a regression it did not personally cause. Worth recording because the asymmetry is the opposite of the effort spent: axis A was the expensive work, and the missing axis is cheap (persist the flows). Do not let "QA was rebuilt" read as "QA is complete".
 - **Subagent skills frontmatter is eager, not lazy.** Listing six skills in agent-teams-worker injected all six complete bodies at startup. Removing that list and retaining the Skill tool preserves on-demand loading; next-actions must name the one qualified skill explicitly.
 - **A mixed intake skill creates routing risk.** New-requirement intake and returned-Card clarification have different mutation boundaries. Extracting clarifying-card prevents a returned Card from accidentally running intake and creating a duplicate Issue.
@@ -309,92 +359,144 @@ No local implementation blocker.
 
 - ~~**Live Consumer proof**~~ — resolved 08-12: `agent-teams-test` now has branch protection (strict, required check `test` via `.github/workflows/ci.yml`), repository auto-merge, and `required_checks` in config; `doctor` reports empty `acceptance_problems`; the live run exercised the whole tail.
 - ~~**Lazy-loading runtime proof**~~ — resolved 08-12: each live worker's kickoff named exactly one `[skill:...]` and per-worker transcripts (session `subagents/` directory in Lee's `~/.claude-team` config) show one Skill invocation per worker.
+- **The new fraud dataset** — waiting on: nothing; it was delivered to the group on 08-28 (third-party-payment merchants, fully simulated). Action: locate the file and swap it into the consuming app. This is todo 7 and it blocks the first live test of everything built since 08-27.
+- **Observability references** — waiting on: the team lead posting them to the group chat (an open protocol plus a LangSmith-style lightweight option). Action: if they have not appeared, ask him directly — he said to.
+- **The QA scope question** — waiting on: the team lead. Still open from session 15 (Next Step 0e). Unchanged by this session's work, which extended QA's *routing*, not its coverage.
 - **Demo assets and annotations** — waiting on execution of the requested slide, screenshot, and Word-document work; the feedback itself is already captured in this handoff.
-- **Push or further commits** — require explicit user instruction. Do not commit, push, create another branch, or create a worktree automatically.
+- **Push or further commits** — require explicit user instruction. Do not commit, push, create another branch, or create a worktree automatically. Session 16 is entirely uncommitted at the user's request.
 
 ---
 
 ## Current State
 
-**Both repositories are committed and clean.** The session-12 and session-13
-work that the previous handoff described as uncommitted has landed.
+**Session 16 is complete and entirely uncommitted**, on
+`mvp/producer-from-scratch` at `e887712`. 30 modified files, 15 new paths.
+**The dashboard is no longer clean** -- see session 16d.
+Tests 625/625, `claude plugin validate .` passes, `git diff --check` clean.
+The user asked explicitly for no commit.
 
-- Plugin, `mvp/producer-from-scratch`, working tree clean at `cb5c52f`:
-  `9cc1983` (QA rebuild + per-role config), `decb04b` / `b86c387` (docs),
-  `c847b64` (08-28 deck Part 1), `cb5c52f` (promote workflow), all on top of
-  the 08-21 commit `225f081`.
-- Dashboard, `feat/plugin-scope-listing`, working tree clean at `d5b225e`
-  (`8e09e4c` config selection fix, then the gate button) on top of `729871f`.
+New this session:
 
-Test figures are as recorded at the end of session 13 and were **not re-run
-this session**: plugin 535/535, dashboard server 1047/1047, client 334/334.
-Pushing is still not done and still requires explicit user instruction.
+```text
+docs/traces/2026-09-04-merge-mode-evidence-chain.md
+docs/decisions/2026-09-04-retiring-renamed-config-keys.md
+docs/decisions/2026-09-04-qa-spec-feedback-loop.md
+docs/decisions/2026-09-04-adopting-open-code-review.md
+docs/decisions/2026-09-04-structuring-findings.md
+docs/decisions/2026-09-04-governing-the-config-vocabulary.md
+skills/verifying-delivery/references/browser-tooling.md
+skills/verifying-delivery/references/code-smells.md
+tests/test_spec_feedback.py
+tests/test_findings.py
+tests/test_config_vocabulary.py
+tests/test_config_vocabulary_export.py
+tests/test_self_hosting.py
+docs/decisions/2026-09-04-self-hosting-the-pipeline.md
+slides/2026-09-04-weekly.md
+```
 
-The 08-28 deck (`slides/2026-08-28-weekly.md`) is written: Part 1 is this
-week's work, Part 2 is the 08-21 live run kept as the reference demo. A
-Chinese speaking script for Part 1 lives **outside this repository** at
-`../2026-08-28-part1-transcript-zh.md`, alongside `../feedback_and_todo.md`
-and `../transcript_clean.md` — the parent folder is not a git repository, so
-none of those three are version-controlled.
+**Nothing from this session has run live.** It is tests, refusals, and
+documents. That caveat is on the deck's status note and it is the single most
+important thing not to lose when the material is reused — the same caveat
+session 15 recorded, still true, now covering more surface.
 
-Nothing this week has run live. That caveat is stated on the deck's Part 1
-chapter note and in the script's opening, and it is the single most important
-thing not to lose when the material is reused.
+**A sixth piece of work came from the intern, not the 08-28 list.** Asked
+whether QA actually uses the code-smell concepts to review, tracing found two
+gaps: the catalogue was briefed to the seat that *reconciles* findings and not
+to the three passes that *read the code*, and every rule in it was
+unenforceable because `findings` was `tuple[str, ...]`. Both are now closed —
+`findings` is a validated object and the passes get the catalogue in their
+brief. `docs/decisions/2026-09-04-structuring-findings.md`.
 
-**Session 12 touches Joanne's config work directly.** The externalized config
-grew a `roles` block and lost three key names to clearer ones (old names still
-load). See the session log below for the shape and the reasoning; the
-dashboard's config form needs the same keys added on Lee's side.
+**Five of the ten 08-28 items are done** (1, 2, 3, 5, 6). Not started: 4
+(observability), 7-8 (the new dataset and analytics scenarios), 9-10 (the
+runbook's HumanGate section and its audience pass) — although the runbook did
+gain the third human gate and the retired-key error in passing.
 
-**For Joanne — things that changed under you since 980a93c (please review, all
-touch your files):**
+**The deck.** `slides/2026-09-04-weekly.md` began as a byte-identical copy of
+the 08-28 deck. Part 1 is now eleven slides on this session's work, built around
+one spine: the lead asked where a change went, and it had gone nowhere. Part 2
+is the 08-21 live run, unchanged. It builds clean. There is no Chinese speaking
+script for it yet — the 08-28 one is at `../2026-08-28-part1-transcript-zh.md`,
+outside the repository, as are `../feedback_and_todo.md` and
+`../transcript_clean.md`.
 
-1. **Five seat workers replace `agents/agent-teams-worker.md`** (`analyst-/architect-/dev-/qa-/lead-worker.md`, identical contract; `_spawn_action` emits `"agent": "agent-teams:<seat>-worker"` and `"env": {"AGENT_TEAMS_ACTING_ROLE": "<seat>"}`). Reason: external monitors learn the role from the agent type, not the prompt.
-2. **`.claude-plugin/marketplace.json` rewritten** — marketplace name `agent-teams` (was your `agent-teams-local`), installed into the demo config as `agent-teams@agent-teams`. Lee decided to keep this one; say if you object.
-3. **`--acting-role` is no longer trusted** (`policy.resolve_acting_role`, `producer_board.py`): `AGENT_TEAMS_ACTING_ROLE` binds a process to a seat, and inside any Claude Code shell a command that claims or defaults to `human` is refused. Live cause: the lead ran `promote 27` with no flag and inherited the human default. `main()` takes `env=` for tests; tests pass `env={}`.
-4. **PR body contract changed** (`validate_pr_body`, ARCHITECTURE 9.5, pr-contract.md): `Card: #<issue>` is required and `Closes/Fixes/Resolves #N` is **refused**; `_reconcile_to_done` closes the Issue itself (`Board.close_issue`). Reason: GitHub closing the Issue on merge races `reconcile` on any Project with the default "item closed → Done" workflow.
-5. **accept-after-merge fixed**: a merged PR reports `mergeable: UNKNOWN` forever; policy no longer waits on it (`pr_facts["merged"]`), and `accept` skips `arm_auto_merge` on a merged PR.
-6. **Board reads**: lean GraphQL query + per-process memo keyed on `Gh.mutations`; `_is_safe_read` treats `api graphql` query documents as reads. Measured: `item-list --limit 100` = 101 points on a 4-card board; the new query = 1.
-7. **`verifying-delivery`** forbids checking out the PR branch in the repo root (detached review worktree instead) — a QA worker left the main checkout on `pr-29` live.
-8. **The CCAM dashboard** (`reference/ccam` in Lee's tree, fork of hoangsonww/Claude-Code-Agent-Monitor) edits `.agent-teams/config.json` through a Python bridge that imports your `Config` and depends on exactly `Config.from_dict / to_dict / revision / write`; its form descriptor mirrors the CONFIGURATION.md tables — keep them in sync if you add keys.
-9. **Host setting for Ollama-served models**: `skillListingBudgetFraction: 0.05` (documented in CONFIGURATION.md) — without it 8 of 10 skill descriptions are dropped and intent routing fails silently.
+**The dashboard** (`../agent-teams-dashboard`) was not touched. It is clean on
+`feat/plugin-scope-listing` at `d5b225e`. One stale help string there is
+recorded in Known Issues.
+
+**Fixed in passing**: `HANDOFF.md` had carried unresolved merge-conflict
+markers in its "Last updated" line since 2026-08-28. Both statements were true;
+neither was lost.
+
+**Still true from session 12, for Joanne** — the per-seat worker split, the
+marketplace rename, untrusted `--acting-role`, the PR body contract, the
+accept-after-merge fix, the lean GraphQL board read, the QA checkout ban, the
+dashboard config bridge, and the `skillListingBudgetFraction` host setting. The
+list is in the session-12 log entry below; nothing in session 16 changed any of
+it. Session 16 does touch her config work again: `LEGACY_KEYS` became
+`RETIRED_KEYS` and old names now refuse.
+
+---
 
 ## Next Steps
 
-0. **Run the new dataset end to end with the QA split on** (todo 6). It is the
-   first live test of the browser worker, the three review passes, and the
-   nested-spawn dashboard attribution all at once. Verify both JSON and CSV
-   inputs; the new use case is store/venue info, not transit routing.
-0b. **Have the team lead execute `docs/RUNBOOK.md` cold** (todo 7 — the
-   document is written; the point of it is the dry run). Ask them to note
-   the last Checkpoint that passed wherever they get stuck; that note is
-   the defect report. Part 7 (dashboard) especially needs correcting from
-   a real setup.
-0c. ~~**Commit the dashboard changes**~~ — done. `../agent-teams-dashboard` is
-   clean on `feat/plugin-scope-listing` at `d5b225e` (config selection fix
-   `8e09e4c`, then the gate button). This repository is likewise clean; see
-   Current State.
-0d. **Press the gate button once against the live board** (session 13). The
-   readiness route is the one to try: start the dashboard, open the Agent
-   Teams page against `agent-teams-test`, and approve the Card held at the
-   gate. Card #21 is still deliberately parked there from session 9, which
-   makes it the obvious subject — decide first whether to spend it.
-0e. **Put the QA scope question to the team lead before building any more QA.**
-   He described real QA as a coverage gate plus integration/load planning
-   derived from non-functional requirements. We built *independence* instead,
-   substituted a stronger test-strength rule for the coverage gate, and left
-   the accumulating half (regression suite, cross-Card checks, defect record)
-   unbuilt — see the three new Known Issues entries. Ask him directly whether
-   that half is in scope for this project or out of it. His answer settles the
-   Open Decision "Whether QA accumulates test assets"; **do not start the
-   Playwright-persistence work before it**, because option (A) there grants the
-   browser seat a write authority it was deliberately denied.
+1. **Swap in the new fraud dataset and run the pipeline end to end** (todos
+   7-8). This is the first live test of the QA split, the browser worker, the
+   three review passes, the nested-spawn dashboard attribution, *and* now the
+   spec-change route and `resource-safety`. Find the file the team lead posted
+   on 08-28 (third-party-payment providers with contracted merchants; fraud
+   signals are cross-provider reports, shared addresses, similar domains,
+   festival-timed scams), replace the current app's dataset, and run. Everything
+   built since 08-27 is unproven until this happens.
 
-1. ~~Lazy-loading runtime evidence~~ — done live 08-12 (see session 9); optionally archive the worker transcripts as durable evidence.
-2. Tighten Producer.next_actions so a Backlog human Card is shown as a readiness gate only when check_spec_gate confirms the recorded exact commit is still current; add the focused stale-record test.
-3. ~~Live eligible and defect routes~~ — done 08-12. Remaining: exercise the `protected_change` route live (a delivery touching e.g. `scripts/agent_teams/policy.py` or `.github/`), and optionally compare PR JSON field-for-field against tests/fake_gh.py.
-4. Update the demo materials from the team-lead feedback: annotate GitHub versus agent-teams behavior, identify generated versus handwritten Cards, label prompt-to-skill provenance, isolate merge logic, capture each end-to-end node, and produce the requested Word question record.
-5. Review this HANDOFF.md diff and commit or push only when the user explicitly asks.
+2. **Answer the observability question with the trace in hand** (todo 4).
+   **The first case is now done** — configuration is a governed artifact and a
+   change to it is checked for completeness
+   (`docs/decisions/2026-09-04-governing-the-config-vocabulary.md`). What
+   remains is the general question the lead actually asked, and the standing
+   advice still holds: do not start by adding a protocol. Two concrete gaps
+   the config case did *not* close are the place to start —
+   **(A)** the plugin does not run its own work through its own pipeline, a
+   scope decision nobody has taken out loud; and **(C)** the dashboard's
+   `config-schema.js` is hand-copied, and its own header says *"Keep this file
+   in sync with that doc"* — a comment where a check should be, one repository
+   over. Check the group chat for the references the lead promised; ask him if
+   they are not there.
+
+3. **Write the runbook's HumanGate section** (todo 9) and do the audience pass
+   (todo 10). Note explicitly that the Dashboard's one-click approve is
+   operating GitHub underneath. The audience is a non-programmer, so the
+   "obvious" steps — Claude Code's git setup, Python, GitHub — must be written
+   out in full. The runbook already gained the third gate and the retired-key
+   error this session; those are not the item.
+
+4. ~~**Decide `docs/specs/2026-08-06-consumer-flow-design.md:179`.**~~ **Done
+   (session 16c).** Amended in place with a dated note, and
+   `tests/test_config_vocabulary.py` now refuses a settings row that defines a
+   retired key. The general question — whether an approved spec is a living
+   document or a record of a decision — was **not** settled: this row
+   documented one key's *name*, and the design decision it belongs to did not
+   change. A spec whose decision changes is still undecided; see Open
+   Decisions.
+
+5. **Put the QA scope question to the team lead** (carried from session 15,
+   Next Step 0e, still unanswered). He described real QA as a coverage gate plus
+   integration and load planning from non-functional requirements. We built
+   independence, substituted a stronger test-strength rule for the coverage
+   gate, and left the accumulating half unbuilt. **Do not start the
+   Playwright-persistence work before his answer**, because that option grants
+   the browser seat a write authority it was deliberately denied.
+
+6. **Write a Chinese speaking script for the 09-04 deck's Part 1**, in the shape
+   of `../2026-08-28-part1-transcript-zh.md`: per-slide spoken text, a separate
+   "if asked" layer, and the "nothing ran live" caveat at both the open and the
+   close. Part 1 is now **eleven slides in six numbered events** — five from
+   yesterday's session, event 6 from today's — so the script needs the two-day
+   framing the deck's chapter slide sets up.
+
+7. **Review this session's diff and commit only when the user asks.** 27
+   modified files and 7 new paths, all uncommitted.
 
 ---
 
@@ -411,6 +513,291 @@ decision accepts sibling plugins as runtime dependencies.
 ## Session Log
 
 <!-- newest entry at top -->
+
+### 2026-09-04 — Session 16 (the 08-28 process items: evidence chain, retired keys, spec feedback, review coverage, and the 09-04 deck)
+
+Five of the ten 2026-08-28 todo items, all on `mvp/producer-from-scratch`,
+**uncommitted**. Tests 538 → 566, `claude plugin validate .` passes, the
+sibling-invariant grep is clean.
+
+**1 — the merge-mode evidence chain (todo 1).**
+`docs/traces/2026-09-04-merge-mode-evidence-chain.md`. The answer to the team
+lead's four questions is that **there is no chain**: the rename was a hand-
+written commit (`9cc1983`) on the plugin's own source, with no Card, no spec,
+and no QA. `docs/specs/2026-08-06-consumer-flow-design.md:179` still documents
+`merge_method` today. Three gaps named, only one of which was the guessed one:
+(A) the plugin does not eat its own dog food, (B) **configuration is not a
+governed artifact** — no Card, spec, diff, or verdict can carry a config
+change, so link 4 has no mechanism to fail because it has no mechanism at all,
+(C) the dashboard consumes the vocabulary through a hand-copied schema.
+
+**Found while tracing, and fixed here**: `skills/authoring-spec/SKILL.md` still
+said `spec_merge_mode` — the skill for the one seat that *consumes* the
+setting — and `tests/test_workflows.py` **asserted that it did**. A green suite
+was positive evidence the rename had not propagated. Assertion inverted.
+
+**2 — retired the renamed config keys (todo 2).**
+`docs/decisions/2026-09-04-retiring-renamed-config-keys.md`. `LEGACY_KEYS` →
+`RETIRED_KEYS`: an old name is now a **validation error naming its
+replacement**, at the top level and inside `roles`, all reported in one pass.
+Deleting the alias was considered and rejected as *worse* — unknown keys are
+ignored, so `{"merge_mode": "manual"}` would have silently meant
+`code_pr_merge_mode: automatic`. Fifteen tests failed on the first run and
+named every call site, which is the behaviour the lead described. `spec_completion`
+is deliberately left accepted-and-ignored; it is a removed feature, not a
+rename, so a refusal could only say "delete this".
+
+**3 — the QA → specification feedback loop (todo 3).**
+`docs/decisions/2026-09-04-qa-spec-feedback-loop.md`. New validated
+`Verdict.spec_change_requests` (`document` / `clause` / `conflict` /
+`suggested_change`, all required); present on any verdict value it makes
+`evaluate_acceptance` return `protected_change` — **checked before the `fail`
+branch**, which is the whole behaviour change, since a spec conflict is
+normally reported on a fail. New human-only `approve-spec-change N` and a
+`spec_change` gate that deliberately **offers no merge button**. 28 new tests
+in `tests/test_spec_feedback.py`; disabling the two policy hooks fails 11 of
+them, so they are not vacuous.
+
+Worth knowing: `HANDOFF_AUTHORITY[qa]` already contained `architect`, and
+`REFUSAL_REASONS` already said "route specification defects through the
+architect". The authority and the vocabulary existed; nothing used them.
+
+**5 — surveyed OpenCodeReview instead of rebuilding (todo 5).**
+`docs/decisions/2026-09-04-adopting-open-code-review.md`. Read at `main`
+(SKILL.md, delegate SKILL.md, the default ruleset, three system prompts) rather
+than summarised. **Not a runtime dependency** — that would break the standing
+"agent-teams calls no other plugin" invariant and the stdlib-only floor.
+
+Folded in: **`resource-safety` as the ninth required review dimension**, in the
+`risk` bundle. Nothing in the previous eight asked "what does this acquire and
+where is it released" — a leak is not `correctness` (the logic is right and
+the tests pass) and not `security` until the exhaustion is reachable, which is
+exactly where the lead's connection-pool example lived. Also folded in:
+`critical`/`high`/`medium`/`low` severity as an axis distinct from confidence,
+and OCR's asymmetric false-positive rule (proof, not doubt, drops a finding).
+
+Plus `skills/verifying-delivery/references/code-smells.md` — Fowler/Beck's
+catalogue as a closed vocabulary for `structure` findings, at the intern's
+suggestion after the lead's code-smell aside. It gives both his examples a
+home: unreleased connections is `resource-safety`; private state breaking out
+is *Inappropriate Intimacy*.
+
+**Licensing note**: OpenCodeReview is **Apache-2.0**, not MIT like the other
+three sources, and Apache-2.0 additionally requires stating that changes were
+made. ATTRIBUTION.md's opening paragraph was rewritten accordingly.
+
+**6 — annotated the Browser reviewer's suite (todo 6).**
+`skills/verifying-delivery/references/browser-tooling.md`. Playwright, headless
+Chromium, driven from `Bash` — the seat has **no browser tool in its
+frontmatter**, which is why nothing named the suite before. Compared against
+Puppeteer, Selenium, Cypress, WebdriverIO, browser-use, and the agent's own
+in-browser tooling, with the deciding property stated (console capture as
+first-class events, because `browser_evidence.console` is a validated required
+field) and the coverage it does *not* buy listed: one engine, one viewport,
+headless, nothing accumulates.
+
+**Also fixed**: HANDOFF.md had carried unresolved conflict markers in its
+"Last updated" line since 2026-08-28. Both statements were true; neither was
+lost.
+
+**The 09-04 deck.** `slides/2026-09-04-weekly.md` started as a byte-identical
+copy of the 08-28 deck; Part 1 is now eleven slides on this session's work and
+Part 2 (the 08-21 live run) is untouched. The spine is one question: the lead
+asked where a change went, and it had gone nowhere — three of the five items
+then follow from it. The last slide of item 5 closes the loop by naming the
+merge-mode rename's own smell (*Shotgun Surgery*), which is what makes the
+vocabulary feel earned rather than bolted on. Every slide's speaker notes carry
+an "if asked" layer. Verified with `npx slidev build`.
+
+**Two Slidev facts learned the hard way** (also in Hard-won Discoveries): a
+per-slide style block is **scoped** — the built CSS carries a `data-v-` hash —
+so two slides needing the same rule must each carry it, and both now say so in
+a comment. And writing a literal opening `style` tag inside a CSS comment makes
+the Vue SFC parser fail with `Element is missing end tag` and no line number.
+The first build failed on exactly that.
+
+**Not done**: todos 4 (observability — the trace is its argument, not its
+start), 7-8 (the new dataset), 9-10 (runbook HumanGate section and audience
+pass) — though the runbook did gain the third human gate and the retired-key
+error. `docs/specs/2026-08-06-consumer-flow-design.md:179` still says
+`merge_method`; it is an approved historical design record, so amending or
+superseding it is its own decision and was not taken unilaterally.
+
+### 2026-09-04 — Session 16b (findings became structure; the catalogue reached the seats that read code)
+
+Prompted by the intern asking whether QA *actually* uses the code-smell
+concepts to review the Developer's work. Tracing the answer found two gaps,
+and only one of them was the one the question implied.
+
+**The catalogue was attached to the wrong seat.** `SKILL.md` briefed the three
+review passes with "the Card, the specification, the diff, and its own bundle
+from `references/review-dimensions.md`" — no catalogue. `code-smells.md`
+appeared only in the reference table belonging to the reconciling seat, the one
+that deduplicates and challenges findings *other agents already produced*. The
+passes are the seats that read the code. Fixed in `SKILL.md`,
+`references/review-dimensions.md`, and `agents/qa-worker.md`: `structure` gets
+the `design`/`architecture`/`cross-file` sections, `risk` gets
+`resource-safety`/`test-strength`. **This half cannot be validated** — no check
+establishes that a reviewer looked for Feature Envy — and the decision record
+says so rather than implying otherwise.
+
+**Everything the catalogue said was unenforceable.** `findings` is now a
+validated object: `severity` (closed set), `dimension` (the nine),
+`confidence` (1-10, below 5 refuses and names `limitations`), `evidence`
+(required), optional `smell` that must be in the catalogue. Prose refuses
+outright — the `RETIRED_KEYS` reasoning from earlier the same day, since a
+tuple of strings and a tuple of objects are both valid Python and a prose
+entry would be silently exempt from every check. **A `pass` carrying a
+`critical` or `high` finding now refuses**, which is the one rule that changes
+an outcome: writing `pass` above a serious finding was the cheapest way to
+ship it.
+
+Deliberately *not* enforced, and pinned by tests so they stay decisions: the
+pairing of a smell with the finding's dimension (a `design` pass can
+legitimately see Duplicated Code), and severity inflation (no validator can
+tell an inflated `critical` from a real one — that is why `evidence` is
+required).
+
+**The catalogue itself was filled in.** It said "Not exhaustive"; the audit
+against Fowler ch. 3 added **Mysterious Name** (this repo has already paid for
+one), **Temporary Field**, **Lazy Element**, **Message Chains**, **Global
+Data**, **Mutable Data**, **Repeated Switches**. More useful is the new
+**"deliberately not in this catalogue"** section: **Comments** is excluded
+because this codebase's long why-comments are the house style and several are
+the only record of a decision; **Data Class** because field-only records are
+the intended architecture; **Refused Bequest** and **Alternative Classes**
+because there is almost no inheritance here and an entry that can never fire
+trains reviewers to force matches.
+
+**Four tests compare `code-smells.md` against `model.CODE_SMELLS` in both
+directions**, with a guard so an empty parse cannot pass them for the wrong
+reason. Least obviously necessary, most valuable: a vocabulary documented in
+one place and enforced from another, drifting with the suite green, is exactly
+what item 1 of this session spent its time tracing.
+
+Suite 566 → 593. Disabling the two policy hooks fails 14 of the 27 new tests.
+Eight prose fixtures across four existing test files converted. The dashboard
+does not consume `findings`, so no cross-repo contract moved. Still
+uncommitted, and still never run on a live Card.
+
+### 2026-09-04 — Session 16c (the trace stopped being a diagnosis)
+
+The intern's follow-up to 16b: *the point is not to report that there was no
+chain, it is to make a chain possible.* Correct, and it was not done — session
+16 filed three reasons and changed none of them.
+
+Exactly one of the three is a missing **mechanism**; the other two are a scope
+decision (the plugin does not run its own work through its own pipeline) and a
+different repository (the dashboard's hand-copied schema). Both stay open, and
+`docs/decisions/2026-09-04-governing-the-config-vocabulary.md` says so.
+
+**Link 2 (Card → spec)** now has a mechanism: `configuration-vocabulary`, a new
+`DEFAULT_PROTECTED_PATHS` category covering `scripts/agent_teams/config.py` and
+`docs/CONFIGURATION.md`. A change to the vocabulary routes to the human gate
+that already existed. Note the limit the trace found the hard way and that this
+does *not* remove: `docs/specs/**` was protected all along, and the rename
+changed the subject matter that document governs without touching the file.
+**Protection is on the path; the authority it guards is the content.**
+
+**Link 4 (dev → QA)** now has the completeness check that never existed, in
+`tests/test_config_vocabulary.py`. Two audiences, two rules, deliberately
+asymmetric: in `scripts/`, `skills/`, `agents/`, `.claude-plugin/` a retired
+name may not appear **at all** (an agent cannot tell narration from
+instruction — that is the `authoring-spec` miss); in `docs/` prose may name an
+old key freely but a **settings-table row may not define one**, unless the row
+also names its replacement, which is a migration table. Plus `Config`'s fields
+versus the reference's settings tables, both directions, with a parse guard.
+
+**Six failures on the first run, all real, and only one was expected:**
+`docs/specs/…:179` still said `merge_method`; **`recovery` had no row in any
+settings table at all** — a top-level field nobody could look up; and
+`code-smells.md` named `merge_mode` in its *Mysterious Name* entry, written
+that same morning by the session that wrote the trace. The rule caught its own
+author within hours.
+
+**The approved spec was amended in place with a dated note**, which settles
+HANDOFF's open question narrowly and not in general: the row documented one
+key's *name*, and the design decision it belongs to did not change. A spec
+whose decision changes is still an open case.
+
+Suite 593 → 605. Non-vacuity checked by mutation rather than by disabling a
+hook: injecting `merge_mode` into a skill file and a retired key into a doc
+settings table fails exactly the two sweep tests, and both revert clean.
+
+### 2026-09-04 — Session 16e (the objection to self-hosting was wrong)
+
+Gap (A) -- the plugin does not run its own work through its own pipeline -- was
+defended in this very session with an objection I stated and then checked:
+*the QA that reviews a change to `policy.py` runs on `policy.py`, so a diff
+that breaks the checker is waved through by the checker it broke.*
+
+**That is wrong here.** Every seat invokes
+`${CLAUDE_PLUGIN_ROOT}/scripts/producer_board.py` -- the **installed** plugin,
+the last merged version -- while the code under review sits in the Pull Request
+and its detached worktree. Old plugin reviews new plugin: the compiler
+bootstrap, already true by accident of how Claude Code loads a plugin.
+Measured, not assumed: **25 executable invocations across `skills/` and
+`agents/`, all 25 through the plugin root, none through the checkout.**
+
+It held by convention with nothing checking it, which is this session's whole
+lesson. `tests/test_self_hosting.py` now enforces it, distinguishing an
+invocation from a prose mention (the worker files say "run every
+`producer_board.py` command with ..." as guidance; `docs/CONFIGURATION.md`
+shows a new user an absolute install path before any plugin exists -- neither
+can bind the wrong copy). Mutation-checked: point `verifying-delivery` at the
+checkout and the suite goes red.
+
+**Adoption is NOT done, and the deck says so only in speaker notes.** There is
+no board for this repository, no `.agent-teams/config.json`, and `gh` is
+unauthenticated here, so none of it could be created. What is finished is that
+self-hosting is *sound*. What remains: a GitHub Project for
+`joanne-09/agent-teams`, `init`, `doctor`, a first Card -- and a person
+accepting the friction, because today's work would have been six to eight
+Cards. That cost is the real reason it never happened; it is a judgment call,
+not an obstacle, and it should be taken out loud.
+
+One rule cannot be checked from inside the repository and is written in
+`docs/decisions/2026-09-04-self-hosting-the-pipeline.md`: **the installed
+plugin is updated after a merge, never before.** Installing an unmerged build
+hands the fixed point back.
+
+### 2026-09-04 — Session 16d (the copy is gone, across two repositories)
+
+The intern's question again: *the dashboard is a consumer too -- did it follow?*
+It had not, and the way it had not was gap (C) firing a third time.
+
+`server/lib/agent-teams/config-schema.js` told users, in text the config form
+displays, that retired names "still load and are rewritten to the current names
+on save". True when written; the exact opposite of the behaviour after the
+2026-09-04 retirement -- and shown at the one moment a user most needs correct
+guidance, when their config no longer loads.
+
+**The text fix was not the fix.** The file's own header said *"Keep this file
+in sync with that doc"* -- a comment where a check should be. So the copy is
+gone: `config.vocabulary()` exports names, types, defaults, enumerations and
+retirements, **every value read off `Config` rather than restated**, a new
+`config_bridge.py vocabulary` verb carries it, and `config-schema.js` is now
+presentation only -- section order, wording, `advanced` flags. A setting added
+here reaches the form with no edit there; a key the form names that we do not
+declare is dropped and fails a test. The retirement note is generated from
+`RETIRED_KEYS` rather than described from memory, which is the specific defect
+that started this.
+
+Suite 605 -> 621 here (16 new in `tests/test_config_vocabulary_export.py`),
+dashboard 1070 pass with 8 new. Both non-vacuity-checked by mutation: injecting
+a retired key into the dashboard's presentation map fails the drift test;
+restoring the old note text fails the note test.
+
+**The dashboard is dirty now** -- `feat/plugin-scope-listing` at `a37ae9d`
+(HANDOFF previously said `d5b225e`; that was stale), with four modified files
+and no commit. Its one failing test, `subagent-name-as-type.test.js`, is a
+Windows `EBUSY` flake in teardown that reproduces on a clean tree with our
+changes stashed. Its `check-headers.sh` exits 1 on nine files -- all of them
+this fork's own, all pre-existing, none touched here; "fixing" them would
+attribute fork files to the upstream author.
+
+Gap (A) -- the plugin does not run its own work through its own pipeline --
+is the only one of the trace's three reasons still open.
 
 ### 2026-08-29 — Session 15 (the deck's script, and what this QA is not)
 

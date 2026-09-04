@@ -51,7 +51,10 @@ def a_fail(**overrides):
         verdict="fail", card=42, head_sha="a" * 40,
         pull_request="https://example.invalid/pull/57",
         checks=("python -m unittest discover: 3 failed",),
-        findings=("parser.parse crashes on an empty header",),
+        findings=({
+            "severity": "high", "dimension": "correctness", "confidence": 9,
+            "evidence": "parser.parse crashes on an empty header",
+        },),
         next_role=Role.DEV,
     )
     base.update(overrides)
@@ -134,6 +137,7 @@ class ProtectedClassificationTests(unittest.TestCase):
             "agent-instructions": "skills/consuming-card/SKILL.md",
             "security-boundaries": "src/auth/session.py",
             "architecture-and-design": "docs/ARCHITECTURE.md",
+            "configuration-vocabulary": "docs/CONFIGURATION.md",
         }
         self.assertEqual(set(samples), set(DEFAULT_PROTECTED_PATHS))
         for category, path in samples.items():
@@ -312,6 +316,23 @@ class VerdictValidationTests(unittest.TestCase):
     def test_a_missing_review_dimension_is_named(self):
         verdict = a_pass(review_dimensions=REQUIRED_DIMENSIONS[:-1])
         self.assertTrue(any("test-strength" in p for p in self._problems(verdict)))
+
+    def test_resource_safety_is_required(self):
+        """Added 2026-09-04 with the ninth dimension.
+
+        Pinned by name rather than by index because the point of the dimension
+        is that nothing else asks its question: a leak is not `correctness`
+        (the logic is right and the tests pass) and not `security` until
+        someone notices the exhaustion is reachable. Dropping it silently
+        would restore exactly the gap it was added to close.
+        """
+        self.assertIn("resource-safety", REQUIRED_DIMENSIONS)
+        verdict = a_pass(review_dimensions=tuple(
+            d for d in REQUIRED_DIMENSIONS if d != "resource-safety"
+        ))
+        self.assertTrue(
+            any("resource-safety" in p for p in self._problems(verdict))
+        )
 
     def test_an_unresolved_blind_spot_is_a_problem(self):
         verdict = a_pass(blind_spots=("did not review the migration",))
